@@ -1,0 +1,9 @@
+[package]
+name = "zz-p2p"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+clap = { version = "4.2", features = ["derive"] }
+anyhow = "1.0"
