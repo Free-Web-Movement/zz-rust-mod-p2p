@@ -1,5 +1,8 @@
-use tokio::net::TcpListener;
+use tokio::net::{ TcpListener, TcpStream };
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+
+use crate::http::HTTPHandler;
+use crate::share::PEEK_STREAM_BUFFER_LENGTH;
 
 pub struct TCPHandler {
     ip: String,
@@ -33,8 +36,25 @@ impl TCPHandler {
                         Ok((mut socket, addr)) => {
                             println!("TCP connection from {}", addr);
                             tokio::spawn(async move {
-                                let mut buf = vec![0u8; 1024];
+                                let mut buf = vec![0u8; PEEK_STREAM_BUFFER_LENGTH];
                                 loop {
+                                    if
+                                        TCPHandler::is_http_connection(&socket).await.unwrap_or(
+                                            false
+                                        )
+                                    {
+                                        println!("HTTP connection detected from {}", addr);
+                                        // 将 HTTP 处理交给一个新的任务来独占 socket，并结束当前连接处理循环
+                                        tokio::spawn(async move {
+                                            let http_handler = HTTPHandler::new(
+                                                &addr.ip().to_string(),
+                                                addr.port(),
+                                                socket
+                                            );
+                                            http_handler.start().await;
+                                        });
+                                        break;
+                                    }
                                     match socket.read(&mut buf).await {
                                         Ok(0) => {
                                             break;
@@ -62,6 +82,32 @@ impl TCPHandler {
                 }
             });
         }
+    }
+
+    async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
+        let mut buf = [0u8; 8]; // 前 8 个字节足够识别方法
+        let n = stream.peek(&mut buf).await?; // peek 不消费数据
+        if n == 0 {
+            return Ok(false);
+        }
+        let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
+        let http_methods = [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "PATCH",
+            "CONNECT",
+            "TRACE",
+        ];
+        for method in &http_methods {
+            if s.starts_with(method) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -120,7 +166,7 @@ mod tests {
         let mut stream1 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
         let mut stream2 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
 
-        let msg1 = b"client1";
+        let msg1 = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
         let msg2 = b"client2";
 
         // 写入消息
@@ -135,6 +181,10 @@ mod tests {
 
         assert_eq!(buf1, msg1);
         assert_eq!(buf2, msg2);
+
+        stream1.shutdown().await?;
+        stream2.shutdown().await?;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
         Ok(())
     }
