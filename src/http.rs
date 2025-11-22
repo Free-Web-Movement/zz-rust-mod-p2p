@@ -14,6 +14,33 @@ pub struct HTTPHandler {
 }
 
 impl HTTPHandler {
+    
+        pub async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
+        let mut buf = [0u8; 8]; // 前 8 个字节足够识别方法
+        let n = stream.peek(&mut buf).await?; // peek 不消费数据
+        if n == 0 {
+            return Ok(false);
+        }
+        let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
+        let http_methods = [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "PATCH",
+            "CONNECT",
+            "TRACE",
+        ];
+        for method in &http_methods {
+            if s.starts_with(method) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn new(ip: &String, port: u16, stream: TcpStream) -> Self {
         HTTPHandler { ip: ip.clone(), port, stream }
     }
