@@ -1,11 +1,7 @@
-use base64::Engine;
 use tokio::net::TcpStream;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
 use crate::share::HTTP_BUFFER_LENGTH;
-use crate::share::{
-    HEADER_SEC_WEBSOCKET_KEY,
-    HEADER_UPGRADE, WEBSOCKET_MAGIC_GUID, WEBSOCKET_UPGRADE_VALUE, CONNECTION_UPGRADE_VALUE,
-};
+use crate::ws::WebSocketHandler;
 
 pub struct HTTPHandler {
     ip: String,
@@ -14,8 +10,7 @@ pub struct HTTPHandler {
 }
 
 impl HTTPHandler {
-    
-        pub async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
+    pub async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
         let mut buf = [0u8; 8]; // 前 8 个字节足够识别方法
         let n = stream.peek(&mut buf).await?; // peek 不消费数据
         if n == 0 {
@@ -53,14 +48,19 @@ impl HTTPHandler {
                 let mut buf = vec![0u8; HTTP_BUFFER_LENGTH];
 
                 match stream.read(&mut buf).await {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        break;
+                    }
                     Ok(n) => {
                         println!("HTTP received {} bytes: {:?}", n, &buf[..n]);
 
                         // 一旦 header 包含 WebSocket Upgrade → 切换到 WS handler
-                        if Self::is_websocket_request(&buf[..n]) {
+                        if WebSocketHandler::is_websocket_request(&buf[..n]) {
                             println!("Detected WebSocket upgrade request");
-                            let _ = Self::respond_websocket_handshake(&mut stream, &buf[..n]).await;
+                            let _ = WebSocketHandler::respond_websocket_handshake(
+                                &mut stream,
+                                &buf[..n]
+                            ).await;
                             break;
                         }
 
@@ -73,49 +73,6 @@ impl HTTPHandler {
                 }
             }
         });
-    }
-
-    /// 判断是否为 WebSocket Upgrade
-    fn is_websocket_request(data: &[u8]) -> bool {
-        let s = String::from_utf8_lossy(data);
-        s.contains(HEADER_UPGRADE) && s.to_lowercase().contains(WEBSOCKET_UPGRADE_VALUE)
-    }
-
-    /// 返回 WebSocket 握手响应
-    async fn respond_websocket_handshake(
-        stream: &mut TcpStream,
-        req: &[u8],
-    ) -> anyhow::Result<()> {
-        use sha1::{Digest, Sha1};
-        use base64::engine::general_purpose::STANDARD as BASE64;
-
-        let req_str = String::from_utf8_lossy(req);
-
-        // 提取 Sec-WebSocket-Key
-        let key_line = req_str
-            .lines()
-            .find(|line| line.starts_with(HEADER_SEC_WEBSOCKET_KEY))
-            .ok_or_else(|| anyhow::anyhow!("Missing Sec-WebSocket-Key"))?;
-
-        let key = key_line.split(':').nth(1).unwrap().trim();
-
-        // SHA1(key + magic)
-        let mut hasher = Sha1::new();
-        hasher.update(key.as_bytes());
-        hasher.update(WEBSOCKET_MAGIC_GUID.as_bytes());
-
-        let accept_key = BASE64.encode(hasher.finalize());
-
-        let response = format!(
-            "HTTP/1.1 101 Switching Protocols\r\n\
-             Connection: {CONNECTION_UPGRADE_VALUE}\r\n\
-             Upgrade: {WEBSOCKET_UPGRADE_VALUE}\r\n\
-             Sec-WebSocket-Accept: {accept_key}\r\n\
-             \r\n"
-        );
-
-        stream.write_all(response.as_bytes()).await?;
-        Ok(())
     }
 }
 

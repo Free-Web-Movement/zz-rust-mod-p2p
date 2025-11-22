@@ -19,7 +19,6 @@ pub const HEADER_CONNECTION: &str = "Connection";
 pub const HEADER_SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
 pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 
-
 /// ==============================
 ///       WebSocket 常量
 /// ==============================
@@ -33,7 +32,6 @@ pub const WEBSOCKET_UPGRADE_VALUE: &str = "websocket";
 /// WebSocket Connection: Upgrade
 pub const CONNECTION_UPGRADE_VALUE: &str = "Upgrade";
 
-
 /// ==============================
 ///       网络/系统常量
 /// ==============================
@@ -43,7 +41,6 @@ pub const UDP_MAX_PACKET_SIZE: usize = 2048;
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
-
 
 /// ==============================
 ///       项目级常量
