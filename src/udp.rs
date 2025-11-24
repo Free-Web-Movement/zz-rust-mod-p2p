@@ -1,6 +1,6 @@
 use tokio::net::UdpSocket;
 
-use crate::share::PEEK_STREAM_BUFFER_LENGTH;
+pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
 pub struct UDPHandler {
     ip: String,
@@ -9,6 +9,7 @@ pub struct UDPHandler {
 }
 
 impl UDPHandler {
+
     pub fn new(ip: &String, port: u16) -> Self {
         UDPHandler { ip: ip.clone(), port, listener: None }
     }
@@ -26,7 +27,7 @@ impl UDPHandler {
         // 将 listener 从 self 中取出并移入后台任务
         if let Some(listener) = self.listener.take() {
             tokio::spawn(async move {
-                let mut buf = vec![0u8; PEEK_STREAM_BUFFER_LENGTH];
+                let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
                 loop {
                     match listener.recv_from(&mut buf).await {
                         Ok((n, src)) => {
@@ -98,7 +99,7 @@ mod tests {
 
         for msg in &messages {
             client_socket.send_to(*msg, &server_addr).await?;
-            let mut buf = vec![0u8; PEEK_STREAM_BUFFER_LENGTH];
+            let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
             let (n, _) = client_socket.recv_from(&mut buf).await?;
             assert_eq!(&buf[..n], *msg, "UDP echo mismatch for message {:?}", msg);
         }

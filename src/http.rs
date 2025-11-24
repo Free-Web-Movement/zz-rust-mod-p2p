@@ -1,7 +1,16 @@
 use tokio::net::TcpStream;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
-use crate::share::HTTP_BUFFER_LENGTH;
 use crate::ws::WebSocketHandler;
+
+pub const PEEK_HTTP_BUFFER_LENGTH: usize = 4096;
+
+/// ==============================
+///        HTTP 常量
+/// ==============================
+
+/// 默认 HTTP 读取缓冲区大小
+pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024; // 8 KB
+
 
 pub struct HTTPHandler {
     ip: String,

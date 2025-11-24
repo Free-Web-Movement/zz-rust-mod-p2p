@@ -2,7 +2,13 @@ use tokio::net::TcpListener;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
 
 use crate::http::HTTPHandler;
-use crate::share::PEEK_STREAM_BUFFER_LENGTH;
+
+
+/// 默认 TCP 读取缓冲区
+pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
+
+/// 默认 TCP 截取缓冲区大小
+pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 
 pub struct TCPHandler {
     ip: String,
@@ -36,7 +42,7 @@ impl TCPHandler {
                         Ok((mut socket, addr)) => {
                             println!("TCP connection from {}", addr);
                             tokio::spawn(async move {
-                                let mut buf = vec![0u8; PEEK_STREAM_BUFFER_LENGTH];
+                                let mut buf = vec![0u8; PEEK_TCP_BUFFER_LENGTH];
                                 loop {
                                     if
                                         HTTPHandler::is_http_connection(&socket).await.unwrap_or(

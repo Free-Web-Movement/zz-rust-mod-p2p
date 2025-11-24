@@ -1,12 +1,27 @@
 use tokio::{ io::AsyncWriteExt, net::TcpStream };
 use base64::Engine;
-use crate::share::{
-    HEADER_SEC_WEBSOCKET_KEY,
-    HEADER_UPGRADE,
-    WEBSOCKET_MAGIC_GUID,
-    WEBSOCKET_UPGRADE_VALUE,
-    CONNECTION_UPGRADE_VALUE,
-};
+
+/// ==============================
+///       WebSocket 常量
+/// ==============================
+
+/// RFC 6455 标准固定 Magic GUID（不可随机）
+pub const WEBSOCKET_MAGIC_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+/// WebSocket 标准 Upgrade 值
+pub const WEBSOCKET_UPGRADE_VALUE: &str = "websocket";
+
+/// WebSocket Connection: Upgrade
+pub const CONNECTION_UPGRADE_VALUE: &str = "Upgrade";
+
+
+/// WebSocket Upgrade 所需要的固定 Header
+pub const HEADER_UPGRADE: &str = "Upgrade";
+pub const HEADER_CONNECTION: &str = "Connection";
+pub const HEADER_SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
+pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
+
+
 pub struct WebSocketHandler {
     ip: String,
     port: u16,
