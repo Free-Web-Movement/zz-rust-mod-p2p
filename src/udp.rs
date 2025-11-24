@@ -44,8 +44,6 @@ impl UDPHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::share::PEEK_STREAM_BUFFER_LENGTH;
-
     use super::*;
     use tokio::net::UdpSocket;
     #[tokio::test]
