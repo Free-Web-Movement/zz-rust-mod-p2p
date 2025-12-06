@@ -1,9 +1,27 @@
 use serde_json::Value;
+use zz_account::FreeWebMovementAdddress as Address;
 
-struct context_t<T> {
+enum NetType {
+    UDP,
+    TCP,
+    HTTP,
+    Http2,
+    WebSocket
+}
+
+struct NetClient {
+    net_type: NetType
+}
+
+struct NetServer <T> {
     ip: String,
     port: u16,
-    stream: &mut <T>,   // TCP/UDP Stream
+    address: Address,
+    listeners: &mut GenericArray<T>,
+}
+
+struct Context<T> {
+    stream: &mut T,   // TCP/UDP Stream
     global: Value,
     local: Value
 }
