@@ -7,3 +7,4 @@ pub mod ws;
 pub mod nat;
 pub mod node;
 pub mod manager;
+pub mod defines;
