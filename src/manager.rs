@@ -24,9 +24,11 @@ mod tests {
 
     #[test]
     fn test_manager() {
-        let node = Node::new("manager", "127.0.0.1", 4000, 4001);
-        let mgr = NodeManager::new(node.clone());
+        let address = zz_account::address::FreeWebMovementAddress::random();
+        let n = Node::new("node1".to_owned(), address, "127.0.0.1".to_owned(), 3000);
+        let mgr = NodeManager::new(n.clone());
 
-        assert_eq!(mgr.node.id, node.id);
+        assert_eq!(mgr.node.name, n.name);
+        assert_eq!(mgr.node.address.to_string(), n.address.to_string());
     }
 }
