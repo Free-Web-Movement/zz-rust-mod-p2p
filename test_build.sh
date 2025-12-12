@@ -15,25 +15,24 @@ echo "Running cargo tests with coverage instrumentation..."
 cargo test --tests -- --nocapture --show-output
 
 # Find all .profraw files
-PROFRAW_FILES=$(find . -name ".output/*.profraw")
+PROFRAW_FILES=$(find . -wholename ".output/*.profraw")
 
 # Generate coverage report if grcov is installed
 rm -rf coverages || true
-if ! [command -v grcov &> /dev/null]; then
-    echo "Installing grcov"
-    cargo install grcov
-fi
 
-if ! [command -v llvm-cov &> /dev/null]; then
-    echo "Installing llvm-cov"
-    cargo install cargo-llvm-cov
-fi
+check_installed() {
+    if ! command -v "$1" > /dev/null 2>&1 
+    then
+    echo "Installing $1"
+    cargo install $2
+    fi
+}
 
-if ! [command -v nextest &> /dev/null]; then
-    echo "Installing cargo-nextest"
-    cargo install cargo-nextest
-fi
+check_installed grcov cargo-grcov
+check_installed llvm-cov cargo-llvm-cov
+check_installed nextest cargo-nextest
 
+# Generate coverage report
 echo "Generating coverage report with grcov..."
 cargo llvm-cov nextest --html --output-dir coverages
 

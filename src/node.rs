@@ -98,26 +98,16 @@ mod tests {
         assert_eq!(n.ip, "127.0.0.1".to_owned());
         assert_eq!(n.port, 3000);
         assert!(n.start_time == 0);
-        // let start = thread::spawn(|| {
-        //     let rt = tokio::runtime::Runtime::new().unwrap();
-        //     rt.block_on(async {
-        //         let _ = n.start().await;
-        //     });
-        // });
-
-        // let stop = thread::spawn(|| {
-        //     let rt = tokio::runtime::Runtime::new().unwrap();
-        //     rt.block_on(async move {
-        //         thread::sleep(std::time::Duration::from_millis(100));
-        //         let _ = n.stop().await;
-        //     });
-        // });
-
-        // start.join().unwrap();
-        // assert!(n.start_time > 0);
-        // assert!(n.stop_time == 0);
-        // stop.join().unwrap();
-        // assert!(n.start_time > 0);
-        // assert!(n.stop_time > 0);
+        assert!(n.stop_time == 0);
+        let start = thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let _ = n.start().await;
+                assert!(n.start_time > 0);
+                let __ = n.stop().await.unwrap();
+                assert!(n.stop_time > 0);
+            });
+        });
+        start.join().unwrap();
     }
 }
