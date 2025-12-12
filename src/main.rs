@@ -22,11 +22,20 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let mut tcp_server = TCPHandler::new(&opt.ip, opt.tcp_port);
-    tcp_server.start().await?;
+    let address = zz_account::address::FreeWebMovementAddress::random();
+    let mut node = zz_p2p::node::Node::new(
+        "node1".to_owned(),
+        address,
+        opt.ip.clone(),
+        opt.tcp_port,
+    );
+    node.start().await;
 
-    let mut udp_server = zz_p2p::udp::UDPHandler::new(&opt.ip, opt.udp_port);
-    udp_server.start().await?;
+    // let mut tcp_server = TCPHandler::new(&opt.ip, opt.tcp_port);
+    // tcp_server.start().await?;
+
+    // let mut udp_server = zz_p2p::udp::UDPHandler::new(&opt.ip, opt.udp_port);
+    // udp_server.start().await?;
 
     // 阻塞主线程
     loop {
