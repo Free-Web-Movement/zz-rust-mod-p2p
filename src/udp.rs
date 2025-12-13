@@ -1,11 +1,13 @@
-use tokio::net::UdpSocket;
+use std::sync::Arc;
+
+use tokio::{net::UdpSocket, sync::Mutex};
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
 pub struct UDPHandler {
     ip: String,
     port: u16,
-    listener: Option<UdpSocket>,
+    listener: Option<Arc<Mutex<UdpSocket>>>
 }
 
 impl UDPHandler {
@@ -17,7 +19,7 @@ impl UDPHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         // 启动 UDP 监听
         let udp_addr = format!("{}:{}", self.ip, self.port);
-        self.listener = Some(UdpSocket::bind(&udp_addr).await?);
+        self.listener = Some(Arc::new(Mutex::new(UdpSocket::bind(&udp_addr).await?)));
         println!("UDP listening on {}", udp_addr);
         self.handling().await;
         Ok(())
@@ -26,7 +28,9 @@ impl UDPHandler {
     async fn handling(&mut self) {
         // 将 listener 从 self 中取出并移入后台任务
         if let Some(listener) = self.listener.take() {
+            let cloned = Arc::clone(&listener);
             tokio::spawn(async move {
+                let listener = cloned.lock().await;
                 let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
                 loop {
                     match listener.recv_from(&mut buf).await {

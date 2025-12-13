@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use tokio::net::TcpListener;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::sync::Mutex;
 
 use crate::http::HTTPHandler;
 
@@ -13,7 +16,7 @@ pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 pub struct TCPHandler {
     ip: String,
     port: u16,
-    listener: Option<TcpListener>,
+    listener: Option<Arc<Mutex<TcpListener>>>,
 }
 
 impl TCPHandler {
@@ -25,7 +28,7 @@ impl TCPHandler {
         // 启动 TCP 监听
         let tcp_addr = format!("{}:{}", self.ip, self.port);
         let listener = TcpListener::bind(&tcp_addr).await?;
-        self.listener = Some(listener);
+        self.listener = Some(Arc::new(Mutex::new(listener)));
         println!("TCP listening on {}", tcp_addr);
         println!("Starting TCP server on {}:{}", self.ip, self.port);
         self.handling().await;
@@ -36,7 +39,8 @@ impl TCPHandler {
         // 将 listener 从 self 中取出并移入后台任务
         if let Some(listener) = self.listener.take() {
             tokio::spawn(async move {
-                let listener = listener;
+                let cloned = Arc::clone(&listener);
+                let listener = cloned.lock().await;
                 loop {
                     match listener.accept().await {
                         Ok((mut socket, addr)) => {
