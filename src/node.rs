@@ -20,6 +20,7 @@ use async_trait::async_trait;
 #[async_trait]
 trait Listener: Send + Sync + 'static {
     async fn start(&mut self) -> anyhow::Result<()>;
+    fn new(ip: &String, port: u16) -> Self;
 }
 
 #[async_trait]
@@ -27,12 +28,18 @@ impl Listener for TCPHandler {
     async fn start(&mut self) -> anyhow::Result<()> {
         self.start().await
     }
+    fn new(ip: &String, port: u16) -> Self {
+        TCPHandler::new(ip, port)
+    }
 }
 
 #[async_trait]
 impl Listener for UDPHandler {
     async fn start(&mut self) -> anyhow::Result<()> {
         self.start().await
+    }
+    fn new(ip: &String, port: u16) -> Self {
+        UDPHandler::new(ip, port)
     }
 }
 
@@ -73,46 +80,41 @@ impl Node {
 
     async fn listen<T: Listener + Send + 'static>(
         &self,
-        handler: &Arc<Mutex<T>>,
-    ) -> anyhow::Result<JoinHandle<u8>> {
-        let handler_clone: Arc<Mutex<T>> = Arc::clone(handler);
-        Ok(tokio::spawn(async move {
+        object: T,
+        threads: &mut Arc<Vec<tokio::task::JoinHandle<u8>>>,
+    ) -> anyhow::Result<Arc<Mutex<T>>> {
+        let handler = Arc::new(Mutex::new(object));
+        let handler_clone: Arc<Mutex<T>> = Arc::clone(&handler);
+        let threads = Arc::get_mut(threads).unwrap();
+        threads.push(tokio::spawn(async move {
             let mut handler = handler_clone.lock().await;
             let _ = handler.start().await;
             0u8
-        }))
+        }));
+        Ok(handler)
     }
 
+    // Removed incorrect generic overload that used `Arc` as a trait bound (not allowed).
+    // Use the parameterless `start` implementation below to start the node's handlers.
     pub async fn start(&mut self) {
         self.start_time = timestamp();
         let ip: String = self.ip.clone();
         let port: u16 = self.port;
-        self.tcp_handler = Some(Arc::new(Mutex::new(TCPHandler::new(&ip, port))));
-        self.udp_handler = Some(Arc::new(Mutex::new(UDPHandler::new(&ip, port))));
-        let mut threads: Vec<tokio::task::JoinHandle<u8>> = vec![];
+        let mut threads: Arc<Vec<tokio::task::JoinHandle<u8>>> = Arc::new(vec![]);
 
-        if let Some(tcp_handler) = &self.tcp_handler {
-            let tcp_handler_spawned = self.listen(tcp_handler).await.unwrap();
-            // let tcp_handler_clone = Arc::clone(tcp_handler);
-            // let tcp_thread_spawned = tokio::spawn(async move {
-            //     let mut tcp_handler = tcp_handler_clone.lock().await;
-            //     let _ = tcp_handler.start().await;
-            //     0u8
-            // });
-            threads.push(tcp_handler_spawned);
-        }
-
-        if let Some(udp_handler) = &self.udp_handler {
-            let udp_handler_spawned = self.listen(udp_handler).await.unwrap();
-            // let udp_handler_clone = Arc::clone(udp_handler);
-            // let udp_thread_spawned = tokio::spawn(async move {
-            //     let mut udp_handler = udp_handler_clone.lock().await;
-            //     let _ = udp_handler.start().await;
-            //     0u8
-            // });
-            threads.push(udp_handler_spawned);
-        }
-        let results: Vec<Result<u8, tokio::task::JoinError>> = join_all(threads).await;
+        self.tcp_handler = Some(
+            self.listen(TCPHandler::new(&ip, port), &mut threads)
+                .await
+                .unwrap(),
+        );
+        self.udp_handler = Some(
+            self.listen(UDPHandler::new(&ip, port), &mut threads)
+                .await
+                .unwrap(),
+        );
+        
+        let results: Vec<Result<u8, tokio::task::JoinError>> =
+            join_all(Arc::try_unwrap(threads).unwrap()).await;
         for res in results {
             match res {
                 Ok(_) => {}
