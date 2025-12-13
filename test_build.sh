@@ -28,7 +28,7 @@ check_installed() {
     fi
 }
 
-check_installed grcov cargo-grcov
+check_installed grcov grcov
 check_installed llvm-cov cargo-llvm-cov
 check_installed nextest cargo-nextest
 
@@ -42,4 +42,9 @@ echo "Test and coverage script completed."
 
 # Show result in browser
 
-xdg-open coverages/html/index.html
+
+if command -v xdg-open > /dev/null 2>&1 
+then
+    xdg-open coverages/html/index.html
+fi
+
