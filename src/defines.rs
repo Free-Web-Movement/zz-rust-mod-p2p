@@ -1,19 +1,18 @@
 use serde_json::Value;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-
 trait NatOperations {
     fn punch_hole(&self, target_ip: &str, target_port: u16) -> anyhow::Result<()>;
     fn maintain_nat(&self) -> anyhow::Result<()>;
     fn plug(&self, one: &(String, u16), another: &(String, u16)) -> bool;
     fn unplug(&self, one: &(String, u16), another: &(String, u16)) -> bool;
 }
-trait NetService<T> {
-    fn start(&self);
-    fn stop(&self);
-    fn send(&self, stream: &mut T, data: &[u8]);
-    fn receive(&self, stream: &mut T) -> Vec<u8>;
-    fn process(&self, context: &mut Context<T>);
+trait NetService {
+    async fn start(&self);
+    async fn stop(&self);
+    async fn send(&self, data: &[u8]);
+    async fn receive(&self) -> Vec<u8>;
+    async fn process(&self, context: &mut Context);
     fn status(&self) -> String;
 }
 
@@ -48,7 +47,6 @@ struct NatInfo {
     pub turn_port: u16,
 }
 
-
 struct Node {
     pub ip: String,
     pub port: u16,
@@ -65,9 +63,8 @@ struct NatPair<S, T> {
     plugged_pairs: Vec<(T, T)>,
 }
 
-struct Context<'a, T> {
+struct Context {
     node: Node,
-    stream: &'a mut T, // TCP/UDP Stream
     global: Value,
     local: Value,
 }

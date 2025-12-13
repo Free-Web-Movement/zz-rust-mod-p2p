@@ -1,13 +1,40 @@
 use std::{
     sync::Arc,
-    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use tokio::task::JoinHandle;
 
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::{tcp::TCPHandler, udp::UDPHandler};
+use crate::{
+    tcp::{self, TCPHandler},
+    udp::{self, UDPHandler},
+};
+
+use futures::future::join_all;
+
+use async_trait::async_trait;
+
+#[async_trait]
+trait Listener: Send + Sync + 'static {
+    async fn start(&mut self) -> anyhow::Result<()>;
+}
+
+#[async_trait]
+impl Listener for TCPHandler {
+    async fn start(&mut self) -> anyhow::Result<()> {
+        self.start().await
+    }
+}
+
+#[async_trait]
+impl Listener for UDPHandler {
+    async fn start(&mut self) -> anyhow::Result<()> {
+        self.start().await
+    }
+}
 
 /* =========================
    NODE
@@ -43,33 +70,57 @@ impl Node {
             stop_time: 0,
         }
     }
-    
+
+    async fn listen<T: Listener + Send + 'static>(
+        &self,
+        handler: &Arc<Mutex<T>>,
+    ) -> anyhow::Result<JoinHandle<u8>> {
+        let handler_clone: Arc<Mutex<T>> = Arc::clone(handler);
+        Ok(tokio::spawn(async move {
+            let mut handler = handler_clone.lock().await;
+            let _ = handler.start().await;
+            0u8
+        }))
+    }
+
     pub async fn start(&mut self) {
         self.start_time = timestamp();
         let ip: String = self.ip.clone();
         let port: u16 = self.port;
         self.tcp_handler = Some(Arc::new(Mutex::new(TCPHandler::new(&ip, port))));
         self.udp_handler = Some(Arc::new(Mutex::new(UDPHandler::new(&ip, port))));
+        let mut threads: Vec<tokio::task::JoinHandle<u8>> = vec![];
 
-        let Some(tcp_handler) = self.tcp_handler.as_ref() else {
-            return;
-        };
-        let Some(udp_handler) = self.udp_handler.as_ref() else {
-            return;
-        };
-        let tcp_handler_clone = Arc::clone(&tcp_handler);
-        let udp_handler_clone = Arc::clone(&udp_handler);
+        if let Some(tcp_handler) = &self.tcp_handler {
+            let tcp_handler_spawned = self.listen(tcp_handler).await.unwrap();
+            // let tcp_handler_clone = Arc::clone(tcp_handler);
+            // let tcp_thread_spawned = tokio::spawn(async move {
+            //     let mut tcp_handler = tcp_handler_clone.lock().await;
+            //     let _ = tcp_handler.start().await;
+            //     0u8
+            // });
+            threads.push(tcp_handler_spawned);
+        }
 
-        let handler = thread::spawn(async move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                let mut tcp_handler = tcp_handler_clone.lock().await;
-                let mut udp_handler = udp_handler_clone.lock().await;
-                let _ = tcp_handler.start().await;
-                let _ = udp_handler.start().await;
-            });
-        });
-        handler.join().unwrap().await;
+        if let Some(udp_handler) = &self.udp_handler {
+            let udp_handler_spawned = self.listen(udp_handler).await.unwrap();
+            // let udp_handler_clone = Arc::clone(udp_handler);
+            // let udp_thread_spawned = tokio::spawn(async move {
+            //     let mut udp_handler = udp_handler_clone.lock().await;
+            //     let _ = udp_handler.start().await;
+            //     0u8
+            // });
+            threads.push(udp_handler_spawned);
+        }
+        let results: Vec<Result<u8, tokio::task::JoinError>> = join_all(threads).await;
+        for res in results {
+            match res {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("Error starting handler: {}", e);
+                }
+            }
+        }
     }
 
     pub async fn stop(&mut self) {
@@ -77,26 +128,26 @@ impl Node {
         // take ownership of the Arcs we hold and drop them so the underlying sockets
         // are closed when there are no remaining owners
 
-        let Some(tcp_handler) = self.tcp_handler.as_ref() else {
+        // take ownership of our Option<Arc<...>> values
+        let Some(tcp_handler) = self.tcp_handler.take() else {
             return;
         };
-        let Some(udp_handler) = self.udp_handler.as_ref() else {
+        let Some(udp_handler) = self.udp_handler.take() else {
+            // restore tcp if udp missing
+            self.tcp_handler = Some(tcp_handler);
             return;
         };
 
-        let tcp_handler_clone = Arc::clone(&tcp_handler);
-        let udp_handler_clone = Arc::clone(&udp_handler);
+        // briefly lock both handlers to ensure they are not in use,
+        // then drop the locks and the Arc owners so resources can close.
+        {
+            let _tcp_lock = tcp_handler.lock().await;
+            let _udp_lock = udp_handler.lock().await;
+            // locks dropped at end of scope
+        }
 
-        let handler = thread::spawn(async move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                let tcp_handler = tcp_handler_clone.lock().await;
-                let udp_handler = udp_handler_clone.lock().await;
-                drop(tcp_handler);
-                drop(udp_handler);
-            });
-        });
-        handler.join().unwrap().await;
+        drop(tcp_handler);
+        drop(udp_handler);
 
         self.stop_time = timestamp();
     }

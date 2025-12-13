@@ -24,13 +24,13 @@ check_installed() {
     if ! command -v "$1" > /dev/null 2>&1 
     then
     echo "Installing $1"
-    cargo install $2
+    cargo install $1
     fi
 }
 
-check_installed grcov grcov
-check_installed llvm-cov cargo-llvm-cov
-check_installed nextest cargo-nextest
+check_installed grcov
+check_installed cargo-llvm-cov
+check_installed cargo-nextest
 
 # Generate coverage report
 echo "Generating coverage report with grcov..."
