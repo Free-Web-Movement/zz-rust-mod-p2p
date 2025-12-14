@@ -3,14 +3,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::task::JoinHandle;
 
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{
-    tcp::{self, TCPHandler},
-    udp::{self, UDPHandler},
+    tcp::TCPHandler,
+    udp::UDPHandler,
 };
 
 use futures::future::join_all;
@@ -177,7 +176,7 @@ mod tests {
     async fn test_node_init() {
         let address = zz_account::address::FreeWebMovementAddress::random();
         let address_cloned = address.clone();
-        let mut n = Node::new("node1".to_owned(), address, "127.0.0.1".to_owned(), 3000);
+        let n = Node::new("node1".to_owned(), address, "127.0.0.1".to_owned(), 3000);
 
         assert_eq!(n.name, "node1");
         assert_eq!(n.address.to_string(), address_cloned.to_string());

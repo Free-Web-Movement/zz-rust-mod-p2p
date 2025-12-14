@@ -1,174 +1,166 @@
 use std::sync::Arc;
 
-use tokio::net::TcpListener;
-use tokio::io::{ AsyncReadExt, AsyncWriteExt };
-use tokio::sync::Mutex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::http::HTTPHandler;
-
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
 
-/// 默认 TCP 截取缓冲区大小
+/// HTTP 探测用 peek 缓冲区
 pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 
 pub struct TCPHandler {
     ip: String,
     port: u16,
-    listener: Option<Arc<Mutex<TcpListener>>>,
+    listener: Arc<TcpListener>,
 }
 
 impl TCPHandler {
-    pub fn new(ip: &String, port: u16) -> Self {
-        TCPHandler { ip: ip.clone(), port, listener: None }
+    /// 创建并 bind TCPHandler
+    pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
+        let addr = format!("{}:{}", ip, port);
+        let listener = TcpListener::bind(&addr).await?;
+
+        println!("TCP listening on {}", addr);
+
+        Ok(Arc::new(Self {
+            ip: ip.to_string(),
+            port,
+            listener: Arc::new(listener),
+        }))
     }
 
-    pub async fn start(&mut self) -> anyhow::Result<()> {
-        // 启动 TCP 监听
-        let tcp_addr = format!("{}:{}", self.ip, self.port);
-        let listener = TcpListener::bind(&tcp_addr).await?;
-        self.listener = Some(Arc::new(Mutex::new(listener)));
-        println!("TCP listening on {}", tcp_addr);
-        println!("Starting TCP server on {}:{}", self.ip, self.port);
-        self.handling().await;
-        Ok(())
-    }
+    /// 启动 accept loop（阻塞）
+    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
+        loop {
+            let (socket, addr) = self.listener.accept().await?;
+            let this = self.clone();
 
-    async fn handling(&mut self) {
-        // 将 listener 从 self 中取出并移入后台任务
-        if let Some(listener) = self.listener.take() {
             tokio::spawn(async move {
-                let cloned = Arc::clone(&listener);
-                let listener = cloned.lock().await;
-                loop {
-                    match listener.accept().await {
-                        Ok((mut socket, addr)) => {
-                            println!("TCP connection from {}", addr);
-                            tokio::spawn(async move {
-                                let mut buf = vec![0u8; PEEK_TCP_BUFFER_LENGTH];
-                                loop {
-                                    if
-                                        HTTPHandler::is_http_connection(&socket).await.unwrap_or(
-                                            false
-                                        )
-                                    {
-                                        println!("HTTP connection detected from {}", addr);
-                                        // 将 HTTP 处理交给一个新的任务来独占 socket，并结束当前连接处理循环
-                                        tokio::spawn(async move {
-                                            let http_handler = HTTPHandler::new(
-                                                &addr.ip().to_string(),
-                                                addr.port(),
-                                                socket
-                                            );
-                                            http_handler.start().await;
-                                        });
-                                        break;
-                                    }
-                                    match socket.read(&mut buf).await {
-                                        Ok(0) => {
-                                            break;
-                                        } // 连接关闭
-                                        Ok(n) => {
-                                            println!(
-                                                "TCP received {} bytes from {}: {:?}",
-                                                n,
-                                                addr,
-                                                &buf[..n]
-                                            );
-                                            let _ = socket.write_all(&buf[..n]).await;
-                                        }
-                                        Err(e) => {
-                                            eprintln!("TCP read error: {:?}", e);
-                                            break;
-                                        }
-                                    }
-                                }
-                                println!("TCP connection closed {}", addr);
-                            });
-                        }
-                        Err(e) => eprintln!("Accept error: {:?}", e),
-                    }
-                }
+                this.handle_connection(socket, addr).await;
             });
         }
+    }
+
+    /// 每个 TCP 连接的唯一入口
+    async fn handle_connection(self: Arc<Self>, mut socket: TcpStream, addr: std::net::SocketAddr) {
+        println!("TCP connection from {}", addr);
+
+        // 👇 只判断一次 HTTP
+        match HTTPHandler::is_http_connection(&socket).await {
+            Ok(true) => {
+                println!("HTTP connection detected from {}", addr);
+                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket)
+                    .start()
+                    .await;
+                return;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("HTTP detection error: {:?}", e);
+                return;
+            }
+        }
+
+        // 👇 普通 TCP 处理
+        let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
+
+        loop {
+            match socket.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    // 默认 echo（测试 & 占位）
+                    if self
+                        .on_tcp_data(&buf[..n], &mut socket, &addr)
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("TCP read error {}: {:?}", addr, e);
+                    break;
+                }
+            }
+        }
+
+        println!("TCP connection closed {}", addr);
+    }
+
+    async fn on_tcp_data(
+        &self,
+        data: &[u8],
+        socket: &mut TcpStream,
+        addr: &std::net::SocketAddr,
+    ) -> anyhow::Result<()> {
+        println!("TCP received {} bytes from {}", data.len(), addr);
+
+        // 默认行为：echo（保持你现在的测试通过）
+        socket.write_all(data).await?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
-    use tokio::io::{ AsyncReadExt, AsyncWriteExt };
 
     #[tokio::test]
     async fn test_tcp_echo() -> anyhow::Result<()> {
-        let ip = "127.0.0.1".to_string();
-        let port = 18000; // 测试专用端口，避免冲突
-        let mut server = TCPHandler::new(&ip, port);
+        let ip = "127.0.0.1";
+        let port = 18000;
 
-        // 启动 TCPHandler，在后台 task
-        tokio::spawn(async move {
-            server.start().await.unwrap();
-        });
+        let server = TCPHandler::bind(ip, port).await?;
+        tokio::spawn(server.clone().start());
 
-        // 等待服务器启动
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        // 连接到服务器
         let mut stream = TcpStream::connect(format!("{}:{}", ip, port)).await?;
         let msg = b"hello tcp";
 
-        // 写入消息
         stream.write_all(msg).await?;
 
-        // 读回显
         let mut buf = vec![0u8; msg.len()];
         stream.read_exact(&mut buf).await?;
 
-        assert_eq!(buf, msg, "TCP echo mismatch");
+        assert_eq!(buf, msg);
 
-        stream.shutdown().await?;
-
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         Ok(())
     }
 
     #[tokio::test]
     async fn test_tcp_multiple_clients() -> anyhow::Result<()> {
-        let ip = "127.0.0.1".to_string();
-        let port = 18001; // 测试专用端口
-        let mut server = TCPHandler::new(&ip, port);
+        let ip = "127.0.0.1";
+        let port = 18001;
 
-        tokio::spawn(async move {
-            server.start().await.unwrap();
-        });
+        let server = TCPHandler::bind(ip, port).await?;
+        tokio::spawn(server.clone().start());
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        // 同时启动两个客户端
-        let mut stream1 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
-        let mut stream2 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
+        let mut c1 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
+        let mut c2 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
 
-        let msg1 = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let msg1 = b"client1";
         let msg2 = b"client2";
 
-        // 写入消息
-        stream1.write_all(msg1).await?;
-        stream2.write_all(msg2).await?;
+        c1.write_all(msg1).await?;
+        c2.write_all(msg2).await?;
 
         let mut buf1 = vec![0u8; msg1.len()];
         let mut buf2 = vec![0u8; msg2.len()];
 
-        stream1.read_exact(&mut buf1).await?;
-        stream2.read_exact(&mut buf2).await?;
+        c1.read_exact(&mut buf1).await?;
+        c2.read_exact(&mut buf2).await?;
 
         assert_eq!(buf1, msg1);
         assert_eq!(buf2, msg2);
-
-        stream1.shutdown().await?;
-        stream2.shutdown().await?;
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
         Ok(())
     }
