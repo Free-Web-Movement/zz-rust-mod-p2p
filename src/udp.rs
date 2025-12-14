@@ -1,48 +1,47 @@
 use std::sync::Arc;
-
 use tokio::{net::UdpSocket, sync::Mutex};
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
+#[derive(Debug, Clone)]
 pub struct UDPHandler {
     ip: String,
     port: u16,
-    listener: Option<Arc<Mutex<UdpSocket>>>
+    listener: Option<Arc<Mutex<UdpSocket>>>,
 }
 
 impl UDPHandler {
-
-    pub fn new(ip: &String, port: u16) -> Self {
-        UDPHandler { ip: ip.clone(), port, listener: None }
+    pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
+        Ok(Arc::new(UDPHandler {
+            ip: ip.to_string(),
+            port,
+            listener: None,
+        }))
     }
 
-    pub async fn start(&mut self) -> anyhow::Result<()> {
-        // 启动 UDP 监听
+    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
         let udp_addr = format!("{}:{}", self.ip, self.port);
-        self.listener = Some(Arc::new(Mutex::new(UdpSocket::bind(&udp_addr).await?)));
+        let socket = UdpSocket::bind(&udp_addr).await?;
         println!("UDP listening on {}", udp_addr);
-        self.handling().await;
-        Ok(())
-    }
 
-    async fn handling(&mut self) {
-        // 将 listener 从 self 中取出并移入后台任务
-        if let Some(listener) = self.listener.take() {
-            let cloned = Arc::clone(&listener);
-            tokio::spawn(async move {
-                let listener = cloned.lock().await;
-                let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
-                loop {
-                    match listener.recv_from(&mut buf).await {
-                        Ok((n, src)) => {
-                            println!("UDP received {} bytes from {}: {:?}", n, src, &buf[..n]);
-                            let _ = listener.send_to(&buf[..n], &src).await;
-                        }
-                        Err(e) => eprintln!("UDP recv error: {:?}", e),
+        let socket = Arc::new(Mutex::new(socket));
+        let socket_clone = Arc::clone(&socket);
+
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
+            loop {
+                let mut sock = socket_clone.lock().await;
+                match sock.recv_from(&mut buf).await {
+                    Ok((n, src)) => {
+                        println!("UDP received {} bytes from {}: {:?}", n, src, &buf[..n]);
+                        let _ = sock.send_to(&buf[..n], &src).await;
                     }
+                    Err(e) => eprintln!("UDP recv error: {:?}", e),
                 }
-            });
-        }
+            }
+        });
+
+        Ok(())
     }
 }
 
@@ -50,60 +49,50 @@ impl UDPHandler {
 mod tests {
     use super::*;
     use tokio::net::UdpSocket;
+
     #[tokio::test]
     async fn test_udp_echo() -> anyhow::Result<()> {
-        let ip = "127.0.0.1".to_string();
-        let port = 19000; // 测试专用端口，避免冲突
-        let mut server = UDPHandler::new(&ip, port);
+        let ip = "127.0.0.1";
+        let port = 19000;
 
-        // 启动 UDPHandler，在后台 task
-        tokio::spawn(async move {
-            server.start().await.unwrap();
-        });
+        let server = UDPHandler::bind(ip, port).await?;
+        let server_clone = Arc::clone(&server);
+        server_clone.start().await?; // 启动后台服务器
 
-        // 给服务器一点时间启动
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        // 客户端 socket
-        let client_socket = UdpSocket::bind("0.0.0.0:0").await?;
+        let client = UdpSocket::bind("0.0.0.0:0").await?;
         let server_addr = format!("{}:{}", ip, port);
 
         let msg = b"hello udp";
+        client.send_to(msg, &server_addr).await?;
 
-        // 发送消息到服务器
-        client_socket.send_to(msg, &server_addr).await?;
-
-        // 接收回显
-        let mut buf = vec![0u8; 1024];
-        let (n, _) = client_socket.recv_from(&mut buf).await?;
-
-        assert_eq!(&buf[..n], msg, "UDP echo mismatch");
+        let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
+        let (n, _) = client.recv_from(&mut buf).await?;
+        assert_eq!(&buf[..n], msg);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_udp_multiple_messages() -> anyhow::Result<()> {
-        let ip = "127.0.0.1".to_string();
+        let ip = "127.0.0.1";
         let port = 19001;
-        let mut server = UDPHandler::new(&ip, port);
 
-        tokio::spawn(async move {
-            server.start().await.unwrap();
-        });
+        let server = UDPHandler::bind(ip, port).await?;
+        server.start().await?;
 
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let client_socket = UdpSocket::bind("0.0.0.0:0").await?;
+        let client = UdpSocket::bind("0.0.0.0:0").await?;
         let server_addr = format!("{}:{}", ip, port);
 
         let messages = vec![b"msg1", b"msg2", b"msg3"];
-
-        for msg in &messages {
-            client_socket.send_to(*msg, &server_addr).await?;
+        for msg in messages.iter() {
+            client.send_to(*msg, &server_addr).await?;
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
-            let (n, _) = client_socket.recv_from(&mut buf).await?;
-            assert_eq!(&buf[..n], *msg, "UDP echo mismatch for message {:?}", msg);
+            let (n, _) = client.recv_from(&mut buf).await?;
+            assert_eq!(&buf[..n], *msg);
         }
 
         Ok(())

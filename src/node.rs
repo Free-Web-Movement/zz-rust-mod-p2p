@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{
-    tcp::TCPHandler,
+    tcp::{self, TCPHandler},
     udp::UDPHandler,
 };
 
@@ -19,7 +19,7 @@ use async_trait::async_trait;
 #[async_trait]
 trait Listener: Send + Sync + 'static {
     async fn start(&mut self) -> anyhow::Result<()>;
-    fn new(ip: &String, port: u16) -> Self;
+    async fn new(ip: &String, port: u16) -> Arc<Self>;
 }
 
 #[async_trait]
@@ -27,8 +27,8 @@ impl Listener for TCPHandler {
     async fn start(&mut self) -> anyhow::Result<()> {
         self.start().await
     }
-    fn new(ip: &String, port: u16) -> Self {
-        TCPHandler::new(ip, port)
+    async fn new(ip: &String, port: u16) -> Arc<Self> {
+        TCPHandler::bind(ip, port).await.unwrap()
     }
 }
 
@@ -37,8 +37,8 @@ impl Listener for UDPHandler {
     async fn start(&mut self) -> anyhow::Result<()> {
         self.start().await
     }
-    fn new(ip: &String, port: u16) -> Self {
-        UDPHandler::new(ip, port)
+    async fn new(ip: &String, port: u16) -> Arc<Self> {
+        UDPHandler::bind(ip, port).await.unwrap()
     }
 }
 
@@ -101,13 +101,16 @@ impl Node {
         let port: u16 = self.port;
         let mut threads: Arc<Vec<tokio::task::JoinHandle<u8>>> = Arc::new(vec![]);
 
+        let tcp = TCPHandler::bind(&ip, port).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(&ip, port).await.unwrap().as_ref().clone();
+
         self.tcp_handler = Some(
-            self.listen(TCPHandler::new(&ip, port), &mut threads)
+            self.listen(tcp, &mut threads)
                 .await
                 .unwrap(),
         );
         self.udp_handler = Some(
-            self.listen(UDPHandler::new(&ip, port), &mut threads)
+            self.listen(udp, &mut threads)
                 .await
                 .unwrap(),
         );

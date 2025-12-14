@@ -11,6 +11,8 @@ pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
 /// HTTP 探测用 peek 缓冲区
 pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 
+
+#[derive( Clone)]
 pub struct TCPHandler {
     ip: String,
     port: u16,
