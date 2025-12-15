@@ -1,7 +1,7 @@
 use crate::defines::Listener;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::{net::UdpSocket, sync::Mutex};
+use tokio::{ net::UdpSocket, sync::Mutex };
 use tokio_util::sync::CancellationToken;
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
@@ -10,16 +10,18 @@ pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 pub struct UDPHandler {
     ip: String,
     port: u16,
-    listener: Option<Arc<Mutex<UdpSocket>>>,
+    listener: Option<Arc<UdpSocket>>,
 }
 
 impl UDPHandler {
     pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
-        Ok(Arc::new(UDPHandler {
-            ip: ip.to_string(),
-            port,
-            listener: None,
-        }))
+        Ok(
+            Arc::new(UDPHandler {
+                ip: ip.to_string(),
+                port,
+                listener: None,
+            })
+        )
     }
 
     pub async fn start(self: &Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
@@ -32,9 +34,11 @@ impl UDPHandler {
 
         let shutdown = token.clone();
 
+        let cloned = self.clone();
+
         tokio::spawn(async move {
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
-            let socket = socket_clone.lock().await;
+            let mut socket = socket_clone.lock().await;
             loop {
                 tokio::select! {
                     _ = shutdown.cancelled() => {
@@ -42,13 +46,24 @@ impl UDPHandler {
                     }
                     res = socket.recv_from(&mut buf) => {
                         if let Ok((n, src)) = res {
-                            let _ = socket.send_to(&buf[..n], src).await;
+                            // let _ = socket.send_to(&buf[..n], src).await;
+                            let _ = cloned.clone().on_data(&buf[..n], &*socket, &src).await;
                         }
                     }
                 }
             }
         });
 
+        Ok(())
+    }
+
+    async fn on_data(self: Arc<Self>,
+        data: &[u8],
+        socket: &UdpSocket,
+        des: &std::net::SocketAddr
+    ) -> anyhow::Result<()> {
+        println!("UDP received {} bytes from {}", data.len(), des);
+        let _ = socket.send_to(data, des).await;
         Ok(())
     }
 }

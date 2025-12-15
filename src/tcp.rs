@@ -101,7 +101,7 @@ impl TCPHandler {
                     match res {
                         Ok(0) => break,
                         Ok(n) => {
-                            if self.on_tcp_data(&buf[..n], &mut socket, &addr).await.is_err() {
+                            if self.on_data(&buf[..n], &mut socket, &addr).await.is_err() {
                                 break;
                             }
                         }
@@ -114,7 +114,7 @@ impl TCPHandler {
         println!("TCP connection closed {}", addr);
     }
 
-    async fn on_tcp_data(
+    async fn on_data(
         &self,
         data: &[u8],
         socket: &mut TcpStream,
