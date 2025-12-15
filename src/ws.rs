@@ -1,5 +1,10 @@
-use tokio::{ io::AsyncWriteExt, net::TcpStream };
+use std::sync::Arc;
+
+use futures::lock;
+use tokio::{ io::AsyncWriteExt, net::TcpStream, sync::Mutex };
 use base64::Engine;
+
+use crate::context::Context;
 
 /// ==============================
 ///       WebSocket 常量
@@ -25,12 +30,13 @@ pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 pub struct WebSocketHandler {
     ip: String,
     port: u16,
-    stream: TcpStream,
+    stream: Arc<Mutex<TcpStream>>,
+    context: Arc<Context>
 }
 
 impl WebSocketHandler {
-    pub fn new(ip: &String, port: u16, stream: TcpStream) -> Self {
-        WebSocketHandler { ip: ip.clone(), port, stream }
+    pub fn new(ip: &String, port: u16, stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
+        Self { ip: ip.to_string(), port, stream, context }
     }
     /// 判断是否为 WebSocket Upgrade
     pub fn is_websocket_request(data: &[u8]) -> bool {
@@ -40,7 +46,8 @@ impl WebSocketHandler {
 
     /// 返回 WebSocket 握手响应
     pub async fn respond_websocket_handshake(
-        stream: &mut TcpStream,
+        self: Arc<Self>,
+        // stream: &mut TcpStream,
         req: &[u8]
     ) -> anyhow::Result<()> {
         use sha1::{ Digest, Sha1 };
@@ -71,7 +78,9 @@ impl WebSocketHandler {
              \r\n"
         );
 
-        stream.write_all(response.as_bytes()).await?;
+        let stream = self.stream.clone();
+        let mut locked = stream.lock().await;
+        locked.write_all(response.as_bytes()).await?;
         Ok(())
     }
 }

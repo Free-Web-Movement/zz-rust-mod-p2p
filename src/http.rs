@@ -1,94 +1,92 @@
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+
+use crate::context::Context;
 use crate::ws::WebSocketHandler;
 
-pub const PEEK_HTTP_BUFFER_LENGTH: usize = 4096;
-
-/// ==============================
-///        HTTP 常量
-/// ==============================
-
-/// 默认 HTTP 读取缓冲区大小
-pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024; // 8 KB
-
+pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024;
 
 pub struct HTTPHandler {
     ip: String,
     port: u16,
-    stream: TcpStream,
+    stream: Arc<Mutex<TcpStream>>,
+    context: Arc<Context>,
 }
 
 impl HTTPHandler {
     pub async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
-        let mut buf = [0u8; 8]; // 前 8 个字节足够识别方法
-        let n = stream.peek(&mut buf).await?; // peek 不消费数据
+        let mut buf = [0u8; 8];
+        let n = stream.peek(&mut buf).await?;
         if n == 0 {
             return Ok(false);
         }
         let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
-        let http_methods = [
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "HEAD",
-            "OPTIONS",
-            "PATCH",
-            "CONNECT",
-            "TRACE",
-        ];
-        for method in &http_methods {
-            if s.starts_with(method) {
-                return Ok(true);
-            }
+        Ok(matches!(s, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"))
+    }
+
+    pub fn new(ip: &String, port: u16, stream: TcpStream, context: Arc<Context>) -> Self {
+        Self {
+            ip: ip.clone(),
+            port,
+            stream: Arc::new(Mutex::new(stream)),
+            context,
         }
-        Ok(false)
     }
 
-    pub fn new(ip: &String, port: u16, stream: TcpStream) -> Self {
-        HTTPHandler { ip: ip.clone(), port, stream }
-    }
+    /// ⚠️ 注意：这里 **不 spawn**
+    pub async fn start(&self, token: CancellationToken) -> anyhow::Result<()> {
+        let mut buf = vec![0u8; HTTP_BUFFER_LENGTH];
 
-    pub async fn start(self) {
-        tokio::spawn(async move {
-            let mut stream = self.stream;
+        loop {
+            tokio::select! {
+                _ = token.cancelled() => {
+                    break;
+                }
 
-            loop {
-                let mut buf = vec![0u8; HTTP_BUFFER_LENGTH];
-
-                match stream.read(&mut buf).await {
-                    Ok(0) => {
+                res = async {
+                    let mut stream = self.stream.lock().await;
+                    stream.read(&mut buf).await
+                } => {
+                    let n = res?;
+                    if n == 0 {
                         break;
                     }
-                    Ok(n) => {
-                        println!("HTTP received {} bytes: {:?}", n, &buf[..n]);
 
-                        // 一旦 header 包含 WebSocket Upgrade → 切换到 WS handler
-                        if WebSocketHandler::is_websocket_request(&buf[..n]) {
-                            println!("Detected WebSocket upgrade request");
-                            let _ = WebSocketHandler::respond_websocket_handshake(
-                                &mut stream,
-                                &buf[..n]
-                            ).await;
-                            break;
-                        }
+                    let data = &buf[..n];
 
-                        let _ = stream.write_all(&buf[..n]).await;
-                    }
-                    Err(e) => {
-                        eprintln!("HTTP read error: {:?}", e);
+                    // WebSocket upgrade
+                    if WebSocketHandler::is_websocket_request(data) {
+                        let ws = Arc::new(WebSocketHandler::new(
+                            &self.ip,
+                            self.port,
+                            self.stream.clone(),
+                            self.context.clone(),
+                        ));
+                        ws.respond_websocket_handshake(data).await?;
                         break;
                     }
                 }
             }
-        });
+        }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use tokio::net::{ TcpListener, TcpStream };
     use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+    use tokio::sync::Mutex;
+    use tokio_util::sync::CancellationToken;
+    use zz_account::address::FreeWebMovementAddress;
+    use crate::context::Context;
+
     use super::HTTPHandler;
     static WS_KEY: &str = "dGhlIHNhbXBsZSBub25jZQ==";
     static WS_REQ: &str =
@@ -107,15 +105,18 @@ Sec-WebSocket-Version: 13\r\n\
         let port = 23000;
         let addr = format!("{}:{}", ip, port);
 
+        let token = CancellationToken::new();
+
         // Start a raw TCP listener
         let listener = TcpListener::bind(&addr).await?;
 
         // Spawn server task
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
-
-            let handler = HTTPHandler::new(&ip, port, stream);
-            handler.start().await;
+            let address = FreeWebMovementAddress::random();
+            let context = Arc::new(Context::new(address));
+            let handler = HTTPHandler::new(&ip, port, stream, context);
+            handler.start(token).await;
         });
 
         // Wait for server to be ready

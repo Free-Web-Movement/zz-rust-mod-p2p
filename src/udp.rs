@@ -1,4 +1,4 @@
-use crate::defines::Listener;
+use crate::{context::Context, defines::Listener};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::{ net::UdpSocket, sync::Mutex };
@@ -6,15 +6,16 @@ use tokio_util::sync::CancellationToken;
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UDPHandler {
     ip: String,
     port: u16,
+    context: Arc<Context>,
     listener: Arc<UdpSocket>,
 }
 
 impl UDPHandler {
-    pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
+    pub async fn bind(ip: &str, port: u16, context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
         let udp_addr = format!("{}:{}", ip, port);
         let socket = Arc::new(UdpSocket::bind(&udp_addr).await?);
         println!("UDP listening on {}", udp_addr);
@@ -24,6 +25,7 @@ impl UDPHandler {
                 ip: ip.to_string(),
                 port,
                 listener: socket,
+                context
             })
         )
     }
@@ -75,8 +77,8 @@ impl Listener for UDPHandler {
         let arc_self = Arc::new(self.clone());
         arc_self.start(token).await
     }
-    async fn new(ip: &String, port: u16) -> Arc<Self> {
-        UDPHandler::bind(ip, port).await.unwrap()
+    async fn new(ip: &String, port: u16,context: Arc<Context>) -> Arc<Self> {
+        UDPHandler::bind(ip, port, context).await.unwrap()
     }
     async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
         // UdpSocket does not have a built-in stop method.
@@ -91,13 +93,17 @@ mod tests {
     use super::*;
     use serde_json::ser;
     use tokio::net::UdpSocket;
+    use zz_account::address::{self, FreeWebMovementAddress};
 
     #[tokio::test]
     async fn test_udp_echo() -> anyhow::Result<()> {
         let ip = "127.0.0.1";
         let port = 19000;
 
-        let server = UDPHandler::bind(ip, port).await?;
+        let address = FreeWebMovementAddress::random();
+        let context = Arc::new(Context::new(address));
+
+        let server = UDPHandler::bind(ip, port, context).await?;
         let server_clone = Arc::clone(&server);
         let token = CancellationToken::new();
         server_clone.start(token).await?; // 启动后台服务器
@@ -122,7 +128,10 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 19001;
 
-        let server = UDPHandler::bind(ip, port).await?;
+        let address = FreeWebMovementAddress::random();
+        let context = Arc::new(Context::new(address));
+
+        let server = UDPHandler::bind(ip, port, context).await?;
         let token = CancellationToken::new();
         let shutdown = token.clone();
 

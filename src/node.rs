@@ -1,6 +1,5 @@
 use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::Arc, time::{SystemTime, UNIX_EPOCH}
 };
 
 use tokio::sync::Mutex;
@@ -9,7 +8,9 @@ use zz_account::address::FreeWebMovementAddress as Address;
 use crate::{tcp::TCPHandler, udp::UDPHandler};
 use tokio_util::sync::CancellationToken;
 
-use crate::defines::Listener;
+use crate::defines::{Listener};
+
+use crate::context::Context;
 
 /* =========================
    NODE
@@ -67,8 +68,10 @@ impl Node {
         let ip = self.ip.clone();
         let port = self.port;
 
-        let tcp = TCPHandler::bind(&ip, port).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(&ip, port).await.unwrap().as_ref().clone();
+        let context = Arc::new(Context::new(self.address.clone()));
+
+        let tcp = TCPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp, token.clone()).await);
         self.udp_handler = Some(self.listen(udp, token.clone()).await);

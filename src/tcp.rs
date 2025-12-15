@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::net::{ TcpListener, TcpStream };
 use tokio_util::sync::CancellationToken;
 
+use crate::context::{ self, Context };
 use crate::defines::Listener;
 use crate::http::HTTPHandler;
 
@@ -18,22 +19,26 @@ pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 pub struct TCPHandler {
     ip: String,
     port: u16,
+    context: Arc<Context>,
     listener: Arc<TcpListener>,
 }
 
 impl TCPHandler {
     /// 创建并 bind TCPHandler
-    pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
+    pub async fn bind(ip: &str, port: u16, context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
         let addr = format!("{}:{}", ip, port);
         let listener = TcpListener::bind(&addr).await?;
 
         println!("TCP listening on {}", addr);
 
-        Ok(Arc::new(Self {
-            ip: ip.to_string(),
-            port,
-            listener: Arc::new(listener),
-        }))
+        Ok(
+            Arc::new(Self {
+                ip: ip.to_string(),
+                port,
+                context,
+                listener: Arc::new(listener),
+            })
+        )
     }
 
     /// 启动 accept loop（阻塞）
@@ -67,7 +72,7 @@ impl TCPHandler {
         self: Arc<Self>,
         mut socket: TcpStream,
         addr: std::net::SocketAddr,
-        token: CancellationToken,
+        token: CancellationToken
     ) {
         println!("TCP connection from {}", addr);
 
@@ -75,9 +80,12 @@ impl TCPHandler {
         match HTTPHandler::is_http_connection(&socket).await {
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
-                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket)
-                    .start()
-                    .await;
+                let _ = HTTPHandler::new(
+                    &addr.ip().to_string(),
+                    addr.port(),
+                    socket,
+                    self.context.clone()
+                ).start(token).await;
                 return;
             }
             Ok(false) => {}
@@ -118,7 +126,7 @@ impl TCPHandler {
         &self,
         data: &[u8],
         socket: &mut TcpStream,
-        addr: &std::net::SocketAddr,
+        addr: &std::net::SocketAddr
     ) -> anyhow::Result<()> {
         println!("TCP received {} bytes from {}", data.len(), addr);
 
@@ -136,10 +144,10 @@ impl Listener for TCPHandler {
         let arc_self = Arc::new(self.clone());
         arc_self.start(token).await
     }
-    async fn new(ip: &String, port: u16) -> Arc<Self> {
-        TCPHandler::bind(ip, port).await.unwrap()
+    async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self> {
+        TCPHandler::bind(ip, port, context).await.unwrap()
     }
-    async fn stop(self: Arc<Self>, token: CancellationToken ) -> anyhow::Result<()> {
+    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
         // TCPListener does not have a built-in stop method.
         // You would need to implement your own mechanism to stop the listener.
         token.cancel();
@@ -151,16 +159,18 @@ impl Listener for TCPHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{ AsyncReadExt, AsyncWriteExt };
     use tokio::net::TcpStream;
+    use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
     async fn test_tcp_echo() -> anyhow::Result<()> {
         let ip = "127.0.0.1";
         let port = 18000;
-
-        let server = TCPHandler::bind(ip, port).await?;
-                let token = CancellationToken::new();
+        let address = FreeWebMovementAddress::random();
+        let context = Arc::new(Context::new(address));
+        let server = TCPHandler::bind(ip, port, context).await?;
+        let token = CancellationToken::new();
 
         tokio::spawn(server.clone().start(token.clone()));
 
@@ -186,9 +196,10 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 18001;
 
-        let server = TCPHandler::bind(ip, port).await?;
-
-                let token = CancellationToken::new();
+        let address = FreeWebMovementAddress::random();
+        let context = Arc::new(Context::new(address));
+        let server = TCPHandler::bind(ip, port, context).await?;
+        let token = CancellationToken::new();
 
         let server_task = tokio::spawn(server.clone().start(token.clone()));
 
