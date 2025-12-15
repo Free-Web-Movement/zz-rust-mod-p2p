@@ -3,6 +3,7 @@ use std::sync::Arc;
 // use serde_json::Value;
 // use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
+use tokio_util::sync::CancellationToken;
 
 trait NatOperations {
     fn punch_hole(&self, target_ip: &str, target_port: u16) -> anyhow::Result<()>;
@@ -76,7 +77,7 @@ struct NatPair<S, T> {
 
 #[async_trait]
 pub trait Listener: Send + Sync + 'static {
-    async fn run(&mut self) -> anyhow::Result<()>;
+    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()>;
     async fn new(ip: &String, port: u16) -> Arc<Self>;
-    async fn stop(self: Arc<Self>) -> anyhow::Result<()> ;
+    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> ;
 }

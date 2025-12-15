@@ -10,7 +10,6 @@ pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 pub struct UDPHandler {
     ip: String,
     port: u16,
-    shutdown: CancellationToken,
     listener: Option<Arc<Mutex<UdpSocket>>>,
 }
 
@@ -20,11 +19,10 @@ impl UDPHandler {
             ip: ip.to_string(),
             port,
             listener: None,
-            shutdown: CancellationToken::new(),
         }))
     }
 
-    pub async fn start(self: &Arc<Self>) -> anyhow::Result<()> {
+    pub async fn start(self: &Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
         let udp_addr = format!("{}:{}", self.ip, self.port);
         let socket = UdpSocket::bind(&udp_addr).await?;
         println!("UDP listening on {}", udp_addr);
@@ -32,7 +30,7 @@ impl UDPHandler {
         let socket = Arc::new(Mutex::new(socket));
         let socket_clone = Arc::clone(&socket);
 
-        let shutdown = self.shutdown.clone();
+        let shutdown = token.clone();
 
         tokio::spawn(async move {
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
@@ -57,17 +55,17 @@ impl UDPHandler {
 
 #[async_trait]
 impl Listener for UDPHandler {
-    async fn run(&mut self) -> anyhow::Result<()> {
+    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()> {
         let arc_self = Arc::new(self.clone());
-        arc_self.start().await
+        arc_self.start(token).await
     }
     async fn new(ip: &String, port: u16) -> Arc<Self> {
         UDPHandler::bind(ip, port).await.unwrap()
     }
-    async fn stop(self: Arc<Self>) -> anyhow::Result<()> {
+    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
         // UdpSocket does not have a built-in stop method.
         // You would need to implement your own mechanism to stop the listener.
-        self.shutdown.cancel();
+        token.cancel();
         Ok(())
     }
 }
@@ -85,7 +83,8 @@ mod tests {
 
         let server = UDPHandler::bind(ip, port).await?;
         let server_clone = Arc::clone(&server);
-        server_clone.start().await?; // 启动后台服务器
+        let token = CancellationToken::new();
+        server_clone.start(token).await?; // 启动后台服务器
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -108,7 +107,10 @@ mod tests {
         let port = 19001;
 
         let server = UDPHandler::bind(ip, port).await?;
-        server.start().await?;
+        let token = CancellationToken::new();
+        let shutdown = token.clone();
+
+        server.start(token).await?;
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -122,7 +124,7 @@ mod tests {
             let (n, _) = client.recv_from(&mut buf).await?;
             assert_eq!(&buf[..n], *msg);
         }
-        server.stop().await?;
+        server.stop(shutdown).await?;
 
         Ok(())
     }

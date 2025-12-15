@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::io::{ AsyncReadExt, AsyncWriteExt };
-use tokio::net::{ TcpListener, TcpStream };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::sync::CancellationToken;
 
-use crate::http::HTTPHandler;
 use crate::defines::Listener;
+use crate::http::HTTPHandler;
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
@@ -28,36 +29,55 @@ impl TCPHandler {
 
         println!("TCP listening on {}", addr);
 
-        Ok(
-            Arc::new(Self {
-                ip: ip.to_string(),
-                port,
-                listener: Arc::new(listener),
-            })
-        )
+        Ok(Arc::new(Self {
+            ip: ip.to_string(),
+            port,
+            listener: Arc::new(listener),
+        }))
     }
 
     /// 启动 accept loop（阻塞）
-    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
+    pub async fn start(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
+        let cloned = token.clone();
         loop {
-            let (socket, addr) = self.listener.accept().await?;
-            let this = self.clone();
-
-            tokio::spawn(async move {
-                this.handle_connection(socket, addr).await;
-            });
+            tokio::select! {
+                _ = cloned.cancelled() => {
+                    println!("TCP listener shutting down");
+                    break;
+                }
+                res = self.listener.accept() => {
+                    match res {
+                        Ok((socket, addr)) => {
+                            let this = self.clone();
+                            let cloned = token.clone();
+                            tokio::spawn(async move {
+                                this.handle_connection(socket, addr, cloned).await;
+                            });
+                        }
+                        Err(e) => eprintln!("TCP accept error: {:?}", e),
+                    }
+                }
+            }
         }
+        Ok(())
     }
 
     /// 每个 TCP 连接的唯一入口
-    async fn handle_connection(self: Arc<Self>, mut socket: TcpStream, addr: std::net::SocketAddr) {
+    async fn handle_connection(
+        self: Arc<Self>,
+        mut socket: TcpStream,
+        addr: std::net::SocketAddr,
+        token: CancellationToken,
+    ) {
         println!("TCP connection from {}", addr);
 
         // 👇 只判断一次 HTTP
         match HTTPHandler::is_http_connection(&socket).await {
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
-                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket).start().await;
+                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket)
+                    .start()
+                    .await;
                 return;
             }
             Ok(false) => {}
@@ -71,23 +91,26 @@ impl TCPHandler {
         let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
 
         loop {
-            match socket.read(&mut buf).await {
-                Ok(0) => {
+            tokio::select! {
+                _ = token.cancelled() => {
+                    println!("TCP connection shutdown {}", addr);
                     break;
                 }
-                Ok(n) => {
-                    // 默认 echo（测试 & 占位）
-                    if self.on_tcp_data(&buf[..n], &mut socket, &addr).await.is_err() {
-                        break;
+
+                res = socket.read(&mut buf) => {
+                    match res {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if self.on_tcp_data(&buf[..n], &mut socket, &addr).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
                     }
-                }
-                Err(e) => {
-                    eprintln!("TCP read error {}: {:?}", addr, e);
-                    break;
                 }
             }
         }
-
+        let _ = socket.shutdown().await;
         println!("TCP connection closed {}", addr);
     }
 
@@ -95,7 +118,7 @@ impl TCPHandler {
         &self,
         data: &[u8],
         socket: &mut TcpStream,
-        addr: &std::net::SocketAddr
+        addr: &std::net::SocketAddr,
     ) -> anyhow::Result<()> {
         println!("TCP received {} bytes from {}", data.len(), addr);
 
@@ -108,17 +131,19 @@ impl TCPHandler {
 
 #[async_trait]
 impl Listener for TCPHandler {
-    async fn run(&mut self) -> anyhow::Result<()> {
+    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()> {
         // start expects an Arc<Self>, so clone the handler into an Arc and call start on it
         let arc_self = Arc::new(self.clone());
-        arc_self.start().await
+        arc_self.start(token).await
     }
     async fn new(ip: &String, port: u16) -> Arc<Self> {
         TCPHandler::bind(ip, port).await.unwrap()
     }
-    async fn stop(self: Arc<Self>) -> anyhow::Result<()> {
+    async fn stop(self: Arc<Self>, token: CancellationToken ) -> anyhow::Result<()> {
         // TCPListener does not have a built-in stop method.
         // You would need to implement your own mechanism to stop the listener.
+        token.cancel();
+        let _ = TcpStream::connect(format!("{}:{}", self.ip, self.port)).await;
         Ok(())
     }
 }
@@ -126,7 +151,7 @@ impl Listener for TCPHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
     #[tokio::test]
@@ -135,7 +160,9 @@ mod tests {
         let port = 18000;
 
         let server = TCPHandler::bind(ip, port).await?;
-        tokio::spawn(server.clone().start());
+                let token = CancellationToken::new();
+
+        tokio::spawn(server.clone().start(token.clone()));
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -149,6 +176,8 @@ mod tests {
 
         assert_eq!(buf, msg);
 
+        server.stop(token).await?;
+
         Ok(())
     }
 
@@ -158,7 +187,10 @@ mod tests {
         let port = 18001;
 
         let server = TCPHandler::bind(ip, port).await?;
-        tokio::spawn(server.clone().start());
+
+                let token = CancellationToken::new();
+
+        let server_task = tokio::spawn(server.clone().start(token.clone()));
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -179,6 +211,9 @@ mod tests {
 
         assert_eq!(buf1, msg1);
         assert_eq!(buf2, msg2);
+
+        server.stop(token).await?;
+        let _ = server_task.await?; // 等待 listener task 退出
 
         Ok(())
     }
