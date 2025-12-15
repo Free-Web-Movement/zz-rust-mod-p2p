@@ -1,5 +1,7 @@
 use std::sync::Arc;
-use tokio::{net::UdpSocket, sync::Mutex};
+use async_trait::async_trait;
+use tokio::{ net::UdpSocket, sync::Mutex };
+use crate::defines::Listener;
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
@@ -12,11 +14,13 @@ pub struct UDPHandler {
 
 impl UDPHandler {
     pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
-        Ok(Arc::new(UDPHandler {
-            ip: ip.to_string(),
-            port,
-            listener: None,
-        }))
+        Ok(
+            Arc::new(UDPHandler {
+                ip: ip.to_string(),
+                port,
+                listener: None,
+            })
+        )
     }
 
     pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
@@ -45,9 +49,21 @@ impl UDPHandler {
     }
 }
 
+#[async_trait]
+impl Listener for UDPHandler {
+    async fn run(&mut self) -> anyhow::Result<()> {
+        let arc_self = Arc::new(self.clone());
+        arc_self.start().await
+    }
+    async fn new(ip: &String, port: u16) -> Arc<Self> {
+        UDPHandler::bind(ip, port).await.unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::ser;
     use tokio::net::UdpSocket;
 
     #[tokio::test]

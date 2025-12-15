@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use async_trait::async_trait;
+use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::net::{ TcpListener, TcpStream };
 
 use crate::http::HTTPHandler;
+use crate::defines::Listener;
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
@@ -11,8 +13,7 @@ pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
 /// HTTP 探测用 peek 缓冲区
 pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 
-
-#[derive( Clone)]
+#[derive(Clone)]
 pub struct TCPHandler {
     ip: String,
     port: u16,
@@ -27,11 +28,13 @@ impl TCPHandler {
 
         println!("TCP listening on {}", addr);
 
-        Ok(Arc::new(Self {
-            ip: ip.to_string(),
-            port,
-            listener: Arc::new(listener),
-        }))
+        Ok(
+            Arc::new(Self {
+                ip: ip.to_string(),
+                port,
+                listener: Arc::new(listener),
+            })
+        )
     }
 
     /// 启动 accept loop（阻塞）
@@ -54,9 +57,7 @@ impl TCPHandler {
         match HTTPHandler::is_http_connection(&socket).await {
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
-                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket)
-                    .start()
-                    .await;
+                HTTPHandler::new(&addr.ip().to_string(), addr.port(), socket).start().await;
                 return;
             }
             Ok(false) => {}
@@ -71,14 +72,12 @@ impl TCPHandler {
 
         loop {
             match socket.read(&mut buf).await {
-                Ok(0) => break,
+                Ok(0) => {
+                    break;
+                }
                 Ok(n) => {
                     // 默认 echo（测试 & 占位）
-                    if self
-                        .on_tcp_data(&buf[..n], &mut socket, &addr)
-                        .await
-                        .is_err()
-                    {
+                    if self.on_tcp_data(&buf[..n], &mut socket, &addr).await.is_err() {
                         break;
                     }
                 }
@@ -96,7 +95,7 @@ impl TCPHandler {
         &self,
         data: &[u8],
         socket: &mut TcpStream,
-        addr: &std::net::SocketAddr,
+        addr: &std::net::SocketAddr
     ) -> anyhow::Result<()> {
         println!("TCP received {} bytes from {}", data.len(), addr);
 
@@ -107,10 +106,22 @@ impl TCPHandler {
     }
 }
 
+#[async_trait]
+impl Listener for TCPHandler {
+    async fn run(&mut self) -> anyhow::Result<()> {
+        // start expects an Arc<Self>, so clone the handler into an Arc and call start on it
+        let arc_self = Arc::new(self.clone());
+        arc_self.start().await
+    }
+    async fn new(ip: &String, port: u16) -> Arc<Self> {
+        TCPHandler::bind(ip, port).await.unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{ AsyncReadExt, AsyncWriteExt };
     use tokio::net::TcpStream;
 
     #[tokio::test]
