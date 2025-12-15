@@ -1,6 +1,5 @@
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
-use zz_p2p::tcp::TCPHandler;
 
 /// 简单 TCP + UDP 服务器参数
 #[derive(Parser, Debug)]
@@ -28,12 +27,6 @@ async fn main() -> anyhow::Result<()> {
         zz_p2p::node::Node::new("node1".to_owned(), address, opt.ip.clone(), opt.tcp_port);
     let token = CancellationToken::new();
     node.start(token).await;
-
-    // let mut tcp_server = TCPHandler::new(&opt.ip, opt.tcp_port);
-    // tcp_server.start().await?;
-
-    // let mut udp_server = zz_p2p::udp::UDPHandler::new(&opt.ip, opt.udp_port);
-    // udp_server.start().await?;
 
     // 阻塞主线程
     loop {

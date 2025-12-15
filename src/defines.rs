@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::{ops::Add, sync::Arc};
 
 // use serde_json::Value;
 // use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
+use zz_account::address::FreeWebMovementAddress as Address;
 
 trait NatOperations {
     fn punch_hole(&self, target_ip: &str, target_port: u16) -> anyhow::Result<()>;
@@ -67,11 +69,11 @@ struct NatPair<S, T> {
     plugged_pairs: Vec<(T, T)>,
 }
 
-// struct Context {
-//     node: Node,
-//     global: Value,
-//     local: Value,
-// }
+struct Context {
+    address: Address,
+    global: Value,
+    local: Value,
+}
 
 
 

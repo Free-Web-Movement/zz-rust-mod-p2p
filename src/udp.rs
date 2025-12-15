@@ -10,26 +10,26 @@ pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 pub struct UDPHandler {
     ip: String,
     port: u16,
-    listener: Option<Arc<UdpSocket>>,
+    listener: Arc<UdpSocket>,
 }
 
 impl UDPHandler {
     pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
+        let udp_addr = format!("{}:{}", ip, port);
+        let socket = Arc::new(UdpSocket::bind(&udp_addr).await?);
+        println!("UDP listening on {}", udp_addr);
+
         Ok(
             Arc::new(UDPHandler {
                 ip: ip.to_string(),
                 port,
-                listener: None,
+                listener: socket,
             })
         )
     }
 
     pub async fn start(self: &Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
-        let udp_addr = format!("{}:{}", self.ip, self.port);
-        let socket = UdpSocket::bind(&udp_addr).await?;
-        println!("UDP listening on {}", udp_addr);
-
-        let socket = Arc::new(Mutex::new(socket));
+        let socket = Arc::new(Mutex::new(self.listener.clone()));
         let socket_clone = Arc::clone(&socket);
 
         let shutdown = token.clone();
@@ -38,7 +38,7 @@ impl UDPHandler {
 
         tokio::spawn(async move {
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
-            let mut socket = socket_clone.lock().await;
+            let socket = socket_clone.lock().await;
             loop {
                 tokio::select! {
                     _ = shutdown.cancelled() => {
@@ -57,7 +57,8 @@ impl UDPHandler {
         Ok(())
     }
 
-    async fn on_data(self: Arc<Self>,
+    async fn on_data(
+        self: Arc<Self>,
         data: &[u8],
         socket: &UdpSocket,
         des: &std::net::SocketAddr
