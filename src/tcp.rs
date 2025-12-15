@@ -116,6 +116,11 @@ impl Listener for TCPHandler {
     async fn new(ip: &String, port: u16) -> Arc<Self> {
         TCPHandler::bind(ip, port).await.unwrap()
     }
+    async fn stop(self: Arc<Self>) -> anyhow::Result<()> {
+        // TCPListener does not have a built-in stop method.
+        // You would need to implement your own mechanism to stop the listener.
+        Ok(())
+    }
 }
 
 #[cfg(test)]

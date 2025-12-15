@@ -1,7 +1,8 @@
-use std::sync::Arc;
-use async_trait::async_trait;
-use tokio::{ net::UdpSocket, sync::Mutex };
 use crate::defines::Listener;
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::{net::UdpSocket, sync::Mutex};
+use tokio_util::sync::CancellationToken;
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
@@ -9,21 +10,21 @@ pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 pub struct UDPHandler {
     ip: String,
     port: u16,
+    shutdown: CancellationToken,
     listener: Option<Arc<Mutex<UdpSocket>>>,
 }
 
 impl UDPHandler {
     pub async fn bind(ip: &str, port: u16) -> anyhow::Result<Arc<Self>> {
-        Ok(
-            Arc::new(UDPHandler {
-                ip: ip.to_string(),
-                port,
-                listener: None,
-            })
-        )
+        Ok(Arc::new(UDPHandler {
+            ip: ip.to_string(),
+            port,
+            listener: None,
+            shutdown: CancellationToken::new(),
+        }))
     }
 
-    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
+    pub async fn start(self: &Arc<Self>) -> anyhow::Result<()> {
         let udp_addr = format!("{}:{}", self.ip, self.port);
         let socket = UdpSocket::bind(&udp_addr).await?;
         println!("UDP listening on {}", udp_addr);
@@ -31,16 +32,21 @@ impl UDPHandler {
         let socket = Arc::new(Mutex::new(socket));
         let socket_clone = Arc::clone(&socket);
 
+        let shutdown = self.shutdown.clone();
+
         tokio::spawn(async move {
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
+            let socket = socket_clone.lock().await;
             loop {
-                let mut sock = socket_clone.lock().await;
-                match sock.recv_from(&mut buf).await {
-                    Ok((n, src)) => {
-                        println!("UDP received {} bytes from {}: {:?}", n, src, &buf[..n]);
-                        let _ = sock.send_to(&buf[..n], &src).await;
+                tokio::select! {
+                    _ = shutdown.cancelled() => {
+                        break;
                     }
-                    Err(e) => eprintln!("UDP recv error: {:?}", e),
+                    res = socket.recv_from(&mut buf) => {
+                        if let Ok((n, src)) = res {
+                            let _ = socket.send_to(&buf[..n], src).await;
+                        }
+                    }
                 }
             }
         });
@@ -57,6 +63,12 @@ impl Listener for UDPHandler {
     }
     async fn new(ip: &String, port: u16) -> Arc<Self> {
         UDPHandler::bind(ip, port).await.unwrap()
+    }
+    async fn stop(self: Arc<Self>) -> anyhow::Result<()> {
+        // UdpSocket does not have a built-in stop method.
+        // You would need to implement your own mechanism to stop the listener.
+        self.shutdown.cancel();
+        Ok(())
     }
 }
 
@@ -110,6 +122,7 @@ mod tests {
             let (n, _) = client.recv_from(&mut buf).await?;
             assert_eq!(&buf[..n], *msg);
         }
+        server.stop().await?;
 
         Ok(())
     }

@@ -78,4 +78,5 @@ struct NatPair<S, T> {
 pub trait Listener: Send + Sync + 'static {
     async fn run(&mut self) -> anyhow::Result<()>;
     async fn new(ip: &String, port: u16) -> Arc<Self>;
+    async fn stop(self: Arc<Self>) -> anyhow::Result<()> ;
 }
