@@ -26,6 +26,7 @@ pub struct Node {
     pub trun_port: u16,   // TURN service port
     pub start_time: u128, // Timestamp when the node was started
     pub stop_time: u128,  // Timestamp when the node was started
+    pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
 }
@@ -41,6 +42,7 @@ impl Node {
             trun_port: port + 2,
             tcp_handler: None,
             udp_handler: None,
+            context: None,
             start_time: 0,
             stop_time: 0,
         }
@@ -68,7 +70,8 @@ impl Node {
         let ip = self.ip.clone();
         let port = self.port;
 
-        let context = Arc::new(Context::new(self.address.clone()));
+        let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
+        self.context = Some(context.clone());
 
         let tcp = TCPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
         let udp = UDPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();

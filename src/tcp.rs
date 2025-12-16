@@ -5,7 +5,7 @@ use tokio::io::{ AsyncReadExt, AsyncWriteExt };
 use tokio::net::{ TcpListener, TcpStream };
 use tokio_util::sync::CancellationToken;
 
-use crate::context::{ self, Context };
+use crate::context:: Context ;
 use crate::defines::Listener;
 use crate::http::HTTPHandler;
 
@@ -168,7 +168,7 @@ mod tests {
         let ip = "127.0.0.1";
         let port = 18000;
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(address));
+        let context = Arc::new(Context::new(ip.to_string(), port, address));
         let server = TCPHandler::bind(ip, port, context).await?;
         let token = CancellationToken::new();
 
@@ -197,7 +197,7 @@ mod tests {
         let port = 18001;
 
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(address));
+        let context = Arc::new(Context::new(ip.to_string(), port, address));
         let server = TCPHandler::bind(ip, port, context).await?;
         let token = CancellationToken::new();
 

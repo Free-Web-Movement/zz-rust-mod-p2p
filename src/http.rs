@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -82,7 +82,6 @@ mod tests {
 
     use tokio::net::{ TcpListener, TcpStream };
     use tokio::io::{ AsyncReadExt, AsyncWriteExt };
-    use tokio::sync::Mutex;
     use tokio_util::sync::CancellationToken;
     use zz_account::address::FreeWebMovementAddress;
     use crate::context::Context;
@@ -114,9 +113,9 @@ Sec-WebSocket-Version: 13\r\n\
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let address = FreeWebMovementAddress::random();
-            let context = Arc::new(Context::new(address));
-            let handler = HTTPHandler::new(&ip, port, stream, context);
-            handler.start(token).await;
+            let context = Arc::new(Context::new(ip.clone(), port, address));
+            let handler = HTTPHandler::new(&ip.clone(), port, stream, context);
+            let _ = handler.start(token).await;
         });
 
         // Wait for server to be ready

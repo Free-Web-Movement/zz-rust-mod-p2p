@@ -91,9 +91,8 @@ impl Listener for UDPHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::ser;
     use tokio::net::UdpSocket;
-    use zz_account::address::{self, FreeWebMovementAddress};
+    use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
     async fn test_udp_echo() -> anyhow::Result<()> {
@@ -101,7 +100,7 @@ mod tests {
         let port = 19000;
 
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(address));
+        let context = Arc::new(Context::new(ip.to_string(), port, address));
 
         let server = UDPHandler::bind(ip, port, context).await?;
         let server_clone = Arc::clone(&server);
@@ -129,7 +128,7 @@ mod tests {
         let port = 19001;
 
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(address));
+        let context = Arc::new(Context::new(ip.to_string(), port, address));
 
         let server = UDPHandler::bind(ip, port, context).await?;
         let token = CancellationToken::new();
