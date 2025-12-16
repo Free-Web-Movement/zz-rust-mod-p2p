@@ -1,5 +1,9 @@
+use std::path::Path;
+
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
+use zz_account::address::{ self, FreeWebMovementAddress };
+use zz_p2p::node::Node;
 
 /// 简单 TCP + UDP 服务器参数
 #[derive(Parser, Debug)]
@@ -22,9 +26,18 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let address = zz_account::address::FreeWebMovementAddress::random();
-    let mut node =
-        zz_p2p::node::Node::new("node1".to_owned(), address, opt.ip.clone(), opt.tcp_port);
+    let path = Node::get_node_address_file().await;
+    let address = if !Path::new(&path).exists() {
+        zz_account::address::FreeWebMovementAddress::random()
+    } else {
+        Node::read_address().await
+    };
+    let mut node = zz_p2p::node::Node::new(
+        "node1".to_owned(),
+        address,
+        opt.ip.clone(),
+        opt.tcp_port
+    );
     node.start().await;
 
     // 阻塞主线程

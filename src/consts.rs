@@ -11,3 +11,5 @@ pub const PROJECT_NAME: &str = "Free-Web-Movement-P2P-Node";
 
 /// 默认超时时间（毫秒）
 pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
+pub const DEFAULT_APP_DIR:&str = ".zz";
+pub const DEFAULT_APP_DIR_ADDRESS_JSON_FILE:&str = "address.json";
