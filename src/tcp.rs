@@ -81,8 +81,6 @@ async fn handle_connection(
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
                 let _ = HTTPHandler::new(
-                    &addr.ip().to_string(),
-                    addr.port(),
                     stream.clone(),
                     self.context.clone(),
                 )

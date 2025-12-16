@@ -1,6 +1,4 @@
 use std::sync::Arc;
-
-use futures::lock;
 use tokio::{ io::AsyncWriteExt, net::TcpStream, sync::Mutex };
 use base64::Engine;
 
@@ -28,15 +26,13 @@ pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 
 
 pub struct WebSocketHandler {
-    ip: String,
-    port: u16,
     stream: Arc<Mutex<TcpStream>>,
     context: Arc<Context>
 }
 
 impl WebSocketHandler {
-    pub fn new(ip: &String, port: u16, stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
-        Self { ip: ip.to_string(), port, stream, context }
+    pub fn new(stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
+        Self {stream, context }
     }
     /// 判断是否为 WebSocket Upgrade
     pub fn is_websocket_request(data: &[u8]) -> bool {

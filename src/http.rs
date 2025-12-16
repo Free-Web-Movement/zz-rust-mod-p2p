@@ -10,8 +10,6 @@ use crate::ws::WebSocketHandler;
 pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024;
 
 pub struct HTTPHandler {
-    ip: String,
-    port: u16,
     stream: Arc<Mutex<TcpStream>>,
     context: Arc<Context>,
 }
@@ -27,10 +25,8 @@ impl HTTPHandler {
         Ok(matches!(s, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"))
     }
 
-    pub fn new(ip: &String, port: u16, stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
+    pub fn new(stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
         Self {
-            ip: ip.clone(),
-            port,
             stream,
             context,
         }
@@ -60,8 +56,6 @@ impl HTTPHandler {
                     // WebSocket upgrade
                     if WebSocketHandler::is_websocket_request(data) {
                         let ws = Arc::new(WebSocketHandler::new(
-                            &self.ip,
-                            self.port,
                             self.stream.clone(),
                             self.context.clone(),
                         ));
@@ -115,7 +109,7 @@ Sec-WebSocket-Version: 13\r\n\
             let (stream, _) = listener.accept().await.unwrap();
             let address = FreeWebMovementAddress::random();
             let context = Arc::new(Context::new(ip.clone(), port, address));
-            let handler = HTTPHandler::new(&ip.clone(), port, Arc::new(Mutex::new(stream)), context);
+            let handler = HTTPHandler::new(Arc::new(Mutex::new(stream)), context);
             let _ = handler.start(token).await;
         });
 

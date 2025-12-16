@@ -78,7 +78,6 @@ impl Node {
     async fn listen<T: Listener + Send + 'static>(
         &self,
         object: T
-        // token: CancellationToken,
     ) -> Arc<Mutex<T>> {
         let handler = Arc::new(Mutex::new(object));
         let handler_clone = handler.clone();
@@ -97,6 +96,8 @@ impl Node {
         let ip = self.ip.clone();
         let port = self.port;
 
+        // 节点全局共享的内容，所有持久化的信息都保存在context里面
+        
         let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
         self.context = Some(context.clone());
 

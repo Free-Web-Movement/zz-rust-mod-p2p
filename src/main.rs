@@ -1,8 +1,6 @@
 use std::path::Path;
 
 use clap::Parser;
-use tokio_util::sync::CancellationToken;
-use zz_account::address::{ self, FreeWebMovementAddress };
 use zz_p2p::node::Node;
 
 /// 简单 TCP + UDP 服务器参数
