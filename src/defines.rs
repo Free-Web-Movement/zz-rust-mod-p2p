@@ -9,7 +9,6 @@ use tokio::sync::Mutex;
 
 use crate::context::Context;
 
-
 trait NatOperations {
     fn punch_hole(&self, target_ip: &str, target_port: u16) -> anyhow::Result<()>;
     fn maintain_nat(&self) -> anyhow::Result<()>;
