@@ -1,14 +1,14 @@
 use std::{
-    sync::Arc, time::{SystemTime, UNIX_EPOCH}
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{tcp::TCPHandler, udp::UDPHandler};
-use tokio_util::sync::CancellationToken;
 
-use crate::defines::{Listener};
+use crate::defines::Listener;
 
 use crate::context::Context;
 
@@ -51,20 +51,20 @@ impl Node {
     async fn listen<T: Listener + Send + 'static>(
         &self,
         object: T,
-        token: CancellationToken,
+        // token: CancellationToken,
     ) -> Arc<Mutex<T>> {
         let handler = Arc::new(Mutex::new(object));
         let handler_clone = handler.clone();
         tokio::spawn(async move {
             let mut h = handler_clone.lock().await;
-            let _ = h.run(token).await;
+            let _ = h.run().await;
         });
         handler
     }
 
     // Removed incorrect generic overload that used `Arc` as a trait bound (not allowed).
     // Use the parameterless `start` implementation below to start the node's handlers.
-    pub async fn start(&mut self, token: CancellationToken) {
+    pub async fn start(&mut self) {
         self.start_time = timestamp();
         self.start_time = timestamp();
         let ip = self.ip.clone();
@@ -73,19 +73,32 @@ impl Node {
         let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
         self.context = Some(context.clone());
 
-        let tcp = TCPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
+        let tcp = TCPHandler::bind(&ip, port, context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
+        let udp = UDPHandler::bind(&ip, port, context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
 
-        self.tcp_handler = Some(self.listen(tcp, token.clone()).await);
-        self.udp_handler = Some(self.listen(udp, token.clone()).await);
+        self.tcp_handler = Some(self.listen(tcp).await);
+        self.udp_handler = Some(self.listen(udp).await);
     }
 
-    pub async fn stop(&mut self, token: CancellationToken) {
+    pub async fn stop(&mut self) {
         // minimal stop implementation: close tcp and udp connections
         // take ownership of the Arcs we hold and drop them so the underlying sockets
         // are closed when there are no remaining owners
 
-        token.cancel(); // 🔥 核心
+        match self.context.clone() {
+            Some(context) => {
+                context.token.cancel();
+            }
+            None => (),
+        }
         self.tcp_handler.take();
         self.udp_handler.take();
 
@@ -113,14 +126,12 @@ mod tests {
         )));
 
         let node_clone = node1.clone();
-        let token = CancellationToken::new();
-        let cloned = token.clone();
 
         let handle = {
             let node_task = node_clone.clone();
             tokio::spawn(async move {
                 let mut node = node_task.lock().await;
-                node.start(token).await;
+                node.start().await;
             })
         };
 
@@ -128,7 +139,7 @@ mod tests {
 
         {
             let mut node = node_clone.lock().await;
-            node.stop(cloned).await;
+            node.stop().await;
         }
 
         let _ = handle.await;

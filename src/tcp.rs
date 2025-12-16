@@ -43,8 +43,8 @@ impl TCPHandler {
     }
 
     /// 启动 accept loop（阻塞）
-    pub async fn start(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
-        let cloned = token.clone();
+    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
+        let cloned = self.context.token.clone();
         loop {
             tokio::select! {
                 _ = cloned.cancelled() => {
@@ -55,7 +55,7 @@ impl TCPHandler {
                     match res {
                         Ok((socket, addr)) => {
                             let this = self.clone();
-                            let cloned = token.clone();
+                            let cloned = self.context.token.clone();
                             tokio::spawn(async move {
                                 this.handle_connection(socket, addr, cloned).await;
                             });
@@ -139,23 +139,23 @@ async fn handle_connection(
 
 #[async_trait]
 impl Listener for TCPHandler {
-    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()> {
+    async fn run(&mut self) -> anyhow::Result<()> {
         // start expects an Arc<Self>, so clone the handler into an Arc and call start on it
         let arc_self = Arc::new(self.clone());
-        arc_self.start(token).await
+        arc_self.start().await
     }
     async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self> {
         TCPHandler::bind(ip, port, context).await.unwrap()
     }
-    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
+    async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
         // TCPListener does not have a built-in stop method.
         // You would need to implement your own mechanism to stop the listener.
-        token.cancel();
+        self.context.token.cancel();
         let _ = TcpStream::connect(format!("{}:{}", self.ip, self.port)).await;
         Ok(())
     }
     async fn on_data(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         protocol_type: &ProtocolType,
         received: &[u8],
         remote_peer: &std::net::SocketAddr,
@@ -184,9 +184,8 @@ mod tests {
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
         let server = TCPHandler::bind(ip, port, context).await?;
-        let token = CancellationToken::new();
 
-        tokio::spawn(server.clone().start(token.clone()));
+        tokio::spawn(server.clone().start());
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -200,7 +199,7 @@ mod tests {
 
         assert_eq!(buf, msg);
 
-        server.stop(token).await?;
+        server.stop().await?;
 
         Ok(())
     }
@@ -215,7 +214,7 @@ mod tests {
         let server = TCPHandler::bind(ip, port, context).await?;
         let token = CancellationToken::new();
 
-        let server_task = tokio::spawn(server.clone().start(token.clone()));
+        let server_task = tokio::spawn(server.clone().start());
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -237,7 +236,7 @@ mod tests {
         assert_eq!(buf1, msg1);
         assert_eq!(buf2, msg2);
 
-        server.stop(token).await?;
+        server.stop().await?;
         let _ = server_task.await?; // 等待 listener task 退出
 
         Ok(())

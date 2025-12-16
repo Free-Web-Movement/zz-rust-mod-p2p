@@ -6,7 +6,6 @@ use tokio::net::{TcpStream, UdpSocket};
 // use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 
 use crate::context::Context;
 
@@ -97,12 +96,12 @@ pub enum ProtocolCommand {
 
 #[async_trait]
 pub trait Listener: Send + Sync + 'static {
-    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()>;
+    async fn run(&mut self) -> anyhow::Result<()>;
     async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self>;
-    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()>;
+    async fn stop(self: &Arc<Self>) -> anyhow::Result<()>;
     /// 原始 / 解密后的数据
     async fn on_data(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         socket: &ProtocolType,
         received: &[u8],
         remote_peer: &std::net::SocketAddr,

@@ -25,8 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let address = zz_account::address::FreeWebMovementAddress::random();
     let mut node =
         zz_p2p::node::Node::new("node1".to_owned(), address, opt.ip.clone(), opt.tcp_port);
-    let token = CancellationToken::new();
-    node.start(token).await;
+    node.start().await;
 
     // 阻塞主线程
     loop {

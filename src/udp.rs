@@ -32,9 +32,9 @@ impl UDPHandler {
         }))
     }
 
-    pub async fn start(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
+    pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
         let socket = self.listener.clone();
-        let shutdown = token.clone();
+        let shutdown = self.context.token.clone();
         let handler = self.clone();
 
         tokio::spawn(async move {
@@ -72,22 +72,22 @@ impl UDPHandler {
 
 #[async_trait]
 impl Listener for UDPHandler {
-    async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()> {
+    async fn run(&mut self) -> anyhow::Result<()> {
         let arc_self = Arc::new(self.clone());
-        arc_self.start(token).await
+        arc_self.start().await
     }
 
     async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self> {
         UDPHandler::bind(ip, port, context).await.unwrap()
     }
 
-    async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()> {
-        token.cancel();
+    async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
+        self.context.token.cancel();
         Ok(())
     }
 
     async fn on_data(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         protocol_type: &ProtocolType,
         received: &[u8],
         remote_peer: &std::net::SocketAddr,
@@ -101,7 +101,6 @@ impl Listener for UDPHandler {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -119,8 +118,7 @@ mod tests {
 
         let server = UDPHandler::bind(ip, port, context).await?;
         let server_clone = Arc::clone(&server);
-        let token = CancellationToken::new();
-        server_clone.start(token).await?; // 启动后台服务器
+        server_clone.start().await?; // 启动后台服务器
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -146,12 +144,9 @@ mod tests {
         let context = Arc::new(Context::new(ip.to_string(), port, address));
 
         let server = UDPHandler::bind(ip, port, context).await?;
-                let server_clone = Arc::clone(&server);
+        let server_clone = Arc::clone(&server);
 
-        let token = CancellationToken::new();
-        let shutdown = token.clone();
-
-        server_clone.start(token).await?;
+        server_clone.start().await?;
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -165,7 +160,7 @@ mod tests {
             let (n, _) = client.recv_from(&mut buf).await?;
             assert_eq!(&buf[..n], *msg);
         }
-        server.clone().stop(shutdown).await?;
+        server.clone().stop().await?;
 
         Ok(())
     }
