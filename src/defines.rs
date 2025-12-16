@@ -1,8 +1,11 @@
-use std::{ net::{TcpStream, UdpSocket}, sync::Arc };
+use std::sync::Arc;
+
+use tokio::net::{TcpStream, UdpSocket};
 
 // use serde_json::Value;
 // use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::context::Context;
@@ -71,9 +74,25 @@ struct NatPair<S, T> {
 }
 
 pub enum ProtocolType {
-    UDP(UdpSocket),
-    TCP(TcpStream),
-    HTTP(TcpStream),
+    UDP(Arc<UdpSocket>),
+    TCP(Arc<Mutex<TcpStream>>),
+    HTTP(Arc<Mutex<TcpStream>>),
+    WS(Arc<Mutex<TcpStream>>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ProtocolCommand {
+    HandshakeInit {
+        address: String, // FreeWebMovementAddress
+    },
+    HandshakeAck {
+        session_id: [u8; 32],
+    },
+    Ping,
+    Pong,
+    Close,
+    UpgradeToWebSocket,
+    Custom(u16, Vec<u8>),
 }
 
 #[async_trait]
@@ -81,4 +100,19 @@ pub trait Listener: Send + Sync + 'static {
     async fn run(&mut self, token: CancellationToken) -> anyhow::Result<()>;
     async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self>;
     async fn stop(self: Arc<Self>, token: CancellationToken) -> anyhow::Result<()>;
+    /// 原始 / 解密后的数据
+    async fn on_data(
+        self: Arc<Self>,
+        socket: &ProtocolType,
+        received: &[u8],
+        remote_peer: &std::net::SocketAddr,
+    ) -> anyhow::Result<()>;
+
+    // 协议级指令（握手 / 心跳 / 路由 / 升级）
+    // async fn on_cmd(
+    //     self: Arc<Self>,
+    //     socket: &ProtocolType,
+    //     cmd: ProtocolCommand,
+    //     remote_peer: &std::net::SocketAddr,
+    // ) -> anyhow::Result<()>;
 }

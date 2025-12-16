@@ -3,10 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::io::{ AsyncReadExt, AsyncWriteExt };
 use tokio::net::{ TcpListener, TcpStream };
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::context:: Context ;
-use crate::defines::Listener;
+use crate::defines::{Listener, ProtocolType};
 use crate::http::HTTPHandler;
 
 /// 默认 TCP 读取缓冲区
@@ -67,25 +68,30 @@ impl TCPHandler {
         Ok(())
     }
 
-    /// 每个 TCP 连接的唯一入口
-    async fn handle_connection(
-        self: Arc<Self>,
-        mut socket: TcpStream,
-        addr: std::net::SocketAddr,
-        token: CancellationToken
-    ) {
-        println!("TCP connection from {}", addr);
+async fn handle_connection(
+    self: Arc<Self>,
+    socket: TcpStream,
+    addr: std::net::SocketAddr,
+    token: CancellationToken,
+) {
+    println!("TCP connection from {}", addr);
 
-        // 👇 只判断一次 HTTP
-        match HTTPHandler::is_http_connection(&socket).await {
+    let stream = Arc::new(Mutex::new(socket));
+
+    // ========= HTTP 探测 =========
+    {
+        let guard = stream.lock().await;
+        match HTTPHandler::is_http_connection(&guard).await {
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
-                let _ = HTTPHandler::new(
+                HTTPHandler::new(
                     &addr.ip().to_string(),
                     addr.port(),
-                    socket,
-                    self.context.clone()
-                ).start(token).await;
+                    stream.clone(),
+                    self.context.clone(),
+                )
+                .start(token)
+                .await;
                 return;
             }
             Ok(false) => {}
@@ -94,47 +100,41 @@ impl TCPHandler {
                 return;
             }
         }
+    }
 
-        // 👇 普通 TCP 处理
-        let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
+    // ========= 普通 TCP =========
+    let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
+    let protocol = ProtocolType::TCP(stream.clone());
 
-        loop {
-            tokio::select! {
-                _ = token.cancelled() => {
-                    println!("TCP connection shutdown {}", addr);
-                    break;
-                }
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => {
+                println!("TCP connection shutdown {}", addr);
+                break;
+            }
 
-                res = socket.read(&mut buf) => {
-                    match res {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            if self.on_data(&buf[..n], &mut socket, &addr).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
+            res = async {
+                let mut guard = stream.lock().await;
+                guard.read(&mut buf).await
+            } => {
+                match res {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        self.clone()
+                            .on_data(&protocol, &buf[..n], &addr)
+                            .await
+                            .ok();
                     }
+                    Err(_) => break,
                 }
             }
         }
-        let _ = socket.shutdown().await;
-        println!("TCP connection closed {}", addr);
     }
 
-    async fn on_data(
-        &self,
-        data: &[u8],
-        socket: &mut TcpStream,
-        addr: &std::net::SocketAddr
-    ) -> anyhow::Result<()> {
-        println!("TCP received {} bytes from {}", data.len(), addr);
+    println!("TCP connection closed {}", addr);
+}
 
-        // 默认行为：echo（保持你现在的测试通过）
-        socket.write_all(data).await?;
 
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -152,6 +152,20 @@ impl Listener for TCPHandler {
         // You would need to implement your own mechanism to stop the listener.
         token.cancel();
         let _ = TcpStream::connect(format!("{}:{}", self.ip, self.port)).await;
+        Ok(())
+    }
+    async fn on_data(
+        self: Arc<Self>,
+        protocol_type: &ProtocolType,
+        received: &[u8],
+        remote_peer: &std::net::SocketAddr,
+    ) -> anyhow::Result<()> {
+        println!("TCP received {} bytes from {}", received.len(), remote_peer);
+        if let ProtocolType::TCP(stream) = protocol_type {
+            let mut guard = stream.lock().await;
+            guard.write_all(received).await?;
+        }
+
         Ok(())
     }
 }

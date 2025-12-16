@@ -27,11 +27,11 @@ impl HTTPHandler {
         Ok(matches!(s, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"))
     }
 
-    pub fn new(ip: &String, port: u16, stream: TcpStream, context: Arc<Context>) -> Self {
+    pub fn new(ip: &String, port: u16, stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
         Self {
             ip: ip.clone(),
             port,
-            stream: Arc::new(Mutex::new(stream)),
+            stream,
             context,
         }
     }
@@ -82,6 +82,7 @@ mod tests {
 
     use tokio::net::{ TcpListener, TcpStream };
     use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+    use tokio::sync::Mutex;
     use tokio_util::sync::CancellationToken;
     use zz_account::address::FreeWebMovementAddress;
     use crate::context::Context;
@@ -114,7 +115,7 @@ Sec-WebSocket-Version: 13\r\n\
             let (stream, _) = listener.accept().await.unwrap();
             let address = FreeWebMovementAddress::random();
             let context = Arc::new(Context::new(ip.clone(), port, address));
-            let handler = HTTPHandler::new(&ip.clone(), port, stream, context);
+            let handler = HTTPHandler::new(&ip.clone(), port, Arc::new(Mutex::new(stream)), context);
             let _ = handler.start(token).await;
         });
 
