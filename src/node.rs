@@ -100,8 +100,8 @@ impl Node {
         let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
         self.context = Some(context.clone());
 
-        let tcp = TCPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(&ip, port, context.clone()).await.unwrap().as_ref().clone();
+        let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);

@@ -5,28 +5,23 @@ use crate::{
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio_util::sync::CancellationToken;
 
 pub const PEEK_UDP_BUFFER_LENGTH: usize = 1024;
 
 #[derive(Clone)]
 pub struct UDPHandler {
-    ip: String,
-    port: u16,
     context: Arc<Context>,
     listener: Arc<UdpSocket>,
 }
 
 impl UDPHandler {
-    pub async fn bind(ip: &str, port: u16, context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
-        let udp_addr = format!("{}:{}", ip, port);
+    pub async fn bind(context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
+        let udp_addr = format!("{}:{}", context.ip, context.port);
         let listener = Arc::new(UdpSocket::bind(&udp_addr).await?);
 
         println!("UDP listening on {}", udp_addr);
 
         Ok(Arc::new(Self {
-            ip: ip.to_string(),
-            port,
             context,
             listener,
         }))
@@ -77,8 +72,8 @@ impl Listener for UDPHandler {
         arc_self.start().await
     }
 
-    async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self> {
-        UDPHandler::bind(ip, port, context).await.unwrap()
+    async fn new(context: Arc<Context>) -> Arc<Self> {
+        UDPHandler::bind(context).await.unwrap()
     }
 
     async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
@@ -116,7 +111,7 @@ mod tests {
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
 
-        let server = UDPHandler::bind(ip, port, context).await?;
+        let server = UDPHandler::bind(context).await?;
         let server_clone = Arc::clone(&server);
         server_clone.start().await?; // 启动后台服务器
 
@@ -143,7 +138,7 @@ mod tests {
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
 
-        let server = UDPHandler::bind(ip, port, context).await?;
+        let server = UDPHandler::bind(context).await?;
         let server_clone = Arc::clone(&server);
 
         server_clone.start().await?;

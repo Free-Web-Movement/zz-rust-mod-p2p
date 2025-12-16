@@ -97,7 +97,7 @@ pub enum ProtocolCommand {
 #[async_trait]
 pub trait Listener: Send + Sync + 'static {
     async fn run(&mut self) -> anyhow::Result<()>;
-    async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self>;
+    async fn new(context: Arc<Context>) -> Arc<Self>;
     async fn stop(self: &Arc<Self>) -> anyhow::Result<()>;
     /// 原始 / 解密后的数据
     async fn on_data(

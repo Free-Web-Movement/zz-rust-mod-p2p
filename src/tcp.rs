@@ -18,24 +18,20 @@ pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
 
 #[derive(Clone)]
 pub struct TCPHandler {
-    ip: String,
-    port: u16,
     context: Arc<Context>,
     listener: Arc<TcpListener>,
 }
 
 impl TCPHandler {
     /// 创建并 bind TCPHandler
-    pub async fn bind(ip: &str, port: u16, context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
-        let addr = format!("{}:{}", ip, port);
+    pub async fn bind(context: Arc<Context>) -> anyhow::Result<Arc<Self>> {
+        let addr = format!("{}:{}", context.ip, context.port);
         let listener = TcpListener::bind(&addr).await?;
 
         println!("TCP listening on {}", addr);
 
         Ok(
             Arc::new(Self {
-                ip: ip.to_string(),
-                port,
                 context,
                 listener: Arc::new(listener),
             })
@@ -84,7 +80,7 @@ async fn handle_connection(
         match HTTPHandler::is_http_connection(&guard).await {
             Ok(true) => {
                 println!("HTTP connection detected from {}", addr);
-                HTTPHandler::new(
+                let _ = HTTPHandler::new(
                     &addr.ip().to_string(),
                     addr.port(),
                     stream.clone(),
@@ -144,14 +140,14 @@ impl Listener for TCPHandler {
         let arc_self = Arc::new(self.clone());
         arc_self.start().await
     }
-    async fn new(ip: &String, port: u16, context: Arc<Context>) -> Arc<Self> {
-        TCPHandler::bind(ip, port, context).await.unwrap()
+    async fn new(context: Arc<Context>) -> Arc<Self> {
+        TCPHandler::bind(context).await.unwrap()
     }
     async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
         // TCPListener does not have a built-in stop method.
         // You would need to implement your own mechanism to stop the listener.
         self.context.token.cancel();
-        let _ = TcpStream::connect(format!("{}:{}", self.ip, self.port)).await;
+        let _ = TcpStream::connect(format!("{}:{}", self.context.ip, self.context.port)).await;
         Ok(())
     }
     async fn on_data(
@@ -183,7 +179,7 @@ mod tests {
         let port = 18000;
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
-        let server = TCPHandler::bind(ip, port, context).await?;
+        let server = TCPHandler::bind(context).await?;
 
         tokio::spawn(server.clone().start());
 
@@ -211,8 +207,7 @@ mod tests {
 
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
-        let server = TCPHandler::bind(ip, port, context).await?;
-        let token = CancellationToken::new();
+        let server = TCPHandler::bind(context).await?;
 
         let server_task = tokio::spawn(server.clone().start());
 
