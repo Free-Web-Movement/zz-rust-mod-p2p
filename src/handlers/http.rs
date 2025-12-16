@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::context::Context;
-use crate::ws::WebSocketHandler;
+use crate::handlers::ws::WebSocketHandler;
 
 pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024;
 
