@@ -83,11 +83,22 @@ impl Listener for UDPHandler {
         protocol_type: &ProtocolType,
         received: &[u8], // remote_peer: &std::net::SocketAddr,
     ) -> anyhow::Result<()> {
-        if let ProtocolType::UDP { socket, peer } = protocol_type {
+        if let ProtocolType::UDP { socket: _, peer } = protocol_type {
             println!("UDP received {} bytes from {}", received.len(), peer);
-            socket.send_to(received, peer).await?;
+            let _ = self.send(protocol_type, received).await;
         }
+        Ok(())
+    }
 
+    async fn send(
+        self: &Arc<Self>,
+        protocol_type: &ProtocolType,
+        data: &[u8],
+    ) -> anyhow::Result<()> {
+        if let ProtocolType::UDP { socket, peer } = protocol_type {
+            println!("UDP is sending {} bytes to {}", data.len(), peer);
+            socket.send_to(data, peer).await?;
+        }
         Ok(())
     }
 }

@@ -147,10 +147,30 @@ impl Listener for TCPHandler {
         received: &[u8],
     ) -> anyhow::Result<()> {
         if let ProtocolType::TCP(stream) = protocol_type {
+            {
+                // 括号{}用于设置作用域，让lock锁释放
+                let guard = stream.lock().await;
+                let peer = guard.peer_addr().unwrap();
+                println!("TCP received {} bytes from {}", received.len(), &peer);
+            }
+
+            let _ = self.send(protocol_type, received).await;
+            // guard.write_all(received).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn send(
+        self: &Arc<Self>,
+        protocol_type: &ProtocolType,
+        data: &[u8],
+    ) -> anyhow::Result<()> {
+        if let ProtocolType::TCP(stream) = protocol_type {
             let mut guard = stream.lock().await;
             let peer = guard.peer_addr().unwrap();
-            println!("TCP received {} bytes from {}", received.len(), &peer);
-            guard.write_all(received).await?;
+            println!("TCP is sending {} bytes to {}", data.len(), &peer);
+            guard.write_all(data).await?;
         }
 
         Ok(())

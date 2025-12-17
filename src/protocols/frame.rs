@@ -4,8 +4,6 @@ use zz_account::address::FreeWebMovementAddress;
 use bincode::config;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 
-use crate::protocols::defines::ProtocolType;
-
 /// ⚠️ 不要写返回类型！
 #[inline]
 pub fn frame_config() -> impl bincode::config::Config {
@@ -79,7 +77,6 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio_tungstenite::tungstenite::protocol::frame;
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
