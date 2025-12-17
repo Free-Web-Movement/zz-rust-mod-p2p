@@ -66,18 +66,20 @@ impl Frame {
         Ok(frame)
     }
 
-    pub async fn read(bytes: &Vec<u8>) -> Frame {
+    pub fn from(bytes: &Vec<u8>) -> Frame {
         let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config()).unwrap();
         frame
     }
 
-    pub async fn write(t: ProtocolType) {
+    pub fn to(frame: Frame) -> Vec<u8> {
+        encode_to_vec(&frame, frame_config()).unwrap()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_tungstenite::tungstenite::protocol::frame;
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
@@ -108,6 +110,11 @@ mod tests {
         assert_eq!(frame.signature.to_vec(), frame1.signature.to_vec());
 
         println!("Frame verified successfully!");
+
+        let bytes = Frame::to(frame);
+        let frame2 = Frame::from(&bytes);
+
+        assert_eq!(frame1.signature.to_vec(), frame2.signature.to_vec());
 
         Ok(())
     }
