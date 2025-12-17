@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tokio::net::{TcpStream, UdpSocket};
+use std::net::SocketAddr;
 
 // use serde_json::Value;
 // use zz_account::address::FreeWebMovementAddress as Address;
@@ -72,7 +73,10 @@ struct NatPair<S, T> {
 }
 
 pub enum ProtocolType {
-    UDP(Arc<UdpSocket>),
+    UDP {
+        socket: Arc<UdpSocket>,
+        peer: SocketAddr
+    },
     TCP(Arc<Mutex<TcpStream>>),
     HTTP(Arc<Mutex<TcpStream>>),
     WS(Arc<Mutex<TcpStream>>),
@@ -103,7 +107,7 @@ pub trait Listener: Send + Sync + 'static {
         self: &Arc<Self>,
         socket: &ProtocolType,
         received: &[u8],
-        remote_peer: &std::net::SocketAddr,
+        // remote_peer: &std::net::SocketAddr,
     ) -> anyhow::Result<()>;
 
     // 协议级指令（握手 / 心跳 / 路由 / 升级）

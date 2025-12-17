@@ -5,7 +5,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::defines::ProtocolType;
+use crate::protocols::defines::ProtocolType;
 
 pub struct Context {
     pub(crate) ip: String,

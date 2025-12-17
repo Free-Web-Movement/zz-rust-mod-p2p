@@ -8,7 +8,7 @@ use crate::{
     handlers::tcp::TCPHandler,
     handlers::udp::UDPHandler,
 };
-use crate::defines::Listener;
+use crate::protocols::defines::Listener;
 
 use crate::context::Context;
 

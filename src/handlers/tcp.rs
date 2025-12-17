@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::io::{ AsyncReadExt, AsyncWriteExt };
-use tokio::net::{ TcpListener, TcpStream };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::context:: Context ;
-use crate::defines::{Listener, ProtocolType};
+use crate::context::Context;
 use crate::handlers::http::HTTPHandler;
+use crate::protocols::defines::{Listener, ProtocolType};
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
@@ -30,12 +30,10 @@ impl TCPHandler {
 
         println!("TCP listening on {}", addr);
 
-        Ok(
-            Arc::new(Self {
-                context,
-                listener: Arc::new(listener),
-            })
-        )
+        Ok(Arc::new(Self {
+            context,
+            listener: Arc::new(listener),
+        }))
     }
 
     /// 启动 accept loop（阻塞）
@@ -64,71 +62,66 @@ impl TCPHandler {
         Ok(())
     }
 
-async fn handle_connection(
-    self: Arc<Self>,
-    socket: TcpStream,
-    addr: std::net::SocketAddr,
-    token: CancellationToken,
-) {
-    println!("TCP connection from {}", addr);
+    async fn handle_connection(
+        self: Arc<Self>,
+        socket: TcpStream,
+        addr: std::net::SocketAddr,
+        token: CancellationToken,
+    ) {
+        println!("TCP connection from {}", addr);
 
-    let stream = Arc::new(Mutex::new(socket));
+        let stream = Arc::new(Mutex::new(socket));
 
-    // ========= HTTP 探测 =========
-    {
-        let guard = stream.lock().await;
-        match HTTPHandler::is_http_connection(&guard).await {
-            Ok(true) => {
-                println!("HTTP connection detected from {}", addr);
-                let _ = HTTPHandler::new(
-                    stream.clone(),
-                    self.context.clone(),
-                )
-                .start(token)
-                .await;
-                return;
-            }
-            Ok(false) => {}
-            Err(e) => {
-                eprintln!("HTTP detection error: {:?}", e);
-                return;
-            }
-        }
-    }
-
-    // ========= 普通 TCP =========
-    let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
-    let protocol = ProtocolType::TCP(stream.clone());
-
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => {
-                println!("TCP connection shutdown {}", addr);
-                break;
-            }
-
-            res = async {
-                let mut guard = stream.lock().await;
-                guard.read(&mut buf).await
-            } => {
-                match res {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        self.clone()
-                            .on_data(&protocol, &buf[..n], &addr)
-                            .await
-                            .ok();
-                    }
-                    Err(_) => break,
+        // ========= HTTP 探测 =========
+        {
+            let guard = stream.lock().await;
+            match HTTPHandler::is_http_connection(&guard).await {
+                Ok(true) => {
+                    println!("HTTP connection detected from {}", addr);
+                    let _ = HTTPHandler::new(stream.clone(), self.context.clone())
+                        .start(token)
+                        .await;
+                    return;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!("HTTP detection error: {:?}", e);
+                    return;
                 }
             }
         }
+
+        // ========= 普通 TCP =========
+        let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
+        let protocol = ProtocolType::TCP(stream.clone());
+
+        loop {
+            tokio::select! {
+                _ = token.cancelled() => {
+                    println!("TCP connection shutdown {}", addr);
+                    break;
+                }
+
+                res = async {
+                    let mut guard = stream.lock().await;
+                    guard.read(&mut buf).await
+                } => {
+                    match res {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            self.clone()
+                                .on_data(&protocol, &buf[..n])
+                                .await
+                                .ok();
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
+
+        println!("TCP connection closed {}", addr);
     }
-
-    println!("TCP connection closed {}", addr);
-}
-
-
 }
 
 #[async_trait]
@@ -152,11 +145,11 @@ impl Listener for TCPHandler {
         self: &Arc<Self>,
         protocol_type: &ProtocolType,
         received: &[u8],
-        remote_peer: &std::net::SocketAddr,
     ) -> anyhow::Result<()> {
-        println!("TCP received {} bytes from {}", received.len(), remote_peer);
         if let ProtocolType::TCP(stream) = protocol_type {
             let mut guard = stream.lock().await;
+            let peer = guard.peer_addr().unwrap();
+            println!("TCP received {} bytes from {}", received.len(), &peer);
             guard.write_all(received).await?;
         }
 
@@ -167,7 +160,7 @@ impl Listener for TCPHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
     use zz_account::address::FreeWebMovementAddress;
 
