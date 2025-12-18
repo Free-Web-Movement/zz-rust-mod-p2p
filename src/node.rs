@@ -71,7 +71,7 @@ impl Node {
 
     pub async fn save_address(address: Address) {
         let file = Node::get_node_address_file().await;
-        println!("saving file path: {}", file);
+        println!("Saving file path: {}", file);
         let _ = Address::save_to_file(&address, &file);
     }
 
@@ -91,7 +91,6 @@ impl Node {
     // Removed incorrect generic overload that used `Arc` as a trait bound (not allowed).
     // Use the parameterless `start` implementation below to start the node's handlers.
     pub async fn start(&mut self) {
-        self.start_time = timestamp();
         self.start_time = timestamp();
         let ip = self.ip.clone();
         let port = self.port;

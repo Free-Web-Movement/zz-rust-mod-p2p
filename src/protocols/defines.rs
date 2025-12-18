@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use std::net::SocketAddr;
+use serde::{Deserialize, Serialize};
 use tokio::net::{TcpStream, UdpSocket};
 
 // use serde_json::Value;
@@ -33,24 +34,14 @@ enum NatProtocol {
     HOLE_PUNCH,
 }
 
-// Net Service Type
-#[allow(non_camel_case_types)]
-enum TransportProtocol {
-    UDP,
-    TCP,
-    HTTP,
-    HTTP2,
-    QUIC,
-    HTTP3,
-    WEB_SOCKET,
-    // SMTP,
-    // FTP,
-    // ICMP,
-    // SCTP,
-    // SSH,
-    // DNS,
-}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ProtocolCapability {
+    TCP,
+    UDP,
+    HTTP,
+    WebSocket,
+}
 struct NatInfo {
     pub stun_port: u16,
     pub turn_port: u16,
