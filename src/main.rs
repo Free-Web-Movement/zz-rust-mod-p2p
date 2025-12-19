@@ -24,12 +24,14 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let path = Node::get_node_address_file().await;
-    let address = if !Path::new(&path).exists() {
-        zz_account::address::FreeWebMovementAddress::random()
+    let storage = zz_p2p::nodes::storage::Storeage::new(None, None, None);
+
+    let address = if let Some(address) = storage.read_address().unwrap() {
+        address
     } else {
-        Node::read_address().await
+        zz_account::address::FreeWebMovementAddress::random()
     };
+
     let mut node = zz_p2p::node::Node::new(
         "node1".to_owned(),
         address,

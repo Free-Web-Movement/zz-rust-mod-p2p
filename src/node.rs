@@ -48,32 +48,32 @@ impl Node {
         }
     }
 
-    async fn get_node_dir() -> String {
-        let config_path = dirs_next
-            ::config_dir()
-            .map(|dir| dir.join(DEFAULT_APP_DIR)) // Creates "MyAppName" folder
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR)); // Fallback
-        std::fs::create_dir_all(&config_path).expect("Failed to create config dir");
+    // async fn get_node_dir() -> String {
+    //     let config_path = dirs_next
+    //         ::config_dir()
+    //         .map(|dir| dir.join(DEFAULT_APP_DIR)) // Creates "MyAppName" folder
+    //         .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR)); // Fallback
+    //     std::fs::create_dir_all(&config_path).expect("Failed to create config dir");
 
-        config_path.display().to_string()
-    }
+    //     config_path.display().to_string()
+    // }
 
-    pub async fn get_node_address_file() -> String {
-        let mut dir = Node::get_node_dir().await;
-        dir.push_str(DEFAULT_APP_DIR_ADDRESS_JSON_FILE);
-        dir
-    }
+    // pub async fn get_node_address_file() -> String {
+    //     let mut dir = Node::get_node_dir().await;
+    //     dir.push_str(DEFAULT_APP_DIR_ADDRESS_JSON_FILE);
+    //     dir
+    // }
 
-    pub async fn read_address() -> Address {
-        let file = Node::get_node_address_file().await;
-        Address::load_from_file(&file).unwrap()
-    }
+    // pub async fn read_address() -> Address {
+    //     let file = Node::get_node_address_file().await;
+    //     Address::load_from_file(&file).unwrap()
+    // }
 
-    pub async fn save_address(address: Address) {
-        let file = Node::get_node_address_file().await;
-        println!("Saving file path: {}", file);
-        let _ = Address::save_to_file(&address, &file);
-    }
+    // pub async fn save_address(address: Address) {
+    //     let file = Node::get_node_address_file().await;
+    //     println!("Saving file path: {}", file);
+    //     let _ = Address::save_to_file(&address, &file);
+    // }
 
     async fn listen<T: Listener + Send + 'static>(
         &self,
@@ -123,6 +123,13 @@ impl Node {
 
         self.stop_time = timestamp();
     }
+
+    // Client Actions
+
+    pub fn connect(ip: String, port: u16) {
+      
+    }
+
 }
 
 fn timestamp() -> u128 {
@@ -133,8 +140,6 @@ fn timestamp() -> u128 {
 mod tests {
     use super::*;
     use zz_account::address::FreeWebMovementAddress as Address;
-    use tokio::fs;
-
     #[tokio::test]
     async fn test_node_start_and_stop() {
         let node1 = Arc::new(
@@ -159,33 +164,5 @@ mod tests {
         }
 
         let _ = handle.await;
-    }
-
-    #[tokio::test]
-    async fn test_node_address_file_io() -> anyhow::Result<()> {
-        // Step 1: 获取节点目录
-        let dir = Node::get_node_dir().await;
-        println!("Node directory: {}", dir);
-
-        // Step 2: 获取地址文件路径
-        let file = Node::get_node_address_file().await;
-        println!("Address file path: {}", file);
-
-        // Step 3: 创建随机地址
-        let addr = Address::random();
-
-        // Step 4: 保存地址
-        Node::save_address(addr.clone()).await;
-
-        // Step 5: 文件确实存在
-        assert!(fs::metadata(&file).await.is_ok());
-
-        // // Step 6: 读取地址
-        let loaded = Node::read_address().await;
-
-        // // Step 7: 验证保存和读取一致
-        assert_eq!(addr.to_string(), loaded.to_string());
-
-        Ok(())
     }
 }
