@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fs;
-use std::{ collections::HashSet, path::Path };
 use std::net::SocketAddr;
-use chrono::{ DateTime, Utc };
-use serde::{ Serialize, Deserialize };
+use std::{collections::HashSet, path::Path};
 
 use crate::consts::DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE;
 use crate::protocols::defines::ProtocolCapability;
@@ -13,7 +13,7 @@ pub struct NodeRecord {
     pub endpoint: SocketAddr,
 
     /// 该 endpoint 支持 / 曾成功使用过的协议集合
-    pub protocols: HashSet<ProtocolCapability>,
+    pub protocols: ProtocolCapability,
 
     /// 首次发现时间
     pub first_seen: DateTime<Utc>,
@@ -31,7 +31,9 @@ pub struct NodeRecord {
 impl NodeRecord {
     /// 默认从 {data_dir}/server-list.json 读取
     pub fn load_from_data_dir<P: AsRef<Path>>(data_dir: P) -> Vec<NodeRecord> {
-        let path = data_dir.as_ref().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
+        let path = data_dir
+            .as_ref()
+            .join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
         Self::load_from_path(path)
     }
 
@@ -61,9 +63,8 @@ impl NodeRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Utc, TimeZone};
-    use std::collections::HashSet;
-    use std::net::{SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr};
+    use chrono::{TimeZone, Utc};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use tempfile::tempdir;
 
     use crate::protocols::defines::ProtocolCapability;
@@ -81,14 +82,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("server-list.json");
 
-        let mut protocols = HashSet::new();
-        protocols.insert(ProtocolCapability::TCP);
+        let protocols = ProtocolCapability::TCP;
 
         let node = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,1)), 8000),
-            protocols: protocols.clone(),
-            first_seen: Utc.ymd(2025,1,1).and_hms(12,0,0),
-            last_seen: Utc.ymd(2025,1,1).and_hms(12,5,0),
+            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8000),
+            protocols: protocols,
+            first_seen: Utc.ymd(2025, 1, 1).and_hms(12, 0, 0),
+            last_seen: Utc.ymd(2025, 1, 1).and_hms(12, 5, 0),
             last_disappeared: None,
             reachability_score: 1.0,
         };
@@ -110,27 +110,26 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("server-list.json");
 
-        let mut protocols1 = HashSet::new();
-        protocols1.insert(ProtocolCapability::TCP);
-        protocols1.insert(ProtocolCapability::UDP);
+        let protocols = ProtocolCapability::TCP;
+
+        let protocols1 = protocols | ProtocolCapability::UDP;
 
         let node1 = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10,0,0,1)), 7000),
-            protocols: protocols1.clone(),
-            first_seen: Utc.ymd(2025,2,1).and_hms(10,0,0),
-            last_seen: Utc.ymd(2025,2,1).and_hms(10,5,0),
-            last_disappeared: Some(Utc.ymd(2025,2,1).and_hms(11,0,0)),
+            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 7000),
+            protocols: protocols,
+            first_seen: Utc.ymd(2025, 2, 1).and_hms(10, 0, 0),
+            last_seen: Utc.ymd(2025, 2, 1).and_hms(10, 5, 0),
+            last_disappeared: Some(Utc.ymd(2025, 2, 1).and_hms(11, 0, 0)),
             reachability_score: 0.9,
         };
 
-        let mut protocols2 = HashSet::new();
-        protocols2.insert(ProtocolCapability::TCP);
+        let mut protocols2 = ProtocolCapability::TCP;
 
         let node2 = NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 9000),
-            protocols: protocols2.clone(),
-            first_seen: Utc.ymd(2025,2,2).and_hms(12,0,0),
-            last_seen: Utc.ymd(2025,2,2).and_hms(12,10,0),
+            protocols: protocols2,
+            first_seen: Utc.ymd(2025, 2, 2).and_hms(12, 0, 0),
+            last_seen: Utc.ymd(2025, 2, 2).and_hms(12, 10, 0),
             last_disappeared: None,
             reachability_score: 0.8,
         };
@@ -140,14 +139,20 @@ mod tests {
         assert_eq!(loaded.len(), 2);
 
         // 验证 node1
-        let l1 = loaded.iter().find(|n| n.endpoint == node1.endpoint).unwrap();
+        let l1 = loaded
+            .iter()
+            .find(|n| n.endpoint == node1.endpoint)
+            .unwrap();
         assert_eq!(l1.protocols, node1.protocols);
         assert_eq!(l1.first_seen, node1.first_seen);
         assert_eq!(l1.last_disappeared, node1.last_disappeared);
         assert_eq!(l1.reachability_score, node1.reachability_score);
 
         // 验证 node2
-        let l2 = loaded.iter().find(|n| n.endpoint == node2.endpoint).unwrap();
+        let l2 = loaded
+            .iter()
+            .find(|n| n.endpoint == node2.endpoint)
+            .unwrap();
         assert!(l2.endpoint.is_ipv6());
         assert_eq!(l2.protocols, node2.protocols);
         assert_eq!(l2.reachability_score, node2.reachability_score);
@@ -157,12 +162,11 @@ mod tests {
     fn save_to_data_dir_and_load_from_data_dir() {
         let dir = tempdir().unwrap();
 
-        let mut protocols = HashSet::new();
-        protocols.insert(ProtocolCapability::TCP);
+        let protocols = ProtocolCapability::TCP;
 
         let node = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192,168,1,1)), 8080),
-            protocols: protocols.clone(),
+            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
+            protocols: protocols,
             first_seen: Utc::now(),
             last_seen: Utc::now(),
             last_disappeared: None,

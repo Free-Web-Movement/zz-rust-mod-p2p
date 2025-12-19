@@ -8,6 +8,7 @@ use tokio::net::{TcpStream, UdpSocket};
 // use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
+use bitflags::bitflags;
 
 use crate::context::Context;
 
@@ -34,14 +35,16 @@ enum NatProtocol {
     HOLE_PUNCH,
 }
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ProtocolCapability {
-    TCP,
-    UDP,
-    HTTP,
-    WebSocket,
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ProtocolCapability: u8 {
+        const TCP       = 1 << 0;
+        const UDP       = 1 << 1;
+        const HTTP      = 1 << 2;
+        const WEBSOCKET = 1 << 3;
+    }
 }
+
 struct NatInfo {
     pub stun_port: u16,
     pub turn_port: u16,
