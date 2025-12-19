@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::SocketAddr;
-use std::{collections::HashSet, path::Path};
+use std::{path::Path};
 
 use crate::consts::DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE;
 use crate::protocols::defines::ProtocolCapability;
@@ -50,7 +50,7 @@ impl NodeRecord {
     }
 
     pub fn save_to_data_dir<P: AsRef<Path>>(data_dir: P, records: Vec<NodeRecord>) {
-        let path = data_dir.as_ref().join("server-list.json");
+        let path = data_dir.as_ref().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
         NodeRecord::save_to_path(path, records)
     }
 
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn save_to_path_and_load_from_path_single_node() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("server-list.json");
+        let path = dir.path().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
 
         let protocols = ProtocolCapability::TCP;
 
@@ -108,11 +108,9 @@ mod tests {
     #[test]
     fn save_to_path_and_load_from_path_multiple_nodes_ipv4_ipv6() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("server-list.json");
+        let path = dir.path().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
 
-        let protocols = ProtocolCapability::TCP;
-
-        let protocols1 = protocols | ProtocolCapability::UDP;
+        let protocols = ProtocolCapability::TCP| ProtocolCapability::UDP;
 
         let node1 = NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 7000),
@@ -123,7 +121,7 @@ mod tests {
             reachability_score: 0.9,
         };
 
-        let mut protocols2 = ProtocolCapability::TCP;
+        let protocols2 = ProtocolCapability::TCP;
 
         let node2 = NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 9000),

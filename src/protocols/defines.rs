@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
-use std::net::SocketAddr;
-use serde::{Deserialize, Serialize};
-use tokio::net::{TcpStream, UdpSocket};
-
-// use serde_json::Value;
-// use zz_account::address::FreeWebMovementAddress as Address;
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::Mutex;
 
 use crate::context::Context;
 
@@ -49,15 +46,6 @@ struct NatInfo {
     pub stun_port: u16,
     pub turn_port: u16,
 }
-
-// struct Node {
-//     pub ip: String,
-//     pub port: u16,
-//     pub address: Address,
-//     pub stun_port: u16,
-//     pub turn_port: u16,
-//     pub last_seen: u64,
-// }
 
 struct NatPair<S, T> {
     pub protocol: NatProtocol,
@@ -103,7 +91,11 @@ pub trait Listener: Send + Sync + 'static {
         received: &[u8],
     ) -> anyhow::Result<()>;
 
-    async fn send(self: &Arc<Self>, protocol_type: &ProtocolType, data: &[u8]) -> anyhow::Result<()>;
+    async fn send(
+        self: &Arc<Self>,
+        protocol_type: &ProtocolType,
+        data: &[u8],
+    ) -> anyhow::Result<()>;
 
     // 协议级指令（握手 / 心跳 / 路由 / 升级）
     // async fn on_cmd(
