@@ -1,16 +1,15 @@
 use std::{ path::PathBuf, sync::Arc, time::{ SystemTime, UNIX_EPOCH } };
-
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{
     consts::{ DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE },
-    handlers::tcp::TCPHandler,
-    handlers::udp::UDPHandler,
+    handlers::{tcp::TCPHandler, udp::UDPHandler},
+    nodes::{record::NodeRecord, storage::Storeage},
 };
 use crate::protocols::defines::Listener;
-
 use crate::context::Context;
+use crate::nodes::net_info::NetInfo;
 
 /* =========================
    NODE
@@ -18,6 +17,9 @@ use crate::context::Context;
 
 #[derive(Clone)]
 pub struct Node {
+    pub net_info: Option<NetInfo>,
+    pub storage: Option<Storeage>,
+    pub server_list: Option<Vec<NodeRecord>>,
     pub name: String, // User defined name for the node, no need to be unique
     pub address: Address, // Unique network address of the node
     pub ip: String, // Bound IP address of the node
@@ -45,35 +47,11 @@ impl Node {
             context: None,
             start_time: 0,
             stop_time: 0,
+            net_info: None,
+            storage: None,
+            server_list: None,
         }
     }
-
-    // async fn get_node_dir() -> String {
-    //     let config_path = dirs_next
-    //         ::config_dir()
-    //         .map(|dir| dir.join(DEFAULT_APP_DIR)) // Creates "MyAppName" folder
-    //         .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR)); // Fallback
-    //     std::fs::create_dir_all(&config_path).expect("Failed to create config dir");
-
-    //     config_path.display().to_string()
-    // }
-
-    // pub async fn get_node_address_file() -> String {
-    //     let mut dir = Node::get_node_dir().await;
-    //     dir.push_str(DEFAULT_APP_DIR_ADDRESS_JSON_FILE);
-    //     dir
-    // }
-
-    // pub async fn read_address() -> Address {
-    //     let file = Node::get_node_address_file().await;
-    //     Address::load_from_file(&file).unwrap()
-    // }
-
-    // pub async fn save_address(address: Address) {
-    //     let file = Node::get_node_address_file().await;
-    //     println!("Saving file path: {}", file);
-    //     let _ = Address::save_to_file(&address, &file);
-    // }
 
     async fn listen<T: Listener + Send + 'static>(
         &self,
@@ -105,6 +83,7 @@ impl Node {
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
+        self.net_info = Some(NetInfo::collect(port).unwrap());
     }
 
     pub async fn stop(&mut self) {

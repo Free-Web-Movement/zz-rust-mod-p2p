@@ -3,21 +3,15 @@ use std::{
     path::PathBuf,
 };
 
-use serde::{Deserialize, Serialize};
-
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::consts::{
+use crate::{consts::{
     DEFAULT_APP_DIR,
     DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
     DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE,
-};
+}, nodes::record::NodeRecord};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct ServerNode {
-    pub addr: std::net::SocketAddr,
-}
-
+#[derive(Debug, Clone)]
 pub struct Storeage {
     app_dir: PathBuf,
     address_file: PathBuf,
@@ -75,23 +69,22 @@ impl Storeage {
 
     pub fn save_server_list(
         &self,
-        servers: &std::collections::HashSet<ServerNode>,
+        servers: Vec<NodeRecord>,
     ) -> anyhow::Result<()> {
-        let json = serde_json::to_vec_pretty(servers)?;
-        fs::write(&self.server_list_file, json)?;
+        let json = serde_json::to_string_pretty(&servers).unwrap();
+        fs::write(&self.server_list_file, json).unwrap();
         Ok(())
     }
 
     pub fn read_server_list(
         &self,
-    ) -> anyhow::Result<std::collections::HashSet<ServerNode>> {
+    ) -> anyhow::Result<Vec<NodeRecord>> {
         if !self.server_list_file.exists() {
             return Ok(Default::default());
         }
 
-        let bytes = fs::read(&self.server_list_file)?;
-        let list = serde_json::from_slice(&bytes)?;
-        Ok(list)
+        let content = fs::read_to_string(&self.server_list_file).unwrap();
+        Ok(serde_json::from_str(&content).unwrap())
     }
 
     /* ------------------ getters ------------------ */
@@ -106,20 +99,17 @@ impl Storeage {
 }
 
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use tempfile::TempDir;
     use zz_account::address::FreeWebMovementAddress;
+    use crate::protocols::defines::ProtocolCapability;
+    use chrono::Utc;
+    use std::net::SocketAddr;
 
     fn create_storage(tmp: &TempDir) -> Storeage {
-        Storeage::new(
-            Some(tmp.path().to_str().unwrap()),
-            None,
-            None,
-        )
+        Storeage::new(Some(tmp.path().to_str().unwrap()), None, None)
     }
 
     #[test]
@@ -129,7 +119,6 @@ mod tests {
 
         let addr = storage.read_address()?;
         assert!(addr.is_none());
-
         Ok(())
     }
 
@@ -143,7 +132,6 @@ mod tests {
 
         let loaded = storage.read_address()?.expect("address should exist");
         assert_eq!(address.to_string(), loaded.to_string());
-
         Ok(())
     }
 
@@ -154,7 +142,6 @@ mod tests {
 
         let list = storage.read_server_list()?;
         assert!(list.is_empty());
-
         Ok(())
     }
 
@@ -163,12 +150,11 @@ mod tests {
         let tmp = TempDir::new()?;
         let storage = create_storage(&tmp);
 
-        let list: HashSet<ServerNode> = HashSet::new();
-        storage.save_server_list(&list)?;
+        let servers: Vec<NodeRecord> = Vec::new();
+        storage.save_server_list(servers.clone())?;
 
         let loaded = storage.read_server_list()?;
         assert!(loaded.is_empty());
-
         Ok(())
     }
 
@@ -177,41 +163,33 @@ mod tests {
         let tmp = TempDir::new()?;
         let storage = create_storage(&tmp);
 
-        let mut list = HashSet::new();
-        list.insert(ServerNode {
-            addr: "127.0.0.1:18000".parse().unwrap(),
-        });
-        list.insert(ServerNode {
-            addr: "192.168.1.10:9000".parse().unwrap(),
-        });
+        let now = Utc::now();
+        let servers = vec![
+            NodeRecord {
+                endpoint: "127.0.0.1:18000".parse::<SocketAddr>()?,
+                protocols: ProtocolCapability::TCP,
+                first_seen: now,
+                last_seen: now,
+                last_disappeared: None,
+                reachability_score: 1.0,
+            },
+            NodeRecord {
+                endpoint: "192.168.1.10:9000".parse::<SocketAddr>()?,
+                protocols: ProtocolCapability::UDP,
+                first_seen: now,
+                last_seen: now,
+                last_disappeared: None,
+                reachability_score: 0.8,
+            },
+        ];
 
-        storage.save_server_list(&list)?;
-
+        storage.save_server_list(servers.clone())?;
         let loaded = storage.read_server_list()?;
-        assert_eq!(list.len(), loaded.len());
-        assert_eq!(list, loaded);
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_server_list_uniqueness() -> anyhow::Result<()> {
-        let tmp = TempDir::new()?;
-        let storage = create_storage(&tmp);
-
-        let mut list = HashSet::new();
-        list.insert(ServerNode {
-            addr: "8.8.8.8:53".parse().unwrap(),
-        });
-        list.insert(ServerNode {
-            addr: "8.8.8.8:53".parse().unwrap(),
-        });
-
-        assert_eq!(list.len(), 1);
-
-        storage.save_server_list(&list)?;
-        let loaded = storage.read_server_list()?;
-        assert_eq!(loaded.len(), 1);
+        assert_eq!(servers.len(), loaded.len());
+        for server in servers.iter() {
+            assert!(loaded.iter().any(|s| s.endpoint == server.endpoint));
+        }
 
         Ok(())
     }
@@ -221,11 +199,7 @@ mod tests {
         let tmp = TempDir::new()?;
         let dir = tmp.path().join("app_data");
 
-        let storage = Storeage::new(
-            Some(dir.to_str().unwrap()),
-            None,
-            None,
-        );
+        let storage = Storeage::new(Some(dir.to_str().unwrap()), None, None);
 
         assert!(dir.exists());
         assert!(storage.address_path().parent().unwrap().exists());
