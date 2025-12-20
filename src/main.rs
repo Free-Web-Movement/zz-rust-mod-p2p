@@ -24,7 +24,7 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let storage = zz_p2p::nodes::storage::Storeage::new(None, None, None);
+    let storage = zz_p2p::nodes::storage::Storeage::new(None, None, None, None);
 
     let address = if let Some(address) = storage.read_address().unwrap() {
         address

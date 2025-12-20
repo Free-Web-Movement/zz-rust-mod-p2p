@@ -95,23 +95,8 @@ impl Node {
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
-        self.storage = Some(Storeage::new(None, None, None));
-        let storage = self.storage.as_ref().unwrap();
-
-        let mut server_list = storage.read_server_list().unwrap_or_default();
-
-        let public_nodes = NodeRecord::to_list(
-            self.net_info.as_ref().unwrap().public_ips(),
-            port,
-            ProtocolCapability::TCP | ProtocolCapability::UDP,
-        );
-
-        server_list = NodeRecord::merge(public_nodes, server_list);
-
-        storage.save_address(&self.address).unwrap();
-        storage.save_server_list(server_list.clone()).unwrap();
-
-        self.server_list = Some(server_list);
+        self.init_storage_and_server_list(port);
+        
     }
 
     pub async fn stop(&mut self) {
@@ -133,7 +118,36 @@ impl Node {
 
     // Client Actions
 
-    pub fn connect(ip: String, port: u16) {}
+       pub fn init_storage_and_server_list(&mut self, port: u16) -> anyhow::Result<()> {
+        // 1️⃣ 初始化 storage
+        self.storage = Some(Storeage::new(None, None, None, None));
+        let storage = self.storage.as_ref().unwrap();
+
+        // 2️⃣ 读取现有外部 server list
+        let mut external_list = storage.read_external_server_list().unwrap_or_default();
+
+        // 3️⃣ 获取公网节点列表
+        let public_nodes = NodeRecord::to_list(
+            self.net_info.as_ref().unwrap().public_ips(),
+            port,
+            ProtocolCapability::TCP | ProtocolCapability::UDP,
+        );
+
+        // 4️⃣ 合并公网节点到外部 server list
+        external_list = NodeRecord::merge(public_nodes, external_list);
+
+        // 5️⃣ 保存当前节点地址
+        storage.save_address(&self.address)?;
+
+        // 6️⃣ 保存更新后的外部 server list
+        storage.save_external_server_list(external_list.clone())?;
+
+        // 7️⃣ 更新 Node 自身 server_list
+        self.server_list = Some(external_list);
+
+        Ok(())
+    }
+
 }
 
 fn timestamp() -> u128 {

@@ -7,7 +7,7 @@ use std::{
 
 use crate::protocols::defines::ProtocolCapability;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NodeRecord {
     /// 使用 SocketAddr 作为唯一网络识别
     pub endpoint: SocketAddr,
@@ -25,7 +25,7 @@ pub struct NodeRecord {
     pub last_disappeared: Option<DateTime<Utc>>,
 
     /// 连通性评分（用于节点筛选 / 退避）
-    pub reachability_score: f32,
+    pub reachability_score: u8,
 }
 
 impl NodeRecord {
@@ -43,7 +43,7 @@ impl NodeRecord {
                 first_seen: now,
                 last_seen: now,
                 last_disappeared: None,
-                reachability_score: 1.0,
+                reachability_score: 100,
             })
             .collect()
     }
@@ -117,7 +117,7 @@ mod tests {
         assert!(node.last_seen >= before && node.last_seen <= after);
         assert!(node.last_seen >= node.first_seen);
         assert!(node.last_disappeared.is_none());
-        assert_eq!(node.reachability_score, 1.0);
+        assert_eq!(node.reachability_score, 100);
     }
 
     #[test]
@@ -138,7 +138,7 @@ mod tests {
             assert_eq!(node.endpoint, SocketAddr::new(*ip, port));
             assert_eq!(node.protocols, protocols);
             assert!(node.last_disappeared.is_none());
-            assert_eq!(node.reachability_score, 1.0);
+            assert_eq!(node.reachability_score, 100);
         }
     }
 
