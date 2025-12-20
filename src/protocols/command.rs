@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bincode::{Encode, Decode};
 use bincode::config;
+use bincode::{Decode, Encode};
 
 pub enum Entity {
     Node = 1,
@@ -32,23 +32,16 @@ pub struct Command {
     pub entity: u8,
     pub action: u8,
     pub version: u16,
-    pub length: u32,
     pub data: Option<Vec<u8>>,
 }
 
 impl Command {
-    pub fn new(
-        entity: u8,
-        action: u8,
-        version: u16,
-        data: Option<Vec<u8>>,
-    ) -> Self {
+    pub fn new(entity: u8, action: u8, version: u16, data: Option<Vec<u8>>) -> Self {
         let length = data.as_ref().map(|d| d.len() as u32).unwrap_or(0);
         Self {
             entity,
             action,
             version,
-            length,
             data,
         }
     }
@@ -64,9 +57,22 @@ impl Command {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        let (cmd, _len): (Self, usize) =
-            bincode::decode_from_slice(bytes, Self::config())?;
+        let (cmd, _len): (Self, usize) = bincode::decode_from_slice(bytes, Self::config())?;
         Ok(cmd)
+    }
+    /* =========================
+       Protocol helpers
+    ========================= */
+
+    /// send = build + encode (protocol layer, no IO)
+    pub fn send(entity: u8, action: u8, version: u16, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
+        let cmd = Command::new(entity, action, version, data);
+        cmd.serialize()
+    }
+
+    /// receive = decode from wire bytes
+    pub fn receive(bytes: &[u8]) -> Result<Command> {
+        Command::deserialize(bytes)
     }
 }
 
@@ -80,5 +86,25 @@ mod tests {
         let bytes = cmd.serialize().unwrap();
         let cmd2 = Command::deserialize(&bytes).unwrap();
         assert_eq!(cmd, cmd2);
+    }
+
+    #[test]
+    fn test_send_receive_roundtrip() {
+        let payload = vec![10, 20, 30];
+
+        let bytes = Command::send(
+            Entity::Node as u8,
+            NodeAction::OnLine as u8,
+            1,
+            Some(payload.clone()),
+        )
+        .unwrap();
+
+        let cmd = Command::receive(&bytes).unwrap();
+
+        assert_eq!(cmd.entity, Entity::Node as u8);
+        assert_eq!(cmd.action, NodeAction::OnLine as u8);
+        assert_eq!(cmd.version, 1);
+        assert_eq!(cmd.data, Some(payload));
     }
 }

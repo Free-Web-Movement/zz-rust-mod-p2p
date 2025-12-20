@@ -1,19 +1,16 @@
-use serde::ser;
 use std::{
-    path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::{context::Context, nodes::storage};
+use crate::context::Context;
 use crate::nodes::net_info::NetInfo;
 use crate::protocols::defines::Listener;
 use crate::{
-    consts::{DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE},
     handlers::{tcp::TCPHandler, udp::UDPHandler},
-    nodes::{net_info, record::NodeRecord, storage::Storeage},
+    nodes::{record::NodeRecord, storage::Storeage},
     protocols::defines::ProtocolCapability,
 };
 
