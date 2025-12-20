@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::net::SocketAddr;
-use std::{path::Path};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+};
 
-use crate::consts::DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE;
 use crate::protocols::defines::ProtocolCapability;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,151 +29,141 @@ pub struct NodeRecord {
 }
 
 impl NodeRecord {
-    /// 默认从 {data_dir}/server-list.json 读取
-    pub fn load_from_data_dir<P: AsRef<Path>>(data_dir: P) -> Vec<NodeRecord> {
-        let path = data_dir
-            .as_ref()
-            .join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
-        Self::load_from_path(path)
+    pub fn to_list(
+        ip_addrs: Vec<IpAddr>,
+        port: u16,
+        protocol_capabilities: ProtocolCapability,
+    ) -> Vec<NodeRecord> {
+        let now = Utc::now();
+        ip_addrs
+            .into_iter()
+            .map(|ip| NodeRecord {
+                endpoint: SocketAddr::new(ip, port),
+                protocols: protocol_capabilities,
+                first_seen: now,
+                last_seen: now,
+                last_disappeared: None,
+                reachability_score: 1.0,
+            })
+            .collect()
     }
 
-    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Vec<NodeRecord> {
-        let path = path.as_ref();
+    /// 使用 dst 更新 self（self = older, dst = newer）
+    pub fn update(mut self, other: NodeRecord) -> NodeRecord {
+        debug_assert_eq!(self.endpoint, other.endpoint);
 
-        if !path.exists() {
-            // 文件不存在 → 返回空列表（这是正确行为）
-            return Vec::new();
+        self.protocols |= other.protocols;
+
+        self.first_seen = self.first_seen.min(other.first_seen);
+        self.last_seen = self.last_seen.max(other.last_seen);
+
+        self.last_disappeared = match (self.last_disappeared, other.last_disappeared) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+
+        self.reachability_score = self.reachability_score.max(other.reachability_score);
+
+        self
+    }
+
+    pub fn merge(src: Vec<NodeRecord>, dst: Vec<NodeRecord>) -> Vec<NodeRecord> {
+        let mut map: HashMap<SocketAddr, NodeRecord> = HashMap::new();
+
+        // 先放 dst（本地已有）
+        for record in dst {
+            map.insert(record.endpoint, record);
         }
 
-        let content = fs::read_to_string(path).unwrap();
-        serde_json::from_str(&content).unwrap()
-    }
+        // 再用 src 更新
+        for record in src {
+            map.entry(record.endpoint)
+                .and_modify(|existing| {
+                    let updated = existing.clone().update(record.clone());
+                    *existing = updated;
+                })
+                .or_insert(record);
+        }
 
-    pub fn save_to_data_dir<P: AsRef<Path>>(data_dir: P, records: Vec<NodeRecord>) {
-        let path = data_dir.as_ref().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
-        NodeRecord::save_to_path(path, records)
-    }
-
-    pub fn save_to_path<P: AsRef<Path>>(path: P, records: Vec<NodeRecord>) {
-        let json = serde_json::to_string_pretty(&records).unwrap();
-        fs::write(path, json).unwrap();
+        map.into_values().collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-    use tempfile::tempdir;
-
-    use crate::protocols::defines::ProtocolCapability;
+    use chrono::Utc;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[test]
-    fn load_from_path_file_not_exists_returns_empty() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("not_exist.json");
-        let records = NodeRecord::load_from_path(path);
-        assert!(records.is_empty());
+    fn test_to_list_single_ipv4() {
+        let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        let port = 3030;
+        let protocols = ProtocolCapability::TCP | ProtocolCapability::UDP;
+
+        let before = Utc::now();
+        let list = NodeRecord::to_list(vec![ip], port, protocols);
+        let after = Utc::now();
+
+        assert_eq!(list.len(), 1);
+
+        let node = &list[0];
+
+        assert_eq!(node.endpoint, SocketAddr::new(ip, port));
+        assert_eq!(node.protocols, protocols);
+        assert!(node.first_seen >= before && node.first_seen <= after);
+        assert!(node.last_seen >= before && node.last_seen <= after);
+        assert!(node.last_seen >= node.first_seen);
+        assert!(node.last_disappeared.is_none());
+        assert_eq!(node.reachability_score, 1.0);
     }
 
     #[test]
-    fn save_to_path_and_load_from_path_single_node() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
+    fn test_to_list_ipv4_and_ipv6() {
+        let ips = vec![
+            IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+            IpAddr::V6("2001:4860:4860::8888".parse().unwrap()),
+        ];
 
+        let port = 4040;
         let protocols = ProtocolCapability::TCP;
 
-        let node = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8000),
-            protocols: protocols,
-            first_seen: Utc.ymd(2025, 1, 1).and_hms(12, 0, 0),
-            last_seen: Utc.ymd(2025, 1, 1).and_hms(12, 5, 0),
-            last_disappeared: None,
-            reachability_score: 1.0,
-        };
+        let list = NodeRecord::to_list(ips.clone(), port, protocols);
 
-        NodeRecord::save_to_path(&path, vec![node.clone()]);
-        let loaded = NodeRecord::load_from_path(&path);
-        assert_eq!(loaded.len(), 1);
-        let loaded_node = &loaded[0];
-        assert_eq!(loaded_node.endpoint, node.endpoint);
-        assert_eq!(loaded_node.protocols, node.protocols);
-        assert_eq!(loaded_node.first_seen, node.first_seen);
-        assert_eq!(loaded_node.last_seen, node.last_seen);
-        assert_eq!(loaded_node.last_disappeared, node.last_disappeared);
-        assert_eq!(loaded_node.reachability_score, node.reachability_score);
+        assert_eq!(list.len(), 2);
+
+        for (node, ip) in list.iter().zip(ips.iter()) {
+            assert_eq!(node.endpoint, SocketAddr::new(*ip, port));
+            assert_eq!(node.protocols, protocols);
+            assert!(node.last_disappeared.is_none());
+            assert_eq!(node.reachability_score, 1.0);
+        }
     }
 
     #[test]
-    fn save_to_path_and_load_from_path_multiple_nodes_ipv4_ipv6() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join(DEFAULT_APP_DIR_SERVER_LIST_JSON_FILE);
-
-        let protocols = ProtocolCapability::TCP| ProtocolCapability::UDP;
-
-        let node1 = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 7000),
-            protocols: protocols,
-            first_seen: Utc.ymd(2025, 2, 1).and_hms(10, 0, 0),
-            last_seen: Utc.ymd(2025, 2, 1).and_hms(10, 5, 0),
-            last_disappeared: Some(Utc.ymd(2025, 2, 1).and_hms(11, 0, 0)),
-            reachability_score: 0.9,
-        };
-
-        let protocols2 = ProtocolCapability::TCP;
-
-        let node2 = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 9000),
-            protocols: protocols2,
-            first_seen: Utc.ymd(2025, 2, 2).and_hms(12, 0, 0),
-            last_seen: Utc.ymd(2025, 2, 2).and_hms(12, 10, 0),
-            last_disappeared: None,
-            reachability_score: 0.8,
-        };
-
-        NodeRecord::save_to_path(&path, vec![node1.clone(), node2.clone()]);
-        let loaded = NodeRecord::load_from_path(&path);
-        assert_eq!(loaded.len(), 2);
-
-        // 验证 node1
-        let l1 = loaded
-            .iter()
-            .find(|n| n.endpoint == node1.endpoint)
-            .unwrap();
-        assert_eq!(l1.protocols, node1.protocols);
-        assert_eq!(l1.first_seen, node1.first_seen);
-        assert_eq!(l1.last_disappeared, node1.last_disappeared);
-        assert_eq!(l1.reachability_score, node1.reachability_score);
-
-        // 验证 node2
-        let l2 = loaded
-            .iter()
-            .find(|n| n.endpoint == node2.endpoint)
-            .unwrap();
-        assert!(l2.endpoint.is_ipv6());
-        assert_eq!(l2.protocols, node2.protocols);
-        assert_eq!(l2.reachability_score, node2.reachability_score);
+    fn test_to_list_empty_ips() {
+        let list = NodeRecord::to_list(
+            Vec::new(),
+            1234,
+            ProtocolCapability::TCP | ProtocolCapability::UDP,
+        );
+        assert!(list.is_empty());
     }
 
     #[test]
-    fn save_to_data_dir_and_load_from_data_dir() {
-        let dir = tempdir().unwrap();
+    fn test_protocol_capability_preserved() {
+        let ip = IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9));
+        let protocols =
+            ProtocolCapability::TCP | ProtocolCapability::UDP | ProtocolCapability::WEBSOCKET;
 
-        let protocols = ProtocolCapability::TCP;
+        let list = NodeRecord::to_list(vec![ip], 8080, protocols);
+        let node = &list[0];
 
-        let node = NodeRecord {
-            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080),
-            protocols: protocols,
-            first_seen: Utc::now(),
-            last_seen: Utc::now(),
-            last_disappeared: None,
-            reachability_score: 1.0,
-        };
-
-        NodeRecord::save_to_data_dir(dir.path(), vec![node.clone()]);
-        let loaded = NodeRecord::load_from_data_dir(dir.path());
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].endpoint, node.endpoint);
+        assert!(node.protocols.contains(ProtocolCapability::TCP));
+        assert!(node.protocols.contains(ProtocolCapability::UDP));
+        assert!(node.protocols.contains(ProtocolCapability::WEBSOCKET));
+        assert!(!node.protocols.contains(ProtocolCapability::HTTP));
     }
 }

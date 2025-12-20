@@ -1,5 +1,5 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
 use if_addrs::get_if_addrs;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::protocols::defines::ProtocolCapability;
 /// 本地与公网 IP 集合
@@ -37,16 +37,21 @@ impl NetInfo {
 
     /// 判断 IPv4 是否为公网
     pub fn is_public_v4(ip: &Ipv4Addr) -> bool {
-        !(ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_multicast() || ip.is_broadcast() || ip.is_documentation())
+        !(ip.is_private()
+            || ip.is_loopback()
+            || ip.is_link_local()
+            || ip.is_multicast()
+            || ip.is_broadcast()
+            || ip.is_documentation())
     }
 
     /// 判断 IPv6 是否为公网
     pub fn is_public_v6(ip: &Ipv6Addr) -> bool {
         !(ip.is_loopback()
-          || ip.is_multicast()
-          || ip.is_unspecified()
-          || ip.is_unique_local()
-          || ip.is_unicast_link_local())
+            || ip.is_multicast()
+            || ip.is_unspecified()
+            || ip.is_unique_local()
+            || ip.is_unicast_link_local())
     }
 
     /// 添加本地 IPv4
@@ -124,79 +129,123 @@ impl NetInfo {
     }
 
     /// 将所有公网 IP 组合成地址列表，方便加入服务器列表
-    pub fn public_endpoints(&self) -> Vec<(String, u16)> {
-        let mut endpoints = Vec::new();
-        for ip in &self.v4.public_ips {
-            endpoints.push((ip.to_string(), self.port));
-        }
-        for ip in &self.v6.public_ips {
-            endpoints.push((ip.to_string(), self.port));
-        }
-        endpoints
+    pub fn public_ips(&self) -> Vec<IpAddr> {
+        let mut ips = Vec::new();
+        ips.extend(self.v4.public_ips.iter().map(|ip| IpAddr::V4(*ip)));
+        ips.extend(self.v6.public_ips.iter().map(|ip| IpAddr::V6(*ip)));
+        ips
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    /* ---------- is_public_v4 ---------- */
 
     #[test]
-    fn test_ipv4_public() {
-        assert!(NetInfo::is_public_v4(&"8.8.8.8".parse().unwrap()));
-        assert!(NetInfo::is_public_v4(&"1.2.3.4".parse().unwrap()));
-        assert!(!NetInfo::is_public_v4(&"10.0.0.1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v4(&"192.168.1.1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v4(&"172.16.0.1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v4(&"127.0.0.1".parse().unwrap()));
+    fn test_is_public_v4() {
+        assert!(!NetInfo::is_public_v4(&Ipv4Addr::new(127, 0, 0, 1))); // loopback
+        assert!(!NetInfo::is_public_v4(&Ipv4Addr::new(192, 168, 1, 1))); // private
+        assert!(!NetInfo::is_public_v4(&Ipv4Addr::new(224, 0, 0, 1))); // multicast
+        assert!(NetInfo::is_public_v4(&Ipv4Addr::new(8, 8, 8, 8))); // public
+    }
+
+    /* ---------- is_public_v6 ---------- */
+
+    #[test]
+    fn test_is_public_v6() {
+        assert!(!NetInfo::is_public_v6(&Ipv6Addr::LOCALHOST));
+        assert!(!NetInfo::is_public_v6(&Ipv6Addr::UNSPECIFIED));
+        assert!(!NetInfo::is_public_v6(&"fc00::1".parse().unwrap())); // unique local
+        assert!(NetInfo::is_public_v6(&"2001:4860:4860::8888".parse().unwrap())); // public
+    }
+
+    /* ---------- add_local / add_public ---------- */
+
+    #[test]
+    fn test_add_local_and_public_v4() {
+        let mut info = NetInfo::new(8080);
+        let local = Ipv4Addr::new(192, 168, 1, 10);
+        let public = Ipv4Addr::new(8, 8, 8, 8);
+
+        info.add_local_v4(local);
+        info.add_local_v4(local); // duplicate
+        assert_eq!(info.v4.local_ips.len(), 1);
+
+        info.add_public_v4(public);
+        info.add_public_v4(public); // duplicate
+        assert_eq!(info.v4.public_ips.len(), 1);
+
+        // should not accept private as public
+        info.add_public_v4(local);
+        assert_eq!(info.v4.public_ips.len(), 1);
     }
 
     #[test]
-    fn test_ipv6_public() {
-        assert!(NetInfo::is_public_v6(&"2001:4860:4860::8888".parse().unwrap()));
-        assert!(NetInfo::is_public_v6(&"2607:f8b0:4005:805::200e".parse().unwrap()));
-        assert!(!NetInfo::is_public_v6(&"::1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v6(&"fc00::1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v6(&"fe80::1".parse().unwrap()));
-        assert!(!NetInfo::is_public_v6(&"ff00::1".parse().unwrap()));
+    fn test_add_local_and_public_v6() {
+        let mut info = NetInfo::new(8080);
+        let local: Ipv6Addr = "fe80::1".parse().unwrap();
+        let public: Ipv6Addr = "2001:db8::1".parse().unwrap();
+
+        info.add_local_v6(local);
+        info.add_local_v6(local);
+        assert_eq!(info.v6.local_ips.len(), 1);
+
+        info.add_public_v6(public);
+        info.add_public_v6(public);
+        assert_eq!(info.v6.public_ips.len(), 1);
+
+        info.add_public_v6(local);
+        assert_eq!(info.v6.public_ips.len(), 1);
+    }
+
+    /* ---------- new() ---------- */
+
+    #[test]
+    fn test_new_default() {
+        let info = NetInfo::new(9000);
+        assert_eq!(info.port, 9000);
+        assert!(info.v4.local_ips.is_empty());
+        assert!(info.v6.public_ips.is_empty());
+        assert!(info.protocol_capabilities.contains(ProtocolCapability::TCP));
+        assert!(info.protocol_capabilities.contains(ProtocolCapability::UDP));
+    }
+
+    /* ---------- public_ips() ---------- */
+
+    #[test]
+    fn test_public_ips_mix() {
+        let mut info = NetInfo::new(8080);
+
+        let v4 = Ipv4Addr::new(8, 8, 8, 8);
+        let v6: Ipv6Addr = "2001:4860::8888".parse().unwrap();
+
+        info.v4.public_ips.push(v4);
+        info.v6.public_ips.push(v6);
+
+        let ips = info.public_ips();
+        assert_eq!(ips.len(), 2);
+        assert!(ips.contains(&IpAddr::V4(v4)));
+        assert!(ips.contains(&IpAddr::V6(v6)));
     }
 
     #[test]
-    fn test_add_ips() {
-        let mut net = NetInfo::new(30303);
-        net.add_local_v4("192.168.1.2".parse().unwrap());
-        net.add_local_v6("fe80::1".parse().unwrap());
-        net.add_public_v4("8.8.8.8".parse().unwrap());
-        net.add_public_v6("2001:4860:4860::8888".parse().unwrap());
-        assert_eq!(net.v4.local_ips, vec!["192.168.1.2".parse::<std::net::IpAddr>().unwrap()]);
-        assert_eq!(net.v6.local_ips, vec!["fe80::1".parse::<std::net::IpAddr>().unwrap()]);
-        assert_eq!(net.v4.public_ips, vec!["8.8.8.8".parse::<std::net::IpAddr>().unwrap()]);
-        assert_eq!(net.v6.public_ips, vec!["2001:4860:4860::8888".parse::<std::net::IpAddr>().unwrap()]);
+    fn test_public_ips_empty() {
+        let info = NetInfo::new(8080);
+        assert!(info.public_ips().is_empty());
     }
 
-    #[test]
-    fn test_default_protocol() {
-        let net = NetInfo::new(12345);
-        assert!(net.protocol_capabilities.contains(ProtocolCapability::TCP));
-        assert!(net.protocol_capabilities.contains(ProtocolCapability::UDP));
-        assert!(!net.protocol_capabilities.contains(ProtocolCapability::HTTP));
-        assert!(!net.protocol_capabilities.contains(ProtocolCapability::WEBSOCKET));
-    }
+    /* ---------- collect() ---------- */
 
     #[test]
-    fn test_public_endpoints() {
-        let mut net = NetInfo::new(30303);
-        net.add_public_v4("8.8.8.8".parse().unwrap());
-        net.add_public_v6("2001:4860:4860::8888".parse().unwrap());
-        let eps = net.public_endpoints();
-        assert!(eps.contains(&("8.8.8.8".to_string(), 30303)));
-        assert!(eps.contains(&("2001:4860:4860::8888".to_string(), 30303)));
-    }
+    fn test_collect_does_not_panic() -> anyhow::Result<()> {
+        let info = NetInfo::collect(7777)?;
+        assert_eq!(info.port, 7777);
 
-    #[test]
-    fn test_collect_function() {
-        let net = NetInfo::collect(30303).unwrap();
-        // 至少包含本地 IP 或公网 IP
-        assert!(net.v4.local_ips.len() + net.v4.public_ips.len() >= 0);
-        assert!(net.v6.local_ips.len() + net.v6.public_ips.len() >= 0);
+        // 不对 IP 做断言（环境相关）
+        let _ = info.public_ips();
+        Ok(())
     }
 }

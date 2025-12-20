@@ -1,15 +1,21 @@
-use std::{ path::PathBuf, sync::Arc, time::{ SystemTime, UNIX_EPOCH } };
+use serde::ser;
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::{
-    consts::{ DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE },
-    handlers::{tcp::TCPHandler, udp::UDPHandler},
-    nodes::{record::NodeRecord, storage::Storeage},
-};
-use crate::protocols::defines::Listener;
 use crate::context::Context;
 use crate::nodes::net_info::NetInfo;
+use crate::protocols::defines::Listener;
+use crate::{
+    consts::{DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE},
+    handlers::{tcp::TCPHandler, udp::UDPHandler},
+    nodes::{net_info, record::NodeRecord, storage::Storeage},
+    protocols::defines::ProtocolCapability,
+};
 
 /* =========================
    NODE
@@ -20,14 +26,14 @@ pub struct Node {
     pub net_info: Option<NetInfo>,
     pub storage: Option<Storeage>,
     pub server_list: Option<Vec<NodeRecord>>,
-    pub name: String, // User defined name for the node, no need to be unique
+    pub name: String,     // User defined name for the node, no need to be unique
     pub address: Address, // Unique network address of the node
-    pub ip: String, // Bound IP address of the node
-    pub port: u16, // Bound port of the node
-    pub stun_port: u16, // STUN service port
-    pub trun_port: u16, // TURN service port
+    pub ip: String,       // Bound IP address of the node
+    pub port: u16,        // Bound port of the node
+    pub stun_port: u16,   // STUN service port
+    pub trun_port: u16,   // TURN service port
     pub start_time: u128, // Timestamp when the node was started
-    pub stop_time: u128, // Timestamp when the node was started
+    pub stop_time: u128,  // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -53,10 +59,7 @@ impl Node {
         }
     }
 
-    async fn listen<T: Listener + Send + 'static>(
-        &self,
-        object: T
-    ) -> Arc<Mutex<T>> {
+    async fn listen<T: Listener + Send + 'static>(&self, object: T) -> Arc<Mutex<T>> {
         let handler = Arc::new(Mutex::new(object));
         let handler_clone = handler.clone();
         tokio::spawn(async move {
@@ -74,16 +77,41 @@ impl Node {
         let port = self.port;
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
-    
+
         let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
         self.context = Some(context.clone());
 
-        let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let tcp = TCPHandler::bind(context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
+        let udp = UDPHandler::bind(context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
+        self.storage = Some(Storeage::new(None, None, None));
+        let storage = self.storage.as_ref().unwrap();
+
+        let mut server_list = storage.read_server_list().unwrap_or_default();
+
+        let public_nodes = NodeRecord::to_list(
+            self.net_info.as_ref().unwrap().public_ips(),
+            port,
+            ProtocolCapability::TCP | ProtocolCapability::UDP,
+        );
+
+        server_list = NodeRecord::merge(public_nodes, server_list);
+
+        storage.save_address(&self.address).unwrap();
+        storage.save_server_list(server_list.clone()).unwrap();
+
+        self.server_list = Some(server_list);
     }
 
     pub async fn stop(&mut self) {
@@ -105,14 +133,14 @@ impl Node {
 
     // Client Actions
 
-    pub fn connect(ip: String, port: u16) {
-      
-    }
-
+    pub fn connect(ip: String, port: u16) {}
 }
 
 fn timestamp() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }
 
 #[cfg(test)]
@@ -121,9 +149,12 @@ mod tests {
     use zz_account::address::FreeWebMovementAddress as Address;
     #[tokio::test]
     async fn test_node_start_and_stop() {
-        let node1 = Arc::new(
-            Mutex::new(Node::new("node".into(), Address::random(), "127.0.0.1".into(), 7001))
-        );
+        let node1 = Arc::new(Mutex::new(Node::new(
+            "node".into(),
+            Address::random(),
+            "127.0.0.1".into(),
+            7001,
+        )));
 
         let node_clone = node1.clone();
 
