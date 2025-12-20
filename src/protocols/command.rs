@@ -37,7 +37,6 @@ pub struct Command {
 
 impl Command {
     pub fn new(entity: u8, action: u8, version: u16, data: Option<Vec<u8>>) -> Self {
-        let length = data.as_ref().map(|d| d.len() as u32).unwrap_or(0);
         Self {
             entity,
             action,
