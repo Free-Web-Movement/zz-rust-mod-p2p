@@ -7,7 +7,7 @@ use std::{
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::context::Context;
+use crate::{context::Context, nodes::storage};
 use crate::nodes::net_info::NetInfo;
 use crate::protocols::defines::Listener;
 use crate::{
@@ -40,7 +40,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(name: String, address: Address, ip: String, port: u16) -> Self {
+    pub fn new(name: String, address: Address, ip: String, port: u16, storage: Option<Storeage>) -> Self {
         Self {
             name,
             address,
@@ -54,7 +54,7 @@ impl Node {
             start_time: 0,
             stop_time: 0,
             net_info: None,
-            storage: None,
+            storage: storage,
             server_list: None,
         }
     }
@@ -95,8 +95,7 @@ impl Node {
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
-        self.init_storage_and_server_list(port);
-        
+        let _ = self.init_storage_and_server_list(port);
     }
 
     pub async fn stop(&mut self) {
@@ -118,9 +117,11 @@ impl Node {
 
     // Client Actions
 
-       pub fn init_storage_and_server_list(&mut self, port: u16) -> anyhow::Result<()> {
+    pub fn init_storage_and_server_list(&mut self, port: u16) -> anyhow::Result<()> {
         // 1️⃣ 初始化 storage
-        self.storage = Some(Storeage::new(None, None, None, None));
+        if (self.storage.is_none()) {
+            self.storage = Some(Storeage::new(None, None, None, None));
+        }
         let storage = self.storage.as_ref().unwrap();
 
         // 2️⃣ 读取现有外部 server list
@@ -147,7 +148,6 @@ impl Node {
 
         Ok(())
     }
-
 }
 
 fn timestamp() -> u128 {
@@ -168,6 +168,7 @@ mod tests {
             Address::random(),
             "127.0.0.1".into(),
             7001,
+            None
         )));
 
         let node_clone = node1.clone();

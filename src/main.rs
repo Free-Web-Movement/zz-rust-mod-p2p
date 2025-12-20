@@ -36,7 +36,8 @@ async fn main() -> anyhow::Result<()> {
         "node1".to_owned(),
         address,
         opt.ip.clone(),
-        opt.tcp_port
+        opt.tcp_port,
+        Some(storage),
     );
     node.start().await;
 

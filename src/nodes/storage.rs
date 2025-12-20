@@ -31,6 +31,7 @@ impl Storeage {
                 .map(|dir| dir.join(DEFAULT_APP_DIR))
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR))
         };
+        println!("Storage app dir: {:?}", app_dir);
 
         let _ = fs::create_dir_all(&app_dir);
 
