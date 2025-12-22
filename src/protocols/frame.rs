@@ -122,11 +122,12 @@ impl Frame {
 
     pub fn build_node_command(
         address: &FreeWebMovementAddress,
+        entity: Entity,
         action: NodeAction,
         version: u8,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<Self> {
-        let cmd_bytes = Command::send(Entity::Node as u8, action as u8, version, data)?;
+        let cmd_bytes = Command::send(entity as u8, action as u8, version, data)?;
 
         let body = FrameBody {
             address: address.to_string(),
@@ -361,7 +362,7 @@ mod tests {
         let payload = Some(b"hello node online".to_vec());
 
         // 3️⃣ 构建 Frame
-        let frame = Frame::build_node_command(&address, NodeAction::OnLine, 1, payload.clone())?;
+        let frame = Frame::build_node_command(&address, Entity::Node, NodeAction::OnLine, 1, payload.clone())?;
 
         // 4️⃣ 基本结构校验
         assert_eq!(frame.body.version, 1);
@@ -392,7 +393,7 @@ mod tests {
     fn test_build_node_command_without_data() -> anyhow::Result<()> {
         let address = FreeWebMovementAddress::random();
 
-        let frame = Frame::build_node_command(&address, NodeAction::OffLine, 1, None)?;
+        let frame = Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
 
         assert_eq!(frame.body.address, address.to_string());
         assert_eq!(frame.body.version, 1);

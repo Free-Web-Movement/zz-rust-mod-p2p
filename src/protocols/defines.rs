@@ -54,7 +54,7 @@ struct NatPair<S, T> {
     plugged_pairs: Vec<(T, T)>,
 }
 
-pub enum ProtocolType {
+pub enum ClientType {
     UDP {
         socket: Arc<UdpSocket>,
         peer: SocketAddr,
@@ -84,23 +84,37 @@ pub trait Listener: Send + Sync + 'static {
     async fn run(&mut self) -> anyhow::Result<()>;
     async fn new(context: Arc<Context>) -> Arc<Self>;
     async fn stop(self: &Arc<Self>) -> anyhow::Result<()>;
-    /// 原始 / 解密后的数据
+
+    /// 传输层数据
+    /// 
+    /// 传输层数据接收
+    /// 
+    /// on_data 方法用于处理接收到的数据包。
+    /// 它接收两个参数：clientType 表示使用的传输协议类型（如 TCP、UDP 等），
+    /// received 是一个字节切片，包含接收到的数据内容。
+    /// 该方法返回一个异步结果，表示数据处理是否成功完成。
     async fn on_data(
         self: &Arc<Self>,
-        socket: &ProtocolType,
+        client: &ClientType,
         received: &[u8],
     ) -> anyhow::Result<()>;
 
+    // 传输层数据发送
+    /// 
+    /// send 方法用于发送数据包。
+    /// 它接收两个参数：clientType 表示使用的传输协议类型（如 TCP、UDP 等），
+    /// data 是一个字节切片，包含要发送的数据内容。
+    /// 该方法返回一个异步结果，表示数据发送是否成功完成。
     async fn send(
         self: &Arc<Self>,
-        protocol_type: &ProtocolType,
+        client: &ClientType,
         data: &[u8],
     ) -> anyhow::Result<()>;
 
     // 协议级指令（握手 / 心跳 / 路由 / 升级）
     // async fn on_cmd(
     //     self: Arc<Self>,
-    //     socket: &ProtocolType,
+    //     socket: &ClientType,
     //     cmd: ProtocolCommand,
     //     remote_peer: &std::net::SocketAddr,
     // ) -> anyhow::Result<()>;

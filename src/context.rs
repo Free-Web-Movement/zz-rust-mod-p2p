@@ -5,14 +5,14 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::protocols::defines::ProtocolType;
+use crate::protocols::defines::ClientType;
 
 pub struct Context {
     pub(crate) ip: String,
     pub(crate) port: u16,
     pub(crate) address: Address,
     pub(crate) token: CancellationToken,
-    pub(crate) clients: HashMap<String, ProtocolType>,
+    pub(crate) clients: HashMap<String, ClientType>,
     pub(crate) global: Value,
     pub(crate) local: Value,
 }

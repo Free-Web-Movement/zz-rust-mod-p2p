@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::context::Context;
 use crate::handlers::http::HTTPHandler;
-use crate::protocols::defines::{Listener, ProtocolType};
+use crate::protocols::defines::{Listener, ClientType};
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
@@ -93,7 +93,7 @@ impl TCPHandler {
 
         // ========= 普通 TCP =========
         let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
-        let protocol = ProtocolType::TCP(stream.clone());
+        let protocol = ClientType::TCP(stream.clone());
 
         loop {
             tokio::select! {
@@ -143,10 +143,10 @@ impl Listener for TCPHandler {
     }
     async fn on_data(
         self: &Arc<Self>,
-        protocol_type: &ProtocolType,
+        protocol_type: &ClientType,
         received: &[u8],
     ) -> anyhow::Result<()> {
-        if let ProtocolType::TCP(stream) = protocol_type {
+        if let ClientType::TCP(stream) = protocol_type {
             {
                 // 括号{}用于设置作用域，让lock锁释放
                 let guard = stream.lock().await;
@@ -163,10 +163,10 @@ impl Listener for TCPHandler {
 
     async fn send(
         self: &Arc<Self>,
-        protocol_type: &ProtocolType,
+        protocol_type: &ClientType,
         data: &[u8],
     ) -> anyhow::Result<()> {
-        if let ProtocolType::TCP(stream) = protocol_type {
+        if let ClientType::TCP(stream) = protocol_type {
             let mut guard = stream.lock().await;
             let peer = guard.peer_addr().unwrap();
             println!("TCP is sending {} bytes to {}", data.len(), &peer);

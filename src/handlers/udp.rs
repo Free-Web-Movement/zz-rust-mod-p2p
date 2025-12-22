@@ -1,6 +1,6 @@
 use crate::{
     context::Context,
-    protocols::defines::{Listener, ProtocolType},
+    protocols::defines::{ClientType, Listener},
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -42,7 +42,7 @@ impl UDPHandler {
                     res = socket.recv_from(&mut buf) => {
                         match res {
                             Ok((n, src)) => {
-                                let protocol = ProtocolType::UDP { socket: socket.clone(), peer: src };
+                                let protocol = ClientType::UDP { socket: socket.clone(), peer: src };
                                 let _ = handler
                                     .clone()
                                     .on_data(&protocol, &buf[..n])
@@ -80,22 +80,18 @@ impl Listener for UDPHandler {
 
     async fn on_data(
         self: &Arc<Self>,
-        protocol_type: &ProtocolType,
+        client: &ClientType,
         received: &[u8], // remote_peer: &std::net::SocketAddr,
     ) -> anyhow::Result<()> {
-        if let ProtocolType::UDP { socket: _, peer } = protocol_type {
+        if let ClientType::UDP { socket: _, peer } = client {
             println!("UDP received {} bytes from {}", received.len(), peer);
-            let _ = self.send(protocol_type, received).await;
+            let _ = self.send(client, received).await;
         }
         Ok(())
     }
 
-    async fn send(
-        self: &Arc<Self>,
-        protocol_type: &ProtocolType,
-        data: &[u8],
-    ) -> anyhow::Result<()> {
-        if let ProtocolType::UDP { socket, peer } = protocol_type {
+    async fn send(self: &Arc<Self>, client: &ClientType, data: &[u8]) -> anyhow::Result<()> {
+        if let ClientType::UDP { socket, peer } = client {
             println!("UDP is sending {} bytes to {}", data.len(), peer);
             socket.send_to(data, peer).await?;
         }
