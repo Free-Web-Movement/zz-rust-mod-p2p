@@ -21,6 +21,10 @@ pub struct NodeRecord {
     /// 最近一次成功通信
     pub last_seen: DateTime<Utc>,
 
+    /// 是否已经连接成功， 用于内存状态标记，非持久化字段
+    #[serde(skip)]
+    pub connected: bool,
+
     /// 最近一次确认不可达
     pub last_disappeared: Option<DateTime<Utc>>,
 
@@ -42,6 +46,7 @@ impl NodeRecord {
                 protocols: protocol_capabilities,
                 first_seen: now,
                 last_seen: now,
+                connected: false,
                 last_disappeared: None,
                 reachability_score: 100,
             })
