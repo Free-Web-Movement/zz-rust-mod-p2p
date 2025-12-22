@@ -94,7 +94,7 @@ impl Storeage {
         self.read_server_list_from(&self.external_server_list_file)
     }
 
-    pub fn save_external_server_list(&self, servers: Vec<NodeRecord>) -> anyhow::Result<()> {
+    pub fn save_external_server_list(&self, servers: &Vec<NodeRecord>) -> anyhow::Result<()> {
         self.save_server_list_to(&servers, &self.external_server_list_file)
     }
 
@@ -104,7 +104,7 @@ impl Storeage {
         self.read_server_list_from(&self.inner_server_list_file)
     }
 
-    pub fn save_inner_server_list(&self, servers: Vec<NodeRecord>) -> anyhow::Result<()> {
+    pub fn save_inner_server_list(&self, servers: &Vec<NodeRecord>) -> anyhow::Result<()> {
         self.save_server_list_to(&servers, &self.inner_server_list_file)
     }
 }
@@ -154,7 +154,7 @@ mod tests {
         let storage = Storeage::new(Some(dir.path().to_str().unwrap()), None, None, None);
 
         let servers = vec![dummy_record(8080)];
-        storage.save_external_server_list(servers.clone()).unwrap();
+        storage.save_external_server_list(&servers).unwrap();
 
         let loaded = storage.read_external_server_list().unwrap();
         assert_eq!(servers, loaded);
@@ -168,8 +168,8 @@ mod tests {
         let inner = vec![dummy_record(1000)];
         let external = vec![dummy_record(2000)];
 
-        storage.save_inner_server_list(inner.clone()).unwrap();
-        storage.save_external_server_list(external.clone()).unwrap();
+        storage.save_inner_server_list(&inner).unwrap();
+        storage.save_external_server_list(&external).unwrap();
 
         assert_eq!(storage.read_inner_server_list().unwrap(), inner);
         assert_eq!(storage.read_external_server_list().unwrap(), external);

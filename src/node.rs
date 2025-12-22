@@ -5,9 +5,9 @@ use std::{
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::context::Context;
 use crate::nodes::net_info::NetInfo;
 use crate::protocols::defines::Listener;
+use crate::{context::Context, nodes::servers::Servers};
 use crate::{
     handlers::{tcp::TCPHandler, udp::UDPHandler},
     nodes::{record::NodeRecord, storage::Storeage},
@@ -37,7 +37,13 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(name: String, address: Address, ip: String, port: u16, storage: Option<Storeage>) -> Self {
+    pub fn new(
+        name: String,
+        address: Address,
+        ip: String,
+        port: u16,
+        storage: Option<Storeage>,
+    ) -> Self {
         Self {
             name,
             address,
@@ -112,36 +118,24 @@ impl Node {
         self.stop_time = timestamp();
     }
 
-    // Client Actions
-
-    pub fn init_storage_and_server_list(&mut self, port: u16) -> anyhow::Result<()> {
+    pub fn init_storage_and_server_list(&mut self, _port: u16) -> anyhow::Result<()> {
         // 1️⃣ 初始化 storage
-        if (self.storage.is_none()) {
+        if self.storage.is_none() {
             self.storage = Some(Storeage::new(None, None, None, None));
         }
-        let storage = self.storage.as_ref().unwrap();
+        let storage = self.storage.as_ref().unwrap().clone();
 
-        // 2️⃣ 读取现有外部 server list
-        let mut external_list = storage.read_external_server_list().unwrap_or_default();
-
-        // 3️⃣ 获取公网节点列表
-        let public_nodes = NodeRecord::to_list(
-            self.net_info.as_ref().unwrap().public_ips(),
-            port,
-            ProtocolCapability::TCP | ProtocolCapability::UDP,
+        // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
+        let servers = Servers::new(
+            storage.clone(),
+            self.net_info.as_ref().expect("net_info missing").clone(),
         );
 
-        // 4️⃣ 合并公网节点到外部 server list
-        external_list = NodeRecord::merge(public_nodes, external_list);
-
-        // 5️⃣ 保存当前节点地址
+        // 3️⃣ 保存当前节点 address
         storage.save_address(&self.address)?;
 
-        // 6️⃣ 保存更新后的外部 server list
-        storage.save_external_server_list(external_list.clone())?;
-
-        // 7️⃣ 更新 Node 自身 server_list
-        self.server_list = Some(external_list);
+        // 4️⃣ Node 持有 external server list 视图
+        self.server_list = Some(servers.external.clone());
 
         Ok(())
     }
@@ -165,7 +159,7 @@ mod tests {
             Address::random(),
             "127.0.0.1".into(),
             7001,
-            None
+            None,
         )));
 
         let node_clone = node1.clone();
