@@ -1,5 +1,8 @@
 use if_addrs::get_if_addrs;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+};
 
 use crate::protocols::defines::ProtocolCapability;
 /// 本地与公网 IP 集合
@@ -135,6 +138,25 @@ impl NetInfo {
         ips.extend(self.v6.public_ips.iter().map(|ip| IpAddr::V6(*ip)));
         ips
     }
+
+    pub fn local_ips(&self) -> Vec<IpAddr> {
+        let mut ips = Vec::new();
+        ips.extend(self.v4.local_ips.iter().map(|ip| IpAddr::V4(*ip)));
+        ips.extend(self.v6.local_ips.iter().map(|ip| IpAddr::V6(*ip)));
+        ips
+    }
+
+    pub fn node_endpoints(&self) -> HashSet<SocketAddr> {
+        let mut set = HashSet::new();
+
+        for ip in self.public_ips() {
+            set.insert(SocketAddr::new(ip, self.port));
+        }
+        for ip in self.local_ips() {
+            set.insert(SocketAddr::new(ip, self.port));
+        }
+        set
+    }
 }
 
 #[cfg(test)]
@@ -159,7 +181,9 @@ mod tests {
         assert!(!NetInfo::is_public_v6(&Ipv6Addr::LOCALHOST));
         assert!(!NetInfo::is_public_v6(&Ipv6Addr::UNSPECIFIED));
         assert!(!NetInfo::is_public_v6(&"fc00::1".parse().unwrap())); // unique local
-        assert!(NetInfo::is_public_v6(&"2001:4860:4860::8888".parse().unwrap())); // public
+        assert!(NetInfo::is_public_v6(
+            &"2001:4860:4860::8888".parse().unwrap()
+        )); // public
     }
 
     /* ---------- add_local / add_public ---------- */

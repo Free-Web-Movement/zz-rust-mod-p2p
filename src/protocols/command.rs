@@ -31,12 +31,12 @@ pub enum TelephoneAction {
 pub struct Command {
     pub entity: u8,
     pub action: u8,
-    pub version: u16,
+    pub version: u8,
     pub data: Option<Vec<u8>>,
 }
 
 impl Command {
-    pub fn new(entity: u8, action: u8, version: u16, data: Option<Vec<u8>>) -> Self {
+    pub fn new(entity: u8, action: u8, version: u8, data: Option<Vec<u8>>) -> Self {
         Self {
             entity,
             action,
@@ -64,7 +64,7 @@ impl Command {
     ========================= */
 
     /// send = build + encode (protocol layer, no IO)
-    pub fn send(entity: u8, action: u8, version: u16, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
+    pub fn send(entity: u8, action: u8, version: u8, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
         let cmd = Command::new(entity, action, version, data);
         cmd.serialize()
     }

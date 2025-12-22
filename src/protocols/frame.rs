@@ -1,10 +1,11 @@
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use zz_account::address::FreeWebMovementAddress;
 
 use bincode::config;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 
-use crate::protocols::command::Command;
+use crate::protocols::command::{Command, Entity, NodeAction};
 
 /// ⚠️ 不要写返回类型！
 #[inline]
@@ -20,7 +21,7 @@ pub struct FrameBody {
     pub version: u8,
 
     /// 发送方地址（身份）
-    pub address: FreeWebMovementAddress,
+    pub address: String,
 
     /// 发送方公钥
     pub public_key: Vec<u8>,
@@ -39,7 +40,7 @@ pub struct FrameBody {
 impl FrameBody {
     pub fn new(
         version: u8,
-        address: FreeWebMovementAddress,
+        address: String,
         public_key: Vec<u8>,
         nonce: u64,
         data_length: u32,
@@ -91,8 +92,12 @@ impl Frame {
         Ok(Frame { body, signature })
     }
 
-    pub async fn verify(bytes: &Vec<u8>) -> anyhow::Result<Frame> {
+    pub fn verify_bytes(bytes: &Vec<u8>) -> anyhow::Result<Frame> {
         let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config())?;
+        Frame::verify(frame)
+    }
+
+    pub fn verify(frame: Frame) -> anyhow::Result<Frame> {
         let config = frame_config();
         let vecs = encode_to_vec(&frame.body, config)?;
         let bytes = vecs.as_slice();
@@ -103,7 +108,6 @@ impl Frame {
         if !FreeWebMovementAddress::verify_message(&public_key, bytes, &signature) {
             return Err(anyhow::anyhow!("Frame signature verification failed"));
         }
-
         Ok(frame)
     }
 
@@ -114,6 +118,25 @@ impl Frame {
 
     pub fn to(frame: Frame) -> Vec<u8> {
         encode_to_vec(&frame, frame_config()).unwrap()
+    }
+
+    pub fn build_node_command(
+        address: &FreeWebMovementAddress,
+        action: NodeAction,
+        version: u8,
+        data: Option<Vec<u8>>,
+    ) -> anyhow::Result<Self> {
+        let cmd_bytes = Command::send(Entity::Node as u8, action as u8, version, data)?;
+
+        let body = FrameBody {
+            address: address.to_string(),
+            public_key: address.public_key.to_bytes().to_vec(),
+            nonce: rand::thread_rng().r#gen(),
+            data_length: cmd_bytes.len() as u32,
+            version,
+            data: cmd_bytes,
+        };
+        Ok(Frame::sign(body, address)?)
     }
 }
 
@@ -131,7 +154,7 @@ mod tests {
         // 2️⃣ 构造 frame body
         let body = FrameBody {
             version: 1,
-            address: identity.clone(),
+            address: identity.to_string(),
             public_key: identity.public_key.to_bytes(),
             nonce: 42,
             data_length: 5,
@@ -146,7 +169,7 @@ mod tests {
         let serialized = bincode::serde::encode_to_vec(&frame, frame_config())?;
 
         // 5️⃣ 验证签名
-        let frame1 = Frame::verify(&serialized).await?;
+        let frame1 = Frame::verify_bytes(&serialized)?;
 
         assert_eq!(frame.signature.to_vec(), frame1.signature.to_vec());
 
@@ -175,7 +198,7 @@ mod tests {
 
         let body = FrameBody::new(
             1,
-            addr.clone(),
+            addr.to_string(),
             addr.public_key.to_bytes(),
             100,
             4,
@@ -192,7 +215,14 @@ mod tests {
     #[test]
     fn test_frame_body_data_from_command_and_back() -> anyhow::Result<()> {
         let addr = FreeWebMovementAddress::random();
-        let mut body = FrameBody::new(1, addr.clone(), addr.public_key.to_bytes(), 1, 0, vec![]);
+        let mut body = FrameBody::new(
+            1,
+            addr.to_string(),
+            addr.public_key.to_bytes(),
+            1,
+            0,
+            vec![],
+        );
 
         let cmd = make_command();
         body.data_from_command(&cmd)?;
@@ -211,7 +241,7 @@ mod tests {
 
         let body = FrameBody::new(
             1,
-            addr.clone(),
+            addr.to_string(),
             addr.public_key.to_bytes(),
             1,
             1,
@@ -230,7 +260,7 @@ mod tests {
 
         let body = FrameBody::new(
             1,
-            identity.clone(),
+            identity.to_string(),
             identity.public_key.to_bytes(),
             42,
             5,
@@ -241,7 +271,7 @@ mod tests {
         assert!(!frame.signature.is_empty());
 
         let encoded = bincode::serde::encode_to_vec(&frame, frame_config())?;
-        let verified = Frame::verify(&encoded).await?;
+        let verified = Frame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
         assert_eq!(
@@ -258,7 +288,7 @@ mod tests {
 
         let body = FrameBody::new(
             1,
-            identity.clone(),
+            identity.to_string(),
             identity.public_key.to_bytes(),
             7,
             3,
@@ -280,7 +310,7 @@ mod tests {
 
         let mut body = FrameBody::new(
             1,
-            identity.clone(),
+            identity.to_string(),
             identity.public_key.to_bytes(),
             9,
             3,
@@ -295,7 +325,7 @@ mod tests {
 
         let encoded = bincode::serde::encode_to_vec(&frame, frame_config()).unwrap();
 
-        let res = Frame::verify(&encoded).await;
+        let res = Frame::verify_bytes(&encoded);
         assert!(res.is_err(), "篡改后的签名应验证失败");
     }
 
@@ -307,11 +337,71 @@ mod tests {
         // 只要能成功编码解码即视为一致
         let addr = FreeWebMovementAddress::random();
 
-        let body = FrameBody::new(1, addr.clone(), addr.public_key.to_bytes(), 0, 0, vec![]);
+        let body = FrameBody::new(
+            1,
+            addr.to_string(),
+            addr.public_key.to_bytes(),
+            0,
+            0,
+            vec![],
+        );
 
         let bytes = encode_to_vec(&body, cfg1).unwrap();
         let (decoded, _): (FrameBody, usize) = decode_from_slice(&bytes, cfg2).unwrap();
 
         assert_eq!(decoded.version, 1);
+    }
+
+    #[test]
+    fn test_build_node_command_online() -> anyhow::Result<()> {
+        // 1️⃣ 构造测试地址
+        let address = FreeWebMovementAddress::random();
+
+        // 2️⃣ 构造业务数据
+        let payload = Some(b"hello node online".to_vec());
+
+        // 3️⃣ 构建 Frame
+        let frame = Frame::build_node_command(&address, NodeAction::OnLine, 1, payload.clone())?;
+
+        // 4️⃣ 基本结构校验
+        assert_eq!(frame.body.version, 1);
+        assert_eq!(frame.body.address, address.to_string());
+        assert_eq!(
+            frame.body.public_key,
+            address.public_key.to_bytes().to_vec()
+        );
+
+        // nonce 应该存在（不为 0 不是强约束，但通常如此）
+        assert!(frame.body.nonce > 0);
+
+        // data 校验
+        let cmd_bytes = Command::send(Entity::Node as u8, NodeAction::OnLine as u8, 1, payload)?;
+
+        assert_eq!(frame.body.data_length, cmd_bytes.len() as u32);
+        assert_eq!(frame.body.data, cmd_bytes);
+
+        // 5️⃣ 签名存在
+        assert!(!frame.signature.is_empty());
+
+        // 6️⃣ 🔐 核心：签名校验（防 MITM）
+        Frame::verify(frame)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_node_command_without_data() -> anyhow::Result<()> {
+        let address = FreeWebMovementAddress::random();
+
+        let frame = Frame::build_node_command(&address, NodeAction::OffLine, 1, None)?;
+
+        assert_eq!(frame.body.address, address.to_string());
+        assert_eq!(frame.body.version, 1);
+        assert!(frame.body.data_length > 0);
+        assert!(!frame.body.data.is_empty());
+
+        // 签名校验必须通过
+        Frame::verify(frame)?;
+
+        Ok(())
     }
 }

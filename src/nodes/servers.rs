@@ -39,4 +39,7 @@ impl Servers {
             .chain(self.external.iter().map(|s| s.endpoint))
             .collect()
     }
+    pub fn get_external_endpoints(&self) -> Vec<SocketAddr> {
+        self.external.iter().map(|s| s.endpoint).collect()
+    }
 }
