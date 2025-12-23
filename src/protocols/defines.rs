@@ -54,6 +54,7 @@ struct NatPair<S, T> {
     plugged_pairs: Vec<(T, T)>,
 }
 
+#[derive(Debug, Clone)]
 pub enum ClientType {
     UDP {
         socket: Arc<UdpSocket>,

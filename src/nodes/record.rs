@@ -100,7 +100,7 @@ impl NodeRecord {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn test_to_list_single_ipv4() {

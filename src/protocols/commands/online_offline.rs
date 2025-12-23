@@ -2,12 +2,15 @@ use std::net::SocketAddr;
 
 use crate::protocols::commands::sender::CommandSender;
 use crate::protocols::defines::ClientType;
-use crate::protocols::{ command::{ Entity, NodeAction }, frame::Frame };
+use crate::protocols::{
+    command::{Entity, NodeAction},
+    frame::Frame,
+};
 use tokio::io::AsyncWriteExt;
 use zz_account::address::FreeWebMovementAddress;
 
 impl CommandSender {
-    pub async fn send_client(&self, client: ClientType, data: &[u8]) -> anyhow::Result<()> {
+    pub async fn send_client(client: ClientType, data: &[u8]) -> anyhow::Result<()> {
         match client {
             ClientType::TCP(tcp) | ClientType::HTTP(tcp) | ClientType::WS(tcp) => {
                 let sender = tcp.clone();
@@ -22,34 +25,32 @@ impl CommandSender {
         Ok(())
     }
     pub async fn send_online_command(
-        &self,
         client: ClientType,
         address: &FreeWebMovementAddress,
         _target: SocketAddr,
-        data: Option<Vec<u8>>
+        data: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         // 1️⃣ 构建在线命令 Frame
         let frame = Frame::build_node_command(address, Entity::Node, NodeAction::OnLine, 1, data)?;
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        self.send_client(client, &bytes).await?;
+        CommandSender::send_client(client, &bytes).await?;
         Ok(())
     }
 
     pub async fn send_offline_command(
-        &self,
         client: ClientType,
         address: &FreeWebMovementAddress,
         _target: SocketAddr,
-        data: Option<Vec<u8>>
+        data: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         // 1️⃣ 构建在线命令 Frame
         let frame = Frame::build_node_command(address, Entity::Node, NodeAction::OffLine, 1, data)?;
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        self.send_client(client, &bytes).await?;
+        CommandSender::send_client(client, &bytes).await?;
         Ok(())
     }
 }
@@ -57,8 +58,8 @@ impl CommandSender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::AsyncReadExt;
     use std::sync::Arc;
+    use tokio::io::AsyncReadExt;
     use tokio::sync::Mutex;
 
     fn test_address() -> FreeWebMovementAddress {
@@ -69,9 +70,8 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let client = tokio::spawn(async move {
-            tokio::net::TcpStream::connect(addr).await.unwrap()
-        });
+        let client =
+            tokio::spawn(async move { tokio::net::TcpStream::connect(addr).await.unwrap() });
 
         let (server, _) = listener.accept().await.unwrap();
         let client = client.await.unwrap();
@@ -93,7 +93,7 @@ mod tests {
         let sender = CommandSender {};
 
         let data = b"hello";
-        sender.send_client(client, data).await.unwrap();
+        CommandSender::send_client(client, data).await.unwrap();
 
         let mut buf = [0u8; 5];
         server.read_exact(&mut buf).await.unwrap();
@@ -108,7 +108,7 @@ mod tests {
         let sender = CommandSender {};
 
         let data = b"http";
-        sender.send_client(client, data).await.unwrap();
+        CommandSender::send_client(client, data).await.unwrap();
 
         let mut buf = [0u8; 4];
         server.read_exact(&mut buf).await.unwrap();
@@ -120,10 +120,9 @@ mod tests {
         let (client, mut server) = tcp_pair().await;
 
         let client = ClientType::WS(Arc::new(Mutex::new(client)));
-        let sender = CommandSender {};
 
         let data = b"ws";
-        sender.send_client(client, data).await.unwrap();
+        CommandSender::send_client(client, data).await.unwrap();
 
         let mut buf = [0u8; 2];
         server.read_exact(&mut buf).await.unwrap();
@@ -140,10 +139,9 @@ mod tests {
             peer,
         };
 
-        let sender = CommandSender {};
         let data = b"udp";
 
-        sender.send_client(client, data).await.unwrap();
+        CommandSender::send_client(client, data).await.unwrap();
 
         let mut buf = [0u8; 3];
         let (n, _) = b.recv_from(&mut buf).await.unwrap();
@@ -155,17 +153,16 @@ mod tests {
         let (client, mut server) = tcp_pair().await;
 
         let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-        let sender = CommandSender {};
         let addr = test_address();
 
-        sender
-            .send_online_command(
-                client,
-                &addr,
-                "127.0.0.1:1234".parse().unwrap(),
-                Some(b"data".to_vec())
-            ).await
-            .unwrap();
+        CommandSender::send_online_command(
+            client,
+            &addr,
+            "127.0.0.1:1234".parse().unwrap(),
+            Some(b"data".to_vec()),
+        )
+        .await
+        .unwrap();
 
         let mut buf = Vec::new();
         server.read_to_end(&mut buf).await.unwrap();
@@ -180,8 +177,8 @@ mod tests {
         let sender = CommandSender {};
         let addr = test_address();
 
-        sender
-            .send_offline_command(client, &addr, "127.0.0.1:1234".parse().unwrap(), None).await
+        CommandSender::send_offline_command(client, &addr, "127.0.0.1:1234".parse().unwrap(), None)
+            .await
             .unwrap();
 
         let mut buf = Vec::new();

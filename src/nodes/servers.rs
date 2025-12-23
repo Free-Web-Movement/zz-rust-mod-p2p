@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use crate::nodes::{net_info, record::NodeRecord, storage};
 
+#[derive(Clone)]
 pub struct Servers {
     pub inner: Vec<NodeRecord>,
     pub external: Vec<NodeRecord>,
