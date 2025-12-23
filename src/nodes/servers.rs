@@ -1,41 +1,58 @@
 use std::net::SocketAddr;
 
-use crate::nodes::{ net_info, record::NodeRecord, storage };
-use chrono::{ DateTime, Utc };
+use crate::nodes::{net_info, record::NodeRecord, storage};
 
 pub struct Servers {
     pub inner: Vec<NodeRecord>,
     pub external: Vec<NodeRecord>,
     pub host_public_record: Vec<NodeRecord>,
+    pub host_inner_record: Vec<NodeRecord>,
     pub purified_external: Vec<NodeRecord>,
+    pub purified_inner: Vec<NodeRecord>,
 }
 
 impl Servers {
     pub fn new(storage: storage::Storeage, net_info: net_info::NetInfo) -> Self {
-        let inner = storage.read_inner_server_list().unwrap_or_default();
+        let mut inner = storage.read_inner_server_list().unwrap_or_default();
         let mut external = storage.read_external_server_list().unwrap_or_default();
 
         // 当前节点的公网记录
         let host_public_record = NodeRecord::to_list(
             net_info.public_ips(),
             net_info.port,
-            crate::protocols::defines::ProtocolCapability::TCP |
-                crate::protocols::defines::ProtocolCapability::UDP
+            crate::protocols::defines::ProtocolCapability::TCP
+                | crate::protocols::defines::ProtocolCapability::UDP,
+        );
+
+        // 当前节点的内网IP
+
+        let host_inner_record = NodeRecord::to_list(
+            net_info.local_ips(),
+            net_info.port,
+            crate::protocols::defines::ProtocolCapability::TCP
+                | crate::protocols::defines::ProtocolCapability::UDP,
         );
 
         // 合并当前节点公网记录到 external（用于广播）
         external = NodeRecord::merge(host_public_record.clone(), external);
 
-        // 关键：生成“用于遍历的 external（不包含自己）”
-        let purified_external = Self::purify_external_servers(&host_public_record, &external);
+        inner = NodeRecord::merge(host_inner_record.clone(), inner);
 
-        storage.save_external_server_list(&external).unwrap_or_default();
+        // 关键：生成“用于遍历的 external（不包含自己）”
+        let purified_external = Self::purify_servers(&host_public_record, &external);
+        let purified_inner = Self::purify_servers(&host_inner_record, &inner);
+
+        storage
+            .save_external_server_list(&external)
+            .unwrap_or_default();
 
         Self {
             inner,
             external,
             host_public_record,
+            host_inner_record,
             purified_external,
+            purified_inner
         }
     }
 
@@ -56,22 +73,21 @@ impl Servers {
     }
 
     pub fn get_external_endpoints(&self) -> Vec<SocketAddr> {
-        self.external
-            .iter()
-            .map(|s| s.endpoint)
-            .collect()
+        self.external.iter().map(|s| s.endpoint).collect()
     }
 
     /// 🔥 关键函数：
     /// 从 external 中剔除“当前节点自己的公网 IP + 端口”
-    pub fn purify_external_servers(
-        host_public_record: &[NodeRecord],
-        external_servers: &[NodeRecord]
+    pub fn purify_servers(
+        to_be_purified: &[NodeRecord],
+        servers: &[NodeRecord],
     ) -> Vec<NodeRecord> {
-        external_servers
+        servers
             .iter()
             .filter(|server| {
-                !host_public_record.iter().any(|host| host.endpoint == server.endpoint)
+                !to_be_purified
+                    .iter()
+                    .any(|host| host.endpoint == server.endpoint)
             })
             .cloned()
             .collect()
@@ -80,11 +96,11 @@ impl Servers {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ protocols::defines::ProtocolCapability };
+    use crate::protocols::defines::ProtocolCapability;
 
     use super::*;
-    use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
-    use chrono::{ DateTime, Utc };
+    use chrono::{DateTime, Utc};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     // ------------------------------
     // 测试辅助：构造 NodeRecord
@@ -102,40 +118,40 @@ mod tests {
     }
 
     // ------------------------------
-    // 测试 purify_external_servers
+    // 测试 purify_servers
     // ------------------------------
     #[test]
-    fn test_purify_external_servers_removes_self() {
+    fn test_purify_servers_removes_self() {
         let host = vec![node([1, 1, 1, 1], 1000), node([2, 2, 2, 2], 2000)];
 
         let external = vec![
             node([1, 1, 1, 1], 1000), // should be removed
-            node([3, 3, 3, 3], 3000)
+            node([3, 3, 3, 3], 3000),
         ];
 
-        let purified = Servers::purify_external_servers(&host, &external);
+        let purified = Servers::purify_servers(&host, &external);
 
         assert_eq!(purified.len(), 1);
         assert_eq!(purified[0].endpoint, external[1].endpoint);
     }
 
     #[test]
-    fn test_purify_external_servers_no_overlap() {
+    fn test_purify_servers_no_overlap() {
         let host = vec![node([1, 1, 1, 1], 1000)];
 
         let external = vec![node([2, 2, 2, 2], 2000), node([3, 3, 3, 3], 3000)];
 
-        let purified = Servers::purify_external_servers(&host, &external);
+        let purified = Servers::purify_servers(&host, &external);
 
         assert_eq!(purified.len(), 2);
     }
 
     #[test]
-    fn test_purify_external_servers_empty_external() {
+    fn test_purify_servers_empty_external() {
         let host = vec![node([1, 1, 1, 1], 1000)];
         let external = vec![];
 
-        let purified = Servers::purify_external_servers(&host, &external);
+        let purified = Servers::purify_servers(&host, &external);
 
         assert!(purified.is_empty());
     }
@@ -149,7 +165,9 @@ mod tests {
             inner: vec![],
             external: vec![],
             host_public_record: vec![],
+            host_inner_record: vec![],
             purified_external: vec![],
+            purified_inner: vec![],
         };
 
         let a = node([10, 0, 0, 1], 1111);
@@ -173,7 +191,9 @@ mod tests {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000)],
             host_public_record: vec![],
+            host_inner_record: vec![],
             purified_external: vec![],
+            purified_inner: vec![],
         };
 
         let eps = servers.get_all_endpoints();
@@ -186,7 +206,9 @@ mod tests {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000), node([1, 1, 1, 1], 3000)],
             host_public_record: vec![],
+            host_inner_record: vec![],
             purified_external: vec![],
+            purified_inner: vec![],
         };
 
         let eps = servers.get_external_endpoints();
