@@ -1,6 +1,4 @@
 use tokio::io::AsyncWriteExt;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::protocols::defines::ClientType;
 
@@ -49,12 +47,14 @@ impl CommandSender {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use tokio::{
         io::AsyncReadExt,
         net::{TcpListener, TcpStream, UdpSocket},
-        sync::oneshot,
-        time::{timeout, Duration},
+        sync::{Mutex, oneshot},
+        time::{Duration, timeout},
     };
 
     const TIMEOUT: Duration = Duration::from_secs(2);

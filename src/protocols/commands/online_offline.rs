@@ -1,7 +1,5 @@
-use std::net::SocketAddr;
 
 use crate::protocols::commands::sender::CommandSender;
-use crate::protocols::defines::ClientType;
 use crate::protocols::{
     command::{Entity, NodeAction},
     frame::Frame,
@@ -9,10 +7,9 @@ use crate::protocols::{
 use zz_account::address::FreeWebMovementAddress;
 
 impl CommandSender {
-    pub async fn send_online_command(
-        client: ClientType,
+    pub async fn send_online(
+        &self,
         address: &FreeWebMovementAddress,
-        _target: SocketAddr,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         // 1️⃣ 构建在线命令 Frame
@@ -20,14 +17,13 @@ impl CommandSender {
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        CommandSender::send_client(client, &bytes).await?;
+        self.send(&bytes).await?;
         Ok(())
     }
 
-    pub async fn send_offline_command(
-        client: ClientType,
+    pub async fn send_offline(
+        &self,
         address: &FreeWebMovementAddress,
-        _target: SocketAddr,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         // 1️⃣ 构建在线命令 Frame
@@ -35,136 +31,83 @@ impl CommandSender {
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        CommandSender::send_client(client, &bytes).await?;
+        self.send(&bytes).await?;
         Ok(())
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::io::AsyncReadExt;
+    use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::Mutex;
+    use std::sync::Arc;
+    use std::net::{IpAddr, Ipv4Addr};
+    use crate::protocols::defines::ClientType;
+    use zz_account::address::FreeWebMovementAddress as Address;
 
-    fn test_address() -> FreeWebMovementAddress {
-        FreeWebMovementAddress::random()
-    }
+    /// 辅助函数：创建 TCP client/server pair
+    async fn tcp_pair() -> (ClientType, tokio::sync::oneshot::Receiver<Vec<u8>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
 
-    async fn tcp_pair() -> (tokio::net::TcpStream, tokio::net::TcpStream) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let client =
-            tokio::spawn(async move { tokio::net::TcpStream::connect(addr).await.unwrap() });
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 1024];
+            let n = socket.readable().await.unwrap();
+            let n = socket.try_read(&mut buf).unwrap();
+            let _ = tx.send(buf[..n].to_vec());
+        });
 
-        let (server, _) = listener.accept().await.unwrap();
-        let client = client.await.unwrap();
+        let client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let client = Arc::new(Mutex::new(client));
 
-        (client, server)
-    }
-
-    async fn udp_pair() -> (tokio::net::UdpSocket, tokio::net::UdpSocket) {
-        let a = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let b = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        (a, b)
-    }
-
-    #[tokio::test]
-    async fn test_send_client_tcp() {
-        let (client, mut server) = tcp_pair().await;
-
-        let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-
-        let data = b"hello";
-        CommandSender::send_client(client, data).await.unwrap();
-
-        let mut buf = [0u8; 5];
-        server.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, data);
+        (ClientType::TCP(client), rx)
     }
 
     #[tokio::test]
-    async fn test_send_client_http() {
-        let (client, mut server) = tcp_pair().await;
+    async fn test_send_online() -> anyhow::Result<()> {
+        let (tcp, rx) = tcp_pair().await;
 
-        let client = ClientType::HTTP(Arc::new(Mutex::new(client)));
-
-        let data = b"http";
-        CommandSender::send_client(client, data).await.unwrap();
-
-        let mut buf = [0u8; 4];
-        server.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, data);
-    }
-
-    #[tokio::test]
-    async fn test_send_client_ws() {
-        let (client, mut server) = tcp_pair().await;
-
-        let client = ClientType::WS(Arc::new(Mutex::new(client)));
-
-        let data = b"ws";
-        CommandSender::send_client(client, data).await.unwrap();
-
-        let mut buf = [0u8; 2];
-        server.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, data);
-    }
-
-    #[tokio::test]
-    async fn test_send_client_udp() {
-        let (a, b) = udp_pair().await;
-        let peer = b.local_addr().unwrap();
-
-        let client = ClientType::UDP {
-            socket: Arc::new(a),
-            peer,
+        let sender = CommandSender {
+            tcp,
+            udp: None,
         };
 
-        let data = b"udp";
+        let address = Address::random();
+        let payload = Some(b"online-data".to_vec());
 
-        CommandSender::send_client(client, data).await.unwrap();
+        sender.send_online(&address, payload.clone()).await?;
 
-        let mut buf = [0u8; 3];
-        let (n, _) = b.recv_from(&mut buf).await.unwrap();
-        assert_eq!(&buf[..n], data);
+        // 验证 TCP 收到数据
+        let received = rx.await.unwrap();
+        assert!(!received.is_empty());
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_send_online_command() {
-        let (client, mut server) = tcp_pair().await;
+    async fn test_send_offline() -> anyhow::Result<()> {
+        let (tcp, rx) = tcp_pair().await;
 
-        let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-        let addr = test_address();
+        let sender = CommandSender {
+            tcp,
+            udp: None,
+        };
 
-        CommandSender::send_online_command(
-            client,
-            &addr,
-            "127.0.0.1:1234".parse().unwrap(),
-            Some(b"data".to_vec()),
-        )
-        .await
-        .unwrap();
+        let address = Address::random();
+        let payload = Some(b"offline-data".to_vec());
 
-        let mut buf = Vec::new();
-        server.read_to_end(&mut buf).await.unwrap();
-        assert!(!buf.is_empty());
-    }
+        sender.send_offline(&address, payload.clone()).await?;
 
-    #[tokio::test]
-    async fn test_send_offline_command() {
-        let (client, mut server) = tcp_pair().await;
+        // 验证 TCP 收到数据
+        let received = rx.await.unwrap();
+        assert!(!received.is_empty());
 
-        let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-        let addr = test_address();
-
-        CommandSender::send_offline_command(client, &addr, "127.0.0.1:1234".parse().unwrap(), None)
-            .await
-            .unwrap();
-
-        let mut buf = Vec::new();
-        server.read_to_end(&mut buf).await.unwrap();
-        assert!(!buf.is_empty());
+        Ok(())
     }
 }
+
