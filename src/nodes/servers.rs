@@ -10,6 +10,8 @@ pub struct Servers {
     pub host_inner_record: Vec<NodeRecord>,
     pub purified_external: Vec<NodeRecord>,
     pub purified_inner: Vec<NodeRecord>,
+    pub inner_connected: Vec<NodeRecord>,
+    pub external_connected: Vec<NodeRecord>,
 }
 
 impl Servers {
@@ -53,7 +55,9 @@ impl Servers {
             host_public_record,
             host_inner_record,
             purified_external,
-            purified_inner
+            purified_inner,
+            inner_connected: Vec::new(),
+            external_connected: Vec::new(),
         }
     }
 
@@ -169,6 +173,8 @@ mod tests {
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],
+            inner_connected: Vec::new(),
+            external_connected: Vec::new(),
         };
 
         let a = node([10, 0, 0, 1], 1111);
@@ -195,6 +201,8 @@ mod tests {
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],
+            inner_connected: Vec::new(),
+            external_connected: Vec::new(),
         };
 
         let eps = servers.get_all_endpoints();
@@ -210,6 +218,8 @@ mod tests {
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],
+            inner_connected: Vec::new(),
+            external_connected: Vec::new(),
         };
 
         let eps = servers.get_external_endpoints();
