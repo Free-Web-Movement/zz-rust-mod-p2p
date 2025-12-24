@@ -1,12 +1,22 @@
 use std::net::SocketAddr;
+use zz_account::address::FreeWebMovementAddress;
 
-use crate::nodes::{connected_servers::ConnectedServers, net_info, record::NodeRecord, storage};
+use crate::nodes::{
+    connected_servers::{ConnectedServer, ConnectedServers},
+    net_info,
+    record::NodeRecord,
+    storage,
+};
+
+use bincode::config;
+use bincode::serde::decode_from_slice;
+use bincode::serde::encode_to_vec;
 
 #[derive(Clone)]
 pub struct Servers {
     pub inner: Vec<NodeRecord>,
     pub external: Vec<NodeRecord>,
-    pub host_public_record: Vec<NodeRecord>,
+    pub host_external_record: Vec<NodeRecord>,
     pub host_inner_record: Vec<NodeRecord>,
     pub purified_external: Vec<NodeRecord>,
     pub purified_inner: Vec<NodeRecord>,
@@ -21,7 +31,7 @@ impl Servers {
         let mut external = storage.read_external_server_list().unwrap_or_default();
 
         // 当前节点的公网记录
-        let host_public_record = NodeRecord::to_list(
+        let host_external_record = NodeRecord::to_list(
             net_info.public_ips(),
             net_info.port,
             crate::protocols::defines::ProtocolCapability::TCP
@@ -38,12 +48,12 @@ impl Servers {
         );
 
         // 合并当前节点公网记录到 external（用于广播）
-        external = NodeRecord::merge(host_public_record.clone(), external);
+        external = NodeRecord::merge(host_external_record.clone(), external);
 
         inner = NodeRecord::merge(host_inner_record.clone(), inner);
 
         // 关键：生成“用于遍历的 external（不包含自己）”
-        let purified_external = Self::purify_servers(&host_public_record, &external);
+        let purified_external = Self::purify_servers(&host_external_record, &external);
         let purified_inner = Self::purify_servers(&host_inner_record, &inner);
 
         storage
@@ -53,7 +63,7 @@ impl Servers {
         Self {
             inner,
             external,
-            host_public_record,
+            host_external_record,
             host_inner_record,
             purified_external,
             purified_inner,
@@ -98,6 +108,87 @@ impl Servers {
             })
             .cloned()
             .collect()
+    }
+
+    pub fn to_endpoints(records: &Vec<NodeRecord>) -> Vec<u8> {
+        let endpoints: Vec<String> = records
+            .into_iter()
+            .map(|record| record.endpoint.to_string())
+            .collect();
+
+        let endpoint_data = encode_to_vec(endpoints, config::standard()).unwrap();
+        endpoint_data
+    }
+
+    pub fn from_endpoints(endpoints: Vec<u8>) -> Vec<SocketAddr> {
+        let (strings, _): (Vec<String>, _) =
+            decode_from_slice(&endpoints, config::standard()).unwrap();
+        let endpoints: Vec<SocketAddr> = strings.into_iter().map(|s| s.parse().unwrap()).collect();
+        endpoints
+    }
+
+    /// 🔹 通知一组服务器上线
+    pub async fn notify_online_servers(
+        &self,
+        address: FreeWebMovementAddress,
+        data: &Option<Vec<u8>>,
+        servers: &Vec<ConnectedServer>,
+    ) {
+        for server in servers {
+            server
+                .command
+                .send_online(&address, data.clone())
+                .await
+                .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
+        }
+    }
+
+    /// 🔹 通知一组服务器下线
+    pub async fn notify_offline_servers(
+        &self,
+        address: FreeWebMovementAddress,
+        data: &Option<Vec<u8>>,
+        servers: &Vec<ConnectedServer>,
+    ) {
+        for server in servers {
+            server
+                .command
+                .send_offline(&address, data.clone())
+                .await
+                .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
+        }
+    }
+
+    /// 🔹 通知所有已连接服务器上线
+    pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
+        if let Some(connections) = &self.connected_servers {
+            // inner endpoints 序列化
+            let inner_data = Servers::to_endpoints(&self.host_inner_record);
+            self.notify_online_servers(address.clone(), &Some(inner_data), &connections.inner)
+                .await;
+
+            // external endpoints 序列化
+            let external_data = Servers::to_endpoints(&self.host_external_record);
+            self.notify_online_servers(address.clone(), &Some(external_data), &connections.external)
+                .await;
+        }
+        Ok(())
+    }
+
+    /// 🔹 通知所有已连接服务器下线
+    pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
+        if let Some(connections) = &self.connected_servers {
+            // inner endpoints 序列化
+            let inner_data = Servers::to_endpoints(&self.host_inner_record);
+            self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
+                .await;
+
+            // external endpoints 序列化
+            let external_data = Servers::to_endpoints(&self.host_external_record);
+            self.notify_offline_servers(address.clone(), &Some(external_data), &connections.external)
+                .await;
+        }
+        Ok(())
     }
 }
 
@@ -174,7 +265,7 @@ mod tests {
         let mut servers = Servers {
             inner: vec![],
             external: vec![],
-            host_public_record: vec![],
+            host_external_record: vec![],
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],
@@ -203,7 +294,7 @@ mod tests {
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000)],
-            host_public_record: vec![],
+            host_external_record: vec![],
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],
@@ -221,7 +312,7 @@ mod tests {
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000), node([1, 1, 1, 1], 3000)],
-            host_public_record: vec![],
+            host_external_record: vec![],
             host_inner_record: vec![],
             purified_external: vec![],
             purified_inner: vec![],

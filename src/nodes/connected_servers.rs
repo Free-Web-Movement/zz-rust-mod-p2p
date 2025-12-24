@@ -12,7 +12,7 @@ use crate::nodes::record::NodeRecord;
 use crate::protocols::{commands::sender::CommandSender, defines::ClientType};
 
 /// 已连接的服务器（控制面 + 数据面）
-/// 
+///
 #[derive(Clone)]
 pub struct ConnectedServer {
     pub record: NodeRecord,
@@ -69,8 +69,17 @@ impl ConnectedServers {
     }
 
     /// 🔔 通知所有服务器上线
-    pub async fn notify_online(&self, address: &FreeWebMovementAddress, data: Option<Vec<u8>>) {
-        let all = self.inner.iter().chain(self.external.iter());
+    pub async fn notify_online(
+        &self,
+        address: &FreeWebMovementAddress,
+        data: Option<Vec<u8>>,
+        is_external: bool,
+    ) {
+        let all = if is_external {
+            self.inner.iter()
+        } else {
+            self.external.iter()
+        };
 
         let futures = all.map(|server| {
             let addr = address.clone();
@@ -84,9 +93,17 @@ impl ConnectedServers {
     }
 
     /// 🔔 通知所有服务器下线
-    pub async fn notify_offline(&self, address: &FreeWebMovementAddress, data: Option<Vec<u8>>) {
-        let all = self.inner.iter().chain(self.external.iter());
-
+    pub async fn notify_offline(
+        &self,
+        address: &FreeWebMovementAddress,
+        data: Option<Vec<u8>>,
+        is_external: bool,
+    ) {
+        let all = if is_external {
+            self.inner.iter()
+        } else {
+            self.external.iter()
+        };
         let futures = all.map(|server| {
             let addr = address.clone();
             let payload = data.clone();

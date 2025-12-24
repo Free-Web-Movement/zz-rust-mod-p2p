@@ -80,7 +80,7 @@ mod tests {
         let address = Address::random();
         let payload = Some(b"online-data".to_vec());
 
-        sender.send_online(&address, payload.clone()).await?;
+        sender.send_online(&address, payload).await?;
 
         // 验证 TCP 收到数据
         let received = rx.await.unwrap();
@@ -101,7 +101,7 @@ mod tests {
         let address = Address::random();
         let payload = Some(b"offline-data".to_vec());
 
-        sender.send_offline(&address, payload.clone()).await?;
+        sender.send_offline(&address, payload).await?;
 
         // 验证 TCP 收到数据
         let received = rx.await.unwrap();
