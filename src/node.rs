@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::protocols::commands::sender::CommandSender;
 use crate::protocols::defines::Listener;
 use crate::{context::Context, nodes::servers::Servers};
 use crate::{
@@ -96,7 +95,6 @@ impl Node {
         self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
         let _ = self.init_storage_and_server_list(port);
-
     }
 
     pub async fn stop(&mut self) {
