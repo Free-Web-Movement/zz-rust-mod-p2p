@@ -62,6 +62,8 @@ impl Servers {
             .save_external_server_list(&external)
             .unwrap_or_default();
 
+        storage.save_inner_server_list(&inner).unwrap_or_default();
+
         Self {
             inner,
             external,

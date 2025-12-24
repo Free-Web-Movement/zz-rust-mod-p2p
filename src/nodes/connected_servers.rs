@@ -37,7 +37,7 @@ impl ConnectedServers {
                 match timeout(Self::CONNECT_TIMEOUT, TcpStream::connect(record.endpoint)).await {
                     Ok(Ok(stream)) => {
                         let tcp = ClientType::TCP(Arc::new(Mutex::new(stream)));
-
+                        tracing::info!("tcp connect succeeded {}", record.endpoint);
                         Some(ConnectedServer {
                             record,
                             command: CommandSender {

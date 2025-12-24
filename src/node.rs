@@ -97,8 +97,10 @@ impl Node {
         self.net_info = Some(NetInfo::collect(port).unwrap());
         let _ = self.init_storage_and_server_list(port);
         if let Some(servers) = &mut self.servers {
-            servers.connect().await
+            servers.connect().await;
+            servers.notify_online(self.address.clone()).await.unwrap();
         }
+
     }
 
     pub async fn stop(&mut self) {

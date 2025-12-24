@@ -117,6 +117,8 @@ impl NetInfo {
             }
         }
 
+        println!("net info port: {}!", port);
+
         Ok(NetInfo {
             port,
             v4: LPIP {

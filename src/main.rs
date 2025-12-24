@@ -5,7 +5,7 @@ use zz_p2p::node::Node;
 
 /// 简单 TCP + UDP 服务器参数
 #[derive(Parser, Debug)]
-#[command(name = "free_wm_p2p")]
+#[command(name = "zzp2p")]
 struct Opt {
     /// IP 地址，例如 0.0.0.0
     #[arg(long, default_value = "0.0.0.0")]
