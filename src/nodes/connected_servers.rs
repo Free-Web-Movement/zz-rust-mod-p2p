@@ -6,17 +6,21 @@ use tokio::{
     sync::Mutex,
     time::timeout,
 };
+use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
 use crate::protocols::{commands::sender::CommandSender, defines::ClientType};
 
 /// 已连接的服务器（控制面 + 数据面）
+/// 
+#[derive(Clone)]
 pub struct ConnectedServer {
     pub record: NodeRecord,
     pub command: CommandSender,
 }
 
 /// 已连接服务器集合（区分 inner / external）
+#[derive(Clone)]
 pub struct ConnectedServers {
     pub inner: Vec<ConnectedServer>,
     pub external: Vec<ConnectedServer>,
@@ -62,6 +66,36 @@ impl ConnectedServers {
         let (inner, external) = tokio::join!(Self::connect(inner), Self::connect(external));
 
         Self { inner, external }
+    }
+
+    /// 🔔 通知所有服务器上线
+    pub async fn notify_online(&self, address: &FreeWebMovementAddress, data: Option<Vec<u8>>) {
+        let all = self.inner.iter().chain(self.external.iter());
+
+        let futures = all.map(|server| {
+            let addr = address.clone();
+            let payload = data.clone();
+            async move {
+                let _ = server.command.send_online(&addr, payload).await;
+            }
+        });
+
+        futures::future::join_all(futures).await;
+    }
+
+    /// 🔔 通知所有服务器下线
+    pub async fn notify_offline(&self, address: &FreeWebMovementAddress, data: Option<Vec<u8>>) {
+        let all = self.inner.iter().chain(self.external.iter());
+
+        let futures = all.map(|server| {
+            let addr = address.clone();
+            let payload = data.clone();
+            async move {
+                let _ = server.command.send_offline(&addr, payload).await;
+            }
+        });
+
+        futures::future::join_all(futures).await;
     }
 }
 

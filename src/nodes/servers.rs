@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::nodes::{net_info, record::NodeRecord, storage};
+use crate::nodes::{connected_servers::ConnectedServers, net_info, record::NodeRecord, storage};
 
 #[derive(Clone)]
 pub struct Servers {
@@ -12,6 +12,7 @@ pub struct Servers {
     pub purified_inner: Vec<NodeRecord>,
     pub inner_connected: Vec<NodeRecord>,
     pub external_connected: Vec<NodeRecord>,
+    pub connected_servers: Option<ConnectedServers>,
 }
 
 impl Servers {
@@ -58,6 +59,7 @@ impl Servers {
             purified_inner,
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
+            connected_servers: None,
         }
     }
 
@@ -105,7 +107,10 @@ mod tests {
 
     use super::*;
     use chrono::{DateTime, Utc};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        vec,
+    };
 
     // ------------------------------
     // 测试辅助：构造 NodeRecord
@@ -175,6 +180,7 @@ mod tests {
             purified_inner: vec![],
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
+            connected_servers: None,
         };
 
         let a = node([10, 0, 0, 1], 1111);
@@ -203,6 +209,7 @@ mod tests {
             purified_inner: vec![],
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
+            connected_servers: None,
         };
 
         let eps = servers.get_all_endpoints();
@@ -220,6 +227,7 @@ mod tests {
             purified_inner: vec![],
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
+            connected_servers: None,
         };
 
         let eps = servers.get_external_endpoints();
