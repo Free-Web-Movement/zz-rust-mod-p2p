@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
+use crate::nodes::servers;
 use crate::protocols::defines::Listener;
 use crate::{context::Context, nodes::servers::Servers};
 use crate::{
@@ -95,6 +96,9 @@ impl Node {
         self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
         let _ = self.init_storage_and_server_list(port);
+        if let Some(servers) = &mut self.servers {
+            servers.connect().await
+        }
     }
 
     pub async fn stop(&mut self) {
@@ -133,52 +137,10 @@ impl Node {
         // 4️⃣ Node 持有 external server list 视图
         self.servers = Some(servers);
 
+        // self.servers
+
         Ok(())
     }
-
-    // pub async fn notify_online(&self, : &CommandSender) -> anyhow::Result<()> {
-    //     let address = &self.address;
-
-    //     // 内网节点
-    //     if let Some(servers) = &self.servers {
-    //         let mut tasks = Vec::new();
-
-    //         for node in &servers.purified_inner {
-    //             // 默认使用 UDP 发送
-    //             let peer = node.endpoint;
-    //             let fut = CommandSender::end_online_command(
-    //                 crate::protocols::defines::ClientType::UDP {
-    //                     socket: self.udp_handler.as_ref().unwrap().lock().await.listener.clone(),
-    //                     peer,
-    //                 },
-    //                 address,
-    //                 peer,
-    //                 None,
-    //             );
-    //             tasks.push(fut);
-    //         }
-
-    //         // 外网节点
-    //         for node in &servers.purified_external {
-    //             let peer = node.endpoint;
-    //             let fut = sender.send_online_command(
-    //                 crate::protocols::defines::ClientType::UDP {
-    //                     socket: self.udp_handler.as_ref().unwrap().lock().await.listener.clone(),
-    //                     peer,
-    //                 },
-    //                 address,
-    //                 peer,
-    //                 None,
-    //             );
-    //             tasks.push(fut);
-    //         }
-
-    //         // 并行发送
-    //         futures::future::join_all(tasks).await;
-    //     }
-
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]

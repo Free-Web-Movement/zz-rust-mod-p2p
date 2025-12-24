@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::{
-    connected_servers::{ConnectedServer, ConnectedServers},
+    connected_servers::{self, ConnectedServer, ConnectedServers},
     net_info,
     record::NodeRecord,
     storage,
@@ -55,6 +55,8 @@ impl Servers {
         // 关键：生成“用于遍历的 external（不包含自己）”
         let purified_external = Self::purify_servers(&host_external_record, &external);
         let purified_inner = Self::purify_servers(&host_inner_record, &inner);
+
+        // let connected_servers = Some(ConnectedServers::new(purified_inner.clone(), purified_external.clone()).await);
 
         storage
             .save_external_server_list(&external)
@@ -159,7 +161,7 @@ impl Servers {
         }
     }
 
-    /// 🔹 通知所有已连接服务器上线
+    /// 🔹 通知所有已连接服务器当前节点的上线
     pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
@@ -169,13 +171,17 @@ impl Servers {
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record);
-            self.notify_online_servers(address.clone(), &Some(external_data), &connections.external)
-                .await;
+            self.notify_online_servers(
+                address.clone(),
+                &Some(external_data),
+                &connections.external,
+            )
+            .await;
         }
         Ok(())
     }
 
-    /// 🔹 通知所有已连接服务器下线
+    /// 🔹 通知所有已连接服务器当前节点的下线
     pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
@@ -185,10 +191,21 @@ impl Servers {
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record);
-            self.notify_offline_servers(address.clone(), &Some(external_data), &connections.external)
-                .await;
+            self.notify_offline_servers(
+                address.clone(),
+                &Some(external_data),
+                &connections.external,
+            )
+            .await;
         }
         Ok(())
+    }
+
+    pub async fn connect(&mut self) {
+        self.connected_servers = Some(
+            ConnectedServers::new(self.purified_inner.clone(), self.purified_external.clone())
+                .await,
+        );
     }
 }
 
