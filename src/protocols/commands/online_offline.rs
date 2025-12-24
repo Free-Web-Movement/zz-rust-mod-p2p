@@ -75,7 +75,6 @@ mod tests {
         let (client, mut server) = tcp_pair().await;
 
         let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-        let sender = CommandSender {};
 
         let data = b"hello";
         CommandSender::send_client(client, data).await.unwrap();
@@ -90,7 +89,6 @@ mod tests {
         let (client, mut server) = tcp_pair().await;
 
         let client = ClientType::HTTP(Arc::new(Mutex::new(client)));
-        let sender = CommandSender {};
 
         let data = b"http";
         CommandSender::send_client(client, data).await.unwrap();
@@ -159,7 +157,6 @@ mod tests {
         let (client, mut server) = tcp_pair().await;
 
         let client = ClientType::TCP(Arc::new(Mutex::new(client)));
-        let sender = CommandSender {};
         let addr = test_address();
 
         CommandSender::send_offline_command(client, &addr, "127.0.0.1:1234".parse().unwrap(), None)

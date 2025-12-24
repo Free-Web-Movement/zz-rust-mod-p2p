@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use tokio::{
     net::{TcpStream, UdpSocket},
     sync::Mutex,
@@ -8,34 +8,26 @@ use tokio::{
 };
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::{
-    commands::sender::CommandSender,
-    defines::ClientType,
-};
+use crate::protocols::{commands::sender::CommandSender, defines::ClientType};
 
 /// 已连接的服务器（控制面 + 数据面）
 pub struct ConnectedServer {
     pub record: NodeRecord,
-
-    /// 控制通道（必须存在，TCP / HTTP / WS 之一）
-    pub tcp: ClientType,
-
-    /// 数据通道（可选，UDP 优先）
-    pub udp: Option<ClientType>,
+    pub command: CommandSender,
 }
 
 impl ConnectedServer {
     /// 🔥 事件发送策略：UDP 优先，失败回退 TCP
     pub async fn send(&self, data: &[u8]) -> anyhow::Result<()> {
         // 1️⃣ UDP 优先
-        if let Some(udp) = &self.udp {
+        if let Some(udp) = &self.command.udp {
             if CommandSender::send_client(udp.clone(), data).await.is_ok() {
                 return Ok(());
             }
         }
 
         // 2️⃣ TCP fallback
-        CommandSender::send_client(self.tcp.clone(), data).await
+        CommandSender::send_client(self.command.tcp.clone(), data).await
     }
 }
 
@@ -59,8 +51,10 @@ impl ConnectedServers {
 
                         Some(ConnectedServer {
                             record,
-                            tcp,
-                            udp: None, // UDP 后续协商
+                            command: CommandSender {
+                                tcp,
+                                udp: None, // UDP 后续协商
+                            },
                         })
                     }
                     Ok(Err(e)) => {
@@ -80,16 +74,11 @@ impl ConnectedServers {
     }
 
     pub async fn new(inner: Vec<NodeRecord>, external: Vec<NodeRecord>) -> Self {
-        let (inner, external) = tokio::join!(
-            Self::connect(inner),
-            Self::connect(external)
-        );
+        let (inner, external) = tokio::join!(Self::connect(inner), Self::connect(external));
 
         Self { inner, external }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -97,15 +86,12 @@ mod tests {
     use crate::protocols::defines::ProtocolCapability;
     use chrono::Utc;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use tokio::net::TcpListener;
     use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
 
     fn make_record(port: u16) -> NodeRecord {
         NodeRecord {
-            endpoint: SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                port,
-            ),
+            endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
             protocols: ProtocolCapability::TCP,
             first_seen: Utc::now(),
             last_seen: Utc::now(),
