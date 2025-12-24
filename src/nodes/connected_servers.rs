@@ -16,21 +16,6 @@ pub struct ConnectedServer {
     pub command: CommandSender,
 }
 
-impl ConnectedServer {
-    /// 🔥 事件发送策略：UDP 优先，失败回退 TCP
-    pub async fn send(&self, data: &[u8]) -> anyhow::Result<()> {
-        // 1️⃣ UDP 优先
-        if let Some(udp) = &self.command.udp {
-            if CommandSender::send_client(udp.clone(), data).await.is_ok() {
-                return Ok(());
-            }
-        }
-
-        // 2️⃣ TCP fallback
-        CommandSender::send_client(self.command.tcp.clone(), data).await
-    }
-}
-
 /// 已连接服务器集合（区分 inner / external）
 pub struct ConnectedServers {
     pub inner: Vec<ConnectedServer>,
@@ -141,11 +126,11 @@ mod tests {
             buf[..n].to_vec()
         });
 
-        let mut connected = ConnectedServers::connect(vec![record]).await;
+        let connected = ConnectedServers::connect(vec![record]).await;
         assert_eq!(connected.len(), 1);
 
         let msg = b"hello-connected-server";
-        connected[0].send(msg).await?;
+        connected[0].command.send(msg).await?;
 
         let received = server.await.unwrap();
         assert_eq!(received, msg);
