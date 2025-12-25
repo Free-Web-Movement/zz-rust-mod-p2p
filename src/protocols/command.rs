@@ -2,6 +2,8 @@ use anyhow::Result;
 use bincode::config;
 use bincode::{Decode, Encode};
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub enum Entity {
     Node = 1,
     Message,
@@ -9,6 +11,7 @@ pub enum Entity {
     File,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub enum NodeAction {
     OnLine = 1,
     OffLine,
@@ -29,14 +32,14 @@ pub enum TelephoneAction {
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct Command {
-    pub entity: u8,
-    pub action: u8,
+    pub entity: Entity,
+    pub action: NodeAction,
     pub version: u8,
     pub data: Option<Vec<u8>>,
 }
 
 impl Command {
-    pub fn new(entity: u8, action: u8, version: u8, data: Option<Vec<u8>>) -> Self {
+    pub fn new(entity: Entity, action: NodeAction, version: u8, data: Option<Vec<u8>>) -> Self {
         Self {
             entity,
             action,
@@ -64,7 +67,7 @@ impl Command {
     ========================= */
 
     /// send = build + encode (protocol layer, no IO)
-    pub fn send(entity: u8, action: u8, version: u8, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
+    pub fn send(entity: Entity, action: NodeAction, version: u8, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
         let cmd = Command::new(entity, action, version, data);
         cmd.serialize()
     }
@@ -81,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_command_serialize_deserialize() {
-        let cmd = Command::new(1, 2, 1, Some(vec![1, 2, 3, 4]));
+        let cmd = Command::new(Entity::Node, NodeAction::OnLine, 1, Some(vec![1, 2, 3, 4]));
         let bytes = cmd.serialize().unwrap();
         let cmd2 = Command::deserialize(&bytes).unwrap();
         assert_eq!(cmd, cmd2);
@@ -92,8 +95,8 @@ mod tests {
         let payload = vec![10, 20, 30];
 
         let bytes = Command::send(
-            Entity::Node as u8,
-            NodeAction::OnLine as u8,
+            Entity::Node,
+            NodeAction::OnLine,
             1,
             Some(payload.clone()),
         )
@@ -101,8 +104,8 @@ mod tests {
 
         let cmd = Command::receive(&bytes).unwrap();
 
-        assert_eq!(cmd.entity, Entity::Node as u8);
-        assert_eq!(cmd.action, NodeAction::OnLine as u8);
+        assert_eq!(cmd.entity, Entity::Node);
+        assert_eq!(cmd.action, NodeAction::OnLine);
         assert_eq!(cmd.version, 1);
         assert_eq!(cmd.data, Some(payload));
     }

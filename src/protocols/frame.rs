@@ -127,7 +127,7 @@ impl Frame {
         version: u8,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<Self> {
-        let cmd_bytes = Command::send(entity as u8, action as u8, version, data)?;
+        let cmd_bytes = Command::send(entity, action, version, data)?;
 
         let body = FrameBody {
             address: address.to_string(),
@@ -138,6 +138,54 @@ impl Frame {
             data: cmd_bytes,
         };
         Ok(Frame::sign(body, address)?)
+    }
+
+    pub fn extract_node_command(bytes: &Vec<u8>) {
+        // 1️⃣ 验证 Frame + 签名
+        let frame = match Frame::verify_bytes(bytes) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("❌ Frame verify failed: {:?}", e);
+                return;
+            }
+        };
+
+        // 2️⃣ 解出 Command
+        let cmd = match Command::receive(&frame.body.data) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("❌ Command decode failed: {:?}", e);
+                return;
+            }
+        };
+
+        // 3️⃣ 主分发框架（当前只处理 Node）
+        match (cmd.entity as Entity, cmd.action as NodeAction) {
+            (Entity::Node, NodeAction::OnLine) => {
+                // TODO: Node 上线逻辑
+                println!(
+                    "✅ Node Online: addr={}, nonce={}",
+                    frame.body.address, frame.body.nonce
+                );
+            }
+
+            (Entity::Node, NodeAction::OffLine) => {
+                // TODO: Node 下线逻辑
+                println!(
+                    "⚠️ Node Offline: addr={}, nonce={}",
+                    frame.body.address, frame.body.nonce
+                );
+            }
+
+            _ => {
+                // 其他实体 / 动作暂不处理
+                println!(
+                    "ℹ️ Unsupported command: entity={:?}, action={:?}",
+                    cmd.entity,
+                    cmd.action
+                );
+            }
+        }
     }
 }
 
@@ -186,8 +234,8 @@ mod tests {
 
     fn make_command() -> Command {
         Command::new(
-            Entity::Node as u8,
-            NodeAction::OnLine as u8,
+            Entity::Node,
+            NodeAction::OnLine,
             1,
             Some(vec![1, 2, 3, 4]),
         )
@@ -362,7 +410,13 @@ mod tests {
         let payload = Some(b"hello node online".to_vec());
 
         // 3️⃣ 构建 Frame
-        let frame = Frame::build_node_command(&address, Entity::Node, NodeAction::OnLine, 1, payload.clone())?;
+        let frame = Frame::build_node_command(
+            &address,
+            Entity::Node,
+            NodeAction::OnLine,
+            1,
+            payload.clone(),
+        )?;
 
         // 4️⃣ 基本结构校验
         assert_eq!(frame.body.version, 1);
@@ -376,7 +430,7 @@ mod tests {
         assert!(frame.body.nonce > 0);
 
         // data 校验
-        let cmd_bytes = Command::send(Entity::Node as u8, NodeAction::OnLine as u8, 1, payload)?;
+        let cmd_bytes = Command::send(Entity::Node, NodeAction::OnLine, 1, payload)?;
 
         assert_eq!(frame.body.data_length, cmd_bytes.len() as u32);
         assert_eq!(frame.body.data, cmd_bytes);
@@ -393,7 +447,8 @@ mod tests {
     fn test_build_node_command_without_data() -> anyhow::Result<()> {
         let address = FreeWebMovementAddress::random();
 
-        let frame = Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
+        let frame =
+            Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
 
         assert_eq!(frame.body.address, address.to_string());
         assert_eq!(frame.body.version, 1);
@@ -404,5 +459,56 @@ mod tests {
         Frame::verify(frame)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_extract_node_command_online() -> anyhow::Result<()> {
+        let address = FreeWebMovementAddress::random();
+
+        let frame = Frame::build_node_command(
+            &address,
+            Entity::Node,
+            NodeAction::OnLine,
+            1,
+            Some(b"online".to_vec()),
+        )?;
+
+        let bytes = Frame::to(frame);
+
+        // 不应 panic
+        Frame::extract_node_command(&bytes);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_node_command_offline() -> anyhow::Result<()> {
+        let address = FreeWebMovementAddress::random();
+
+        let frame =
+            Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
+
+        let bytes = Frame::to(frame);
+
+        // 不应 panic
+        Frame::extract_node_command(&bytes);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_node_command_with_tampered_frame_should_not_panic() {
+        let address = FreeWebMovementAddress::random();
+
+        let mut frame =
+            Frame::build_node_command(&address, Entity::Node, NodeAction::OnLine, 1, None).unwrap();
+
+        // 🔥 篡改数据，制造非法 frame
+        frame.body.data = vec![0xFF, 0xEE, 0xDD];
+
+        let bytes = Frame::to(frame);
+
+        // 即使非法，也不能 panic
+        Frame::extract_node_command(&bytes);
     }
 }
