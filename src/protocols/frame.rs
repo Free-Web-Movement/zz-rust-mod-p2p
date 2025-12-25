@@ -143,7 +143,13 @@ impl Frame {
     pub fn extract_node_command(bytes: &Vec<u8>) {
         // 1️⃣ 验证 Frame + 签名
         let frame = match Frame::verify_bytes(bytes) {
-            Ok(f) => f,
+            Ok(f) => {
+                println!(
+                    "✅ Node Online: addr={}, nonce={}",
+                    f.body.address, f.body.nonce
+                );
+                f
+            }
             Err(e) => {
                 eprintln!("❌ Frame verify failed: {:?}", e);
                 return;
@@ -152,7 +158,13 @@ impl Frame {
 
         // 2️⃣ 解出 Command
         let cmd = match Command::receive(&frame.body.data) {
-            Ok(c) => c,
+            Ok(c) => {
+                println!(
+                    "接收到Command， Entity = {}, Action = {}",
+                    c.entity as u8, c.action as u8
+                );
+                c
+            }
             Err(e) => {
                 eprintln!("❌ Command decode failed: {:?}", e);
                 return;
@@ -164,8 +176,7 @@ impl Frame {
             (Entity::Node, NodeAction::OnLine) => {
                 // TODO: Node 上线逻辑
                 println!(
-                    "✅ Node Online: addr={}, nonce={}",
-                    frame.body.address, frame.body.nonce
+                    "✅ Node Online",
                 );
             }
 
@@ -181,8 +192,7 @@ impl Frame {
                 // 其他实体 / 动作暂不处理
                 println!(
                     "ℹ️ Unsupported command: entity={:?}, action={:?}",
-                    cmd.entity,
-                    cmd.action
+                    cmd.entity, cmd.action
                 );
             }
         }
@@ -233,12 +243,7 @@ mod tests {
     }
 
     fn make_command() -> Command {
-        Command::new(
-            Entity::Node,
-            NodeAction::OnLine,
-            1,
-            Some(vec![1, 2, 3, 4]),
-        )
+        Command::new(Entity::Node, NodeAction::OnLine, 1, Some(vec![1, 2, 3, 4]))
     }
 
     #[test]

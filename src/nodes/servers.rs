@@ -167,12 +167,15 @@ impl Servers {
     pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
-            let inner_data = Servers::to_endpoints(&self.host_inner_record);
+            let mut inner_data = Servers::to_endpoints(&self.host_inner_record);
+            inner_data.push(0); // 0表示外网
+
             self.notify_online_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
 
             // external endpoints 序列化
-            let external_data = Servers::to_endpoints(&self.host_external_record);
+            let mut external_data = Servers::to_endpoints(&self.host_external_record);
+            external_data.push(1); // 1表示外网
             self.notify_online_servers(
                 address.clone(),
                 &Some(external_data),
@@ -187,12 +190,14 @@ impl Servers {
     pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
-            let inner_data = Servers::to_endpoints(&self.host_inner_record);
+            let mut inner_data = Servers::to_endpoints(&self.host_inner_record);
+            inner_data.push(0); // 0表示外网
             self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
 
             // external endpoints 序列化
-            let external_data = Servers::to_endpoints(&self.host_external_record);
+            let mut external_data = Servers::to_endpoints(&self.host_external_record);
+            external_data.push(1); // 1表示外网
             self.notify_offline_servers(
                 address.clone(),
                 &Some(external_data),
@@ -234,7 +239,7 @@ mod tests {
             connected: false,
             last_disappeared: None,
             reachability_score: 100,
-            address: None
+            address: None,
         }
     }
 
