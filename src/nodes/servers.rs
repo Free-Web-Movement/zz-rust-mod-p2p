@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use tokio_util::bytes;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::{
@@ -114,23 +115,36 @@ impl Servers {
             .collect()
     }
 
-    pub fn to_endpoints(records: &Vec<NodeRecord>) -> Vec<u8> {
-        let endpoints: Vec<String> = records
-            .into_iter()
+    pub fn to_endpoints(records: &Vec<NodeRecord>, flag: u8) -> Vec<u8> {
+        let mut endpoints: Vec<String> = records
+            .iter()
             .map(|record| record.endpoint.to_string())
             .collect();
 
-        let endpoint_data = encode_to_vec(endpoints, config::standard()).unwrap();
-        endpoint_data
+        // 内网 0 / 外网 1
+        endpoints.push(flag.to_string());
+
+        encode_to_vec(endpoints, config::standard()).expect("encode endpoints failed")
     }
 
-    pub fn from_endpoints(endpoints: Vec<u8>) -> Vec<SocketAddr> {
-        let (strings, _): (Vec<String>, _) =
-            decode_from_slice(&endpoints, config::standard()).unwrap();
-        let endpoints: Vec<SocketAddr> = strings.into_iter().map(|s| s.parse().unwrap()).collect();
-        endpoints
-    }
+    pub fn from_endpoints(endpoints: Vec<u8>) -> (Vec<SocketAddr>, u8) {
+        let (mut strings, _): (Vec<String>, _) =
+            decode_from_slice(&endpoints, config::standard()).expect("decode endpoints failed");
 
+        // 弹出最后一位作为 flag
+        let flag_str = strings.pop().unwrap_or_else(|| "1".to_string());
+        let flag: u8 = match flag_str.as_str() {
+            "0" => 0,
+            _ => 1,
+        };
+
+        let endpoints: Vec<SocketAddr> = strings
+            .into_iter()
+            .map(|s| s.parse().expect("invalid SocketAddr"))
+            .collect();
+
+        (endpoints, flag)
+    }
     /// 🔹 通知一组服务器上线
     pub async fn notify_online_servers(
         &self,
@@ -166,16 +180,15 @@ impl Servers {
     /// 🔹 通知所有已连接服务器当前节点的上线
     pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
-            // inner endpoints 序列化
-            let mut inner_data = Servers::to_endpoints(&self.host_inner_record);
-            inner_data.push(0); // 0表示外网
+            // inner endpoints 序列化, 0表示内网
+            let mut inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
 
             self.notify_online_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
 
-            // external endpoints 序列化
-            let mut external_data = Servers::to_endpoints(&self.host_external_record);
-            external_data.push(1); // 1表示外网
+            // external endpoints 序列化, 1表示外网
+            let mut external_data = Servers::to_endpoints(&self.host_external_record, 1);
+            external_data.push(1);
             self.notify_online_servers(
                 address.clone(),
                 &Some(external_data),
@@ -190,14 +203,12 @@ impl Servers {
     pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
-            let mut inner_data = Servers::to_endpoints(&self.host_inner_record);
-            inner_data.push(0); // 0表示外网
+            let mut inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
             self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
 
             // external endpoints 序列化
-            let mut external_data = Servers::to_endpoints(&self.host_external_record);
-            external_data.push(1); // 1表示外网
+            let mut external_data = Servers::to_endpoints(&self.host_external_record, 1);
             self.notify_offline_servers(
                 address.clone(),
                 &Some(external_data),

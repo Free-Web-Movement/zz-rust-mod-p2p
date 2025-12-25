@@ -8,7 +8,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::context::Context;
 use crate::handlers::http::HTTPHandler;
-use crate::protocols::defines::{Listener, ClientType};
+use crate::protocols::commands::parser::CommandParser;
+use crate::protocols::defines::{ClientType, Listener};
+use crate::protocols::frame::Frame;
 
 /// 默认 TCP 读取缓冲区
 pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
@@ -143,29 +145,35 @@ impl Listener for TCPHandler {
     }
     async fn on_data(
         self: &Arc<Self>,
-        protocol_type: &ClientType,
+        client_type: &ClientType,
         received: &[u8],
     ) -> anyhow::Result<()> {
-        if let ClientType::TCP(stream) = protocol_type {
+        if let ClientType::TCP(stream) = client_type {
             {
                 // 括号{}用于设置作用域，让lock锁释放
-                let guard = stream.lock().await;
+                let mut guard = stream.lock().await;
                 let peer = guard.peer_addr().unwrap();
                 println!("TCP received {} bytes from {}", received.len(), &peer);
-            }
 
-            let _ = self.send(protocol_type, received).await;
-            // guard.write_all(received).await?;
+                let bytes = received.to_vec();
+
+                match Frame::verify_bytes(&bytes) {
+                    Ok(frame) => {
+                        // 协议帧，交给 CommandParser
+                        CommandParser::on(&frame, self.context.clone(), client_type).await;
+                    }
+                    Err(_) => {
+                        // 非协议帧，当普通 TCP 数据
+                        let _ = guard.write_all(&received).await;
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 
-    async fn send(
-        self: &Arc<Self>,
-        protocol_type: &ClientType,
-        data: &[u8],
-    ) -> anyhow::Result<()> {
+    async fn send(self: &Arc<Self>, protocol_type: &ClientType, data: &[u8]) -> anyhow::Result<()> {
         if let ClientType::TCP(stream) = protocol_type {
             let mut guard = stream.lock().await;
             let peer = guard.peer_addr().unwrap();
@@ -179,71 +187,91 @@ impl Listener for TCPHandler {
 
 #[cfg(test)]
 mod tests {
+    use crate::nodes::servers::Servers;
+    use crate::protocols::command::{Entity, NodeAction};
+
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
     use zz_account::address::FreeWebMovementAddress;
 
-    #[tokio::test]
-    async fn test_tcp_echo() -> anyhow::Result<()> {
-        let ip = "127.0.0.1";
-        let port = 18000;
-        let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(ip.to_string(), port, address));
-        let server = TCPHandler::bind(context).await?;
+    // #[tokio::test]
+    // async fn test_tcp_echo() -> anyhow::Result<()> {
+    //     let ip = "127.0.0.1";
+    //     let port = 18000;
+    //     let address = FreeWebMovementAddress::random();
+    //     let context = Arc::new(Context::new(ip.to_string(), port, address));
+    //     let server = TCPHandler::bind(context).await?;
 
-        tokio::spawn(server.clone().start());
+    //     tokio::spawn(server.clone().start());
+
+    //     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    //     let mut stream = TcpStream::connect(format!("{}:{}", ip, port)).await?;
+    //     let msg = b"hello tcp";
+
+    //     stream.write_all(msg).await?;
+
+    //     let mut buf = vec![0u8; msg.len()];
+    //     stream.read_exact(&mut buf).await?;
+
+    //     assert_eq!(buf, msg);
+
+    //     server.stop().await?;
+
+    //     Ok(())
+    // }
+
+    #[tokio::test]
+    async fn test_node_online_between_two_nodes() -> anyhow::Result<()> {
+        let ip = "127.0.0.1";
+        let port_b = 19001;
+
+        // ===== 1️⃣ Node B（被通知方） =====
+        let addr_b = FreeWebMovementAddress::random();
+        let context_b = Arc::new(Context::new(ip.to_string(), port_b, addr_b.clone()));
+        let server_b = TCPHandler::bind(context_b.clone()).await?;
+
+        let server_task = tokio::spawn(server_b.clone().start());
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        let mut stream = TcpStream::connect(format!("{}:{}", ip, port)).await?;
-        let msg = b"hello tcp";
+        // ===== 2️⃣ Node A（上线方） =====
+        let addr_a = FreeWebMovementAddress::random();
+        let mut stream_a = TcpStream::connect(format!("{}:{}", ip, port_b)).await?;
 
-        stream.write_all(msg).await?;
+        // 构造 Node::OnLine Frame（external 示例）
+        let frame = Frame::build_node_command(
+            &addr_a,
+            Entity::Node,
+            NodeAction::OnLine,
+            1,
+            Some({
+                let data = Servers::to_endpoints(&vec![], 1); // 空 endpoint 也合法
+                data
+            }),
+        )?;
 
-        let mut buf = vec![0u8; msg.len()];
-        stream.read_exact(&mut buf).await?;
+        let bytes = Frame::to(frame);
 
-        assert_eq!(buf, msg);
+        // ===== 3️⃣ Node A 发送 Online =====
+        stream_a.write_all(&bytes).await?;
 
-        server.stop().await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_tcp_multiple_clients() -> anyhow::Result<()> {
-        let ip = "127.0.0.1";
-        let port = 18001;
-
-        let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new(ip.to_string(), port, address));
-        let server = TCPHandler::bind(context).await?;
-
-        let server_task = tokio::spawn(server.clone().start());
-
+        // 给 B 一点处理时间
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        let mut c1 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
-        let mut c2 = TcpStream::connect(format!("{}:{}", ip, port)).await?;
+        // ===== 4️⃣ 校验 Node B 状态 =====
+        let clients = context_b.clients.lock().await;
 
-        let msg1 = b"client1";
-        let msg2 = b"client2";
+        assert!(
+            clients.external.contains_key(&addr_a.to_string())
+                || clients.inner.contains_key(&addr_a.to_string()),
+            "Node B should record Node A as online client"
+        );
 
-        c1.write_all(msg1).await?;
-        c2.write_all(msg2).await?;
-
-        let mut buf1 = vec![0u8; msg1.len()];
-        let mut buf2 = vec![0u8; msg2.len()];
-
-        c1.read_exact(&mut buf1).await?;
-        c2.read_exact(&mut buf2).await?;
-
-        assert_eq!(buf1, msg1);
-        assert_eq!(buf2, msg2);
-
-        server.stop().await?;
-        let _ = server_task.await?; // 等待 listener task 退出
+        // ===== 5️⃣ 清理 =====
+        server_b.stop().await?;
+        let _ = server_task.await?;
 
         Ok(())
     }

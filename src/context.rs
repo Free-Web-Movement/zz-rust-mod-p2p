@@ -1,20 +1,19 @@
-use std::collections::HashMap;
-
 use serde_json::Value;
 
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::protocols::defines::ClientType;
+use crate::nodes::clients::Clients;
 
 pub struct Context {
-    pub(crate) ip: String,
-    pub(crate) port: u16,
-    pub(crate) address: Address,
-    pub(crate) token: CancellationToken,
-    pub(crate) clients: HashMap<String, ClientType>,
-    pub(crate) global: Value,
-    pub(crate) local: Value,
+    pub ip: String,
+    pub port: u16,
+    pub address: Address,
+    pub token: CancellationToken,
+    pub clients: Mutex<Clients>,
+    pub global: Value,
+    pub local: Value,
 }
 
 impl Context {
@@ -24,7 +23,7 @@ impl Context {
             port,
             address,
             token: CancellationToken::new(),
-            clients: HashMap::new(),
+            clients: Mutex::new(Clients::new()),
             global: Value::Object(serde_json::Map::new()),
             local: Value::Object(serde_json::Map::new()),
         }
