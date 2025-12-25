@@ -24,6 +24,8 @@ pub struct NodeRecord {
     /// 是否已经连接成功， 用于内存状态标记，非持久化字段
     #[serde(skip)]
     pub connected: bool,
+    #[serde(skip)]
+    pub address: Option<String>,
 
     /// 最近一次确认不可达
     pub last_disappeared: Option<DateTime<Utc>>,
@@ -48,6 +50,7 @@ impl NodeRecord {
                 last_seen: now,
                 connected: false,
                 last_disappeared: None,
+                address: None,
                 reachability_score: 100,
             })
             .collect()

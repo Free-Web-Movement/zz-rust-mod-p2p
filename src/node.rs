@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::nodes::servers;
 use crate::protocols::defines::Listener;
 use crate::{context::Context, nodes::servers::Servers};
 use crate::{

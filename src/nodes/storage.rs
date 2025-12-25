@@ -123,6 +123,7 @@ mod tests {
             first_seen: Utc::now(),
             last_seen: Utc::now(),
             last_disappeared: None,
+            address: None,
             connected: false,
             reachability_score: 100,
         }

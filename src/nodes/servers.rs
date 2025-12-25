@@ -234,6 +234,7 @@ mod tests {
             connected: false,
             last_disappeared: None,
             reachability_score: 100,
+            address: None
         }
     }
 
