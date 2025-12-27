@@ -177,4 +177,76 @@ mod tests {
 
         let _ = handle.await;
     }
+
+    #[tokio::test]
+    async fn test_two_nodes_notify_online_and_stop() {
+        use zz_account::address::FreeWebMovementAddress as Address;
+
+        // create two nodes on different ports
+        let node_a = Arc::new(Mutex::new(Node::new(
+            "node-a".into(),
+            Address::random(),
+            "127.0.0.1".into(),
+            7101,
+            None,
+        )));
+
+        let node_b = Arc::new(Mutex::new(Node::new(
+            "node-b".into(),
+            Address::random(),
+            "127.0.0.1".into(),
+            7102,
+            None,
+        )));
+
+        // start both nodes concurrently
+        let a_task = {
+            let n = node_a.clone();
+            tokio::spawn(async move {
+                let mut node = n.lock().await;
+                node.start().await;
+            })
+        };
+
+        let b_task = {
+            let n = node_b.clone();
+            tokio::spawn(async move {
+                let mut node = n.lock().await;
+                node.start().await;
+            })
+        };
+
+        // give time for handlers/servers to initialize
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        // trigger notify_online on each node's Servers (no-op if connected_servers is None)
+        {
+            let mut n = node_a.lock().await;
+            let address = n.address.clone();
+            if let Some(servers) = &n.servers {
+                let _ = servers.notify_online(address).await;
+            }
+        }
+
+        {
+            let mut n = node_b.lock().await;
+            let address = n.address.clone();
+            if let Some(servers) = &n.servers {
+                let _ = servers.notify_online(address).await;
+            }
+        }
+
+        // stop both nodes
+        {
+            let mut n = node_a.lock().await;
+            n.stop().await;
+        }
+        {
+            let mut n = node_b.lock().await;
+            n.stop().await;
+        }
+
+        let _ = a_task.await;
+        let _ = b_task.await;
+    }
 }
