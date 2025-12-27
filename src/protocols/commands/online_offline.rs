@@ -59,6 +59,9 @@ impl CommandParser {
             frame.body.address,
             frame.body.nonce
         );
+        let addr = frame.body.address.clone();
+        let mut clients = context.clients.lock().await;
+        clients.remove_client(&addr);
 
         // 这里可以添加更多处理逻辑，比如注销节点、更新状态等
     }

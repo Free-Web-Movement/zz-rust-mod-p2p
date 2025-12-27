@@ -30,4 +30,9 @@ impl ConnectedClients {
             .or_insert_with(Vec::new)
             .push((tcp, sockets));
     }
+
+    pub fn remove_client(&mut self, address: &str) {
+        self.inner.remove(address);
+        self.external.remove(address);
+    }
 }
