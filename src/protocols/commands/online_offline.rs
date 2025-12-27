@@ -123,7 +123,7 @@ mod tests {
         });
 
         let client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let client = Arc::new(Mutex::new(client));
+        let client = Arc::new(Mutex::new(Some(client)));
 
         (ClientType::TCP(client), rx)
     }

@@ -60,9 +60,9 @@ pub enum ClientType {
         socket: Arc<UdpSocket>,
         peer: SocketAddr,
     },
-    TCP(Arc<Mutex<TcpStream>>),
-    HTTP(Arc<Mutex<TcpStream>>),
-    WS(Arc<Mutex<TcpStream>>),
+    TCP(Arc<Mutex<Option<TcpStream>>>),
+    HTTP(Arc<Mutex<Option<TcpStream>>>),
+    WS(Arc<Mutex<Option<TcpStream>>>),
 }
 
 #[derive(Debug, Clone)]

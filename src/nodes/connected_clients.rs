@@ -5,8 +5,8 @@ use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct ConnectedClients {
-    pub inner: HashMap<String, Vec<(Arc<Mutex<TcpStream>>, Vec<SocketAddr>)>>,
-    pub external: HashMap<String, Vec<(Arc<Mutex<TcpStream>>, Vec<SocketAddr>)>>,
+    pub inner: HashMap<String, Vec<(Arc<Mutex<Option<TcpStream>>>, Vec<SocketAddr>)>>,
+    pub external: HashMap<String, Vec<(Arc<Mutex<Option<TcpStream>>>, Vec<SocketAddr>)>>,
 }
 
 impl ConnectedClients {
@@ -17,14 +17,14 @@ impl ConnectedClients {
         }
     }
 
-    pub fn add_inner(&mut self, address: &str, tcp: Arc<Mutex<TcpStream>>, sockets: Vec<SocketAddr>) {
+    pub fn add_inner(&mut self, address: &str, tcp: Arc<Mutex<Option<TcpStream>>>, sockets: Vec<SocketAddr>) {
         self.inner
             .entry(address.to_string())
             .or_insert_with(Vec::new)
             .push((tcp, sockets));
     }
 
-    pub fn add_external(&mut self, address: &str, tcp: Arc<Mutex<TcpStream>>, sockets: Vec<SocketAddr>) {
+    pub fn add_external(&mut self, address: &str, tcp: Arc<Mutex<Option<TcpStream>>>, sockets: Vec<SocketAddr>) {
         self.external
             .entry(address.to_string())
             .or_insert_with(Vec::new)

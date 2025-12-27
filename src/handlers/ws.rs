@@ -26,12 +26,12 @@ pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 
 
 pub struct WebSocketHandler {
-    stream: Arc<Mutex<TcpStream>>,
+    stream: Arc<Mutex<Option<TcpStream>>>,
     context: Arc<Context>
 }
 
 impl WebSocketHandler {
-    pub fn new(stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
+    pub fn new(stream: Arc<Mutex<Option<TcpStream>>>, context: Arc<Context>) -> Self {
         Self {stream, context }
     }
     /// 判断是否为 WebSocket Upgrade
@@ -76,7 +76,9 @@ impl WebSocketHandler {
 
         let stream = self.stream.clone();
         let mut locked = stream.lock().await;
-        locked.write_all(response.as_bytes()).await?;
+        if let Some(ref mut s) = *locked {
+            s.write_all(response.as_bytes()).await?;
+        }
         Ok(())
     }
 }

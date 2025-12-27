@@ -64,66 +64,77 @@ impl TCPHandler {
         Ok(())
     }
 
-    async fn handle_connection(
-        self: Arc<Self>,
-        socket: TcpStream,
-        addr: std::net::SocketAddr,
-        token: CancellationToken,
-    ) {
-        println!("TCP connection from {}", addr);
 
-        let stream = Arc::new(Mutex::new(socket));
 
-        // ========= HTTP 探测 =========
-        {
-            let guard = stream.lock().await;
-            match HTTPHandler::is_http_connection(&guard).await {
-                Ok(true) => {
-                    println!("HTTP connection detected from {}", addr);
-                    let _ = HTTPHandler::new(stream.clone(), self.context.clone())
-                        .start(token)
-                        .await;
-                    return;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!("HTTP detection error: {:?}", e);
-                    return;
-                }
+async fn handle_connection(
+    self: Arc<Self>,
+    socket: TcpStream,
+    addr: std::net::SocketAddr,
+    token: CancellationToken,
+) {
+    println!("TCP connection from {}", addr);
+
+    // ⚠️ 关键：TcpStream 放进 Option
+    let stream = Arc::new(Mutex::new(Some(socket)));
+
+    // ========= HTTP 探测 =========
+    {
+        let mut guard = stream.lock().await;
+
+        match HTTPHandler::is_http_connection(&guard).await {
+            Ok(true) => {
+                println!("HTTP connection detected from {}", addr);
+
+                // ⚠️ HTTPHandler 也必须基于 Option<TcpStream>
+                let _ = HTTPHandler::new(stream.clone(), self.context.clone())
+                    .start(token)
+                    .await;
+                return;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!("HTTP detection error: {:?}", e);
+                return;
             }
         }
+    } // 🔑 释放锁
 
-        // ========= 普通 TCP =========
-        let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
-        let protocol = ClientType::TCP(stream.clone());
+    // ========= 普通 TCP =========
+    let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
+    let protocol = ClientType::TCP(stream.clone());
 
-        loop {
-            tokio::select! {
-                _ = token.cancelled() => {
-                    println!("TCP connection shutdown {}", addr);
-                    break;
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => {
+                println!("TCP connection shutdown {}", addr);
+                break;
+            }
+
+            res = async {
+                let mut guard = stream.lock().await;
+                match guard.as_mut() {
+                    Some(s) => s.read(&mut buf).await,
+                    None => Ok(0), // 已关闭，等价 EOF
                 }
-
-                res = async {
-                    let mut guard = stream.lock().await;
-                    guard.read(&mut buf).await
-                } => {
-                    match res {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            self.clone()
-                                .on_data(&protocol, &buf[..n])
-                                .await
-                                .ok();
-                        }
-                        Err(_) => break,
+            } => {
+                match res {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        // ⚠️ 不在持锁状态下 await
+                        self.clone()
+                            .on_data(&protocol, &buf[..n])
+                            .await
+                            .ok();
                     }
+                    Err(_) => break,
                 }
             }
         }
-
-        println!("TCP connection closed {}", addr);
     }
+
+    println!("TCP connection closed {}", addr);
+}
+
 }
 
 #[async_trait]
@@ -143,39 +154,60 @@ impl Listener for TCPHandler {
         let _ = TcpStream::connect(format!("{}:{}", self.context.ip, self.context.port)).await;
         Ok(())
     }
-    async fn on_data(
-        self: &Arc<Self>,
-        client_type: &ClientType,
-        received: &[u8],
-    ) -> anyhow::Result<()> {
-        if let ClientType::TCP(stream) = client_type {
-            {
-                // 括号{}用于设置作用域，让lock锁释放
-                let mut guard = stream.lock().await;
-                let peer = guard.peer_addr().unwrap();
-                println!("TCP received {} bytes from {}", received.len(), &peer);
 
-                let bytes = received.to_vec();
+async fn on_data(
+    self: &Arc<Self>,
+    client_type: &ClientType,
+    received: &[u8],
+) -> anyhow::Result<()> {
+    if let ClientType::TCP(tcp) = client_type {
+        // 只在这个作用域内持有锁
+        let mut guard = tcp.lock().await;
 
-                match Frame::verify_bytes(&bytes) {
-                    Ok(frame) => {
-                        // 协议帧，交给 CommandParser
-                        CommandParser::on(&frame, self.context.clone(), client_type).await;
-                    }
-                    Err(_) => {
-                        // 非协议帧，当普通 TCP 数据
-                        let _ = guard.write_all(&received).await;
-                    }
-                }
+        let stream = match guard.as_mut() {
+            Some(s) => s,
+            None => {
+                // TCP 已关闭，直接忽略数据
+                return Ok(());
+            }
+        };
+
+        let peer = stream.peer_addr()?;
+        println!(
+            "TCP received {} bytes from {}",
+            received.len(),
+            peer
+        );
+
+        let bytes = received.to_vec();
+
+        match Frame::verify_bytes(&bytes) {
+            Ok(frame) => {
+                // 协议帧：交给 CommandParser
+                // ⚠️ 不在持锁状态下 await
+                drop(guard);
+                CommandParser::on(&frame, self.context.clone(), client_type).await;
+            }
+            Err(_) => {
+                // 非协议帧：当普通 TCP 数据回写
+                stream.write_all(received).await?;
             }
         }
-
-        Ok(())
     }
+
+    Ok(())
+}
 
     async fn send(self: &Arc<Self>, protocol_type: &ClientType, data: &[u8]) -> anyhow::Result<()> {
         if let ClientType::TCP(stream) = protocol_type {
             let mut guard = stream.lock().await;
+            let guard = match guard.as_mut() {
+                Some(s) => s,
+                None => {
+                    // TCP 已关闭，无法发送
+                    return Err(anyhow::anyhow!("TCP stream already closed"));
+                }
+            };
             let peer = guard.peer_addr().unwrap();
             println!("TCP is sending {} bytes to {}", data.len(), &peer);
             guard.write_all(data).await?;

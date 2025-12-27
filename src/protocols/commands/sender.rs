@@ -1,7 +1,7 @@
 use tokio::io::AsyncWriteExt;
 
 use crate::protocols::defines::ClientType;
-
+use anyhow::{anyhow, Result};
 /* =========================
    CommandSender
 ========================= */
@@ -16,18 +16,30 @@ pub struct CommandSender {
 }
 
 impl CommandSender {
-    pub async fn send_client(client: ClientType, data: &[u8]) -> anyhow::Result<()> {
-        match client {
-            ClientType::TCP(tcp) | ClientType::HTTP(tcp) | ClientType::WS(tcp) => {
-                let mut stream = tcp.lock().await;
-                stream.write_all(data).await?;
-            }
-            ClientType::UDP { socket, peer } => {
-                socket.send_to(data, peer).await?;
+pub async fn send_client(client: ClientType, data: &[u8]) -> Result<()> {
+    match client {
+        ClientType::TCP(tcp)
+        | ClientType::HTTP(tcp)
+        | ClientType::WS(tcp) => {
+            let mut guard = tcp.lock().await;
+
+            match guard.as_mut() {
+                Some(stream) => {
+                    stream.write_all(data).await?;
+                }
+                None => {
+                    return Err(anyhow!("TCP/HTTP/WS stream already closed"));
+                }
             }
         }
-        Ok(())
+
+        ClientType::UDP { socket, peer } => {
+            socket.send_to(data, peer).await?;
+        }
     }
+
+    Ok(())
+}
 
     pub async fn send(&self, data: &[u8]) -> anyhow::Result<()> {
         // UDP 优先
@@ -77,7 +89,7 @@ mod tests {
         });
 
         let stream = TcpStream::connect(addr).await.unwrap();
-        let client = ClientType::TCP(Arc::new(Mutex::new(stream)));
+        let client = ClientType::TCP(Arc::new(Mutex::new(Some(stream))));
 
         (client, rx)
     }

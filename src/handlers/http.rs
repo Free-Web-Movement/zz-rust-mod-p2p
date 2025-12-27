@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -10,26 +10,33 @@ use crate::handlers::ws::WebSocketHandler;
 pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024;
 
 pub struct HTTPHandler {
-    stream: Arc<Mutex<TcpStream>>,
+    stream: Arc<Mutex<Option<TcpStream>>>,
     context: Arc<Context>,
 }
 
 impl HTTPHandler {
-    pub async fn is_http_connection(stream: &TcpStream) -> anyhow::Result<bool> {
+    /// HTTP 探测：只 peek，不消费数据
+    pub async fn is_http_connection(stream: &Option<TcpStream>) -> anyhow::Result<bool> {
         let mut buf = [0u8; 8];
-        let n = stream.peek(&mut buf).await?;
+
+        let n = match stream {
+            Some(s) => s.peek(&mut buf).await?,
+            None => return Ok(false), // 已关闭
+        };
+
         if n == 0 {
             return Ok(false);
         }
+
         let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
-        Ok(matches!(s, "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"))
+        Ok(matches!(
+            s,
+            "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"
+        ))
     }
 
-    pub fn new(stream: Arc<Mutex<TcpStream>>, context: Arc<Context>) -> Self {
-        Self {
-            stream,
-            context,
-        }
+    pub fn new(stream: Arc<Mutex<Option<TcpStream>>>, context: Arc<Context>) -> Self {
+        Self { stream, context }
     }
 
     /// ⚠️ 注意：这里 **不 spawn**
@@ -43,8 +50,11 @@ impl HTTPHandler {
                 }
 
                 res = async {
-                    let mut stream = self.stream.lock().await;
-                    stream.read(&mut buf).await
+                    let mut guard = self.stream.lock().await;
+                    match guard.as_mut() {
+                        Some(s) => s.read(&mut buf).await,
+                        None => Ok(0), // 已关闭，等价 EOF
+                    }
                 } => {
                     let n = res?;
                     if n == 0 {
@@ -59,9 +69,13 @@ impl HTTPHandler {
                             self.stream.clone(),
                             self.context.clone(),
                         ));
+
+                        // ⚠️ 升级阶段不要持锁
                         ws.respond_websocket_handshake(data).await?;
                         break;
                     }
+
+                    // TODO: 普通 HTTP 请求处理（如果需要）
                 }
             }
         }
@@ -69,6 +83,7 @@ impl HTTPHandler {
         Ok(())
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -109,7 +124,7 @@ Sec-WebSocket-Version: 13\r\n\
             let (stream, _) = listener.accept().await.unwrap();
             let address = FreeWebMovementAddress::random();
             let context = Arc::new(Context::new(ip.clone(), port, address));
-            let handler = HTTPHandler::new(Arc::new(Mutex::new(stream)), context);
+            let handler = HTTPHandler::new(Arc::new(Mutex::new(Some(stream))), context);
             let _ = handler.start(token).await;
         });
 
