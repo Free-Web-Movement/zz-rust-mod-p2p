@@ -1,10 +1,81 @@
 
+use std::sync::Arc;
+
+use crate::context::Context;
+use crate::nodes::servers::Servers;
+use crate::protocols::commands::parser::CommandParser;
 use crate::protocols::commands::sender::CommandSender;
+use crate::protocols::defines::ClientType;
 use crate::protocols::{
     command::{Entity, NodeAction},
     frame::Frame,
 };
 use zz_account::address::FreeWebMovementAddress;
+
+
+impl CommandParser {
+    pub async fn on_node_online(
+        frame: &Frame,
+        context: Arc<Context>,
+        client_type: &ClientType,
+    ) {
+                println!(
+                    "✅ Node Online: addr={}, nonce={}",
+                    frame.body.address, frame.body.nonce
+                );
+
+                // 3️⃣ data 至少要有 flag
+                if frame.body.data.len() < 1 {
+                    eprintln!("❌ Online data too short");
+                    return;
+                }
+
+                // 4️⃣ 拆 data
+                let (endpoint_bytes, flag) = frame.body.data.split_at(frame.body.data.len() - 1);
+
+                let is_inner = flag[0] == 0;
+
+                // 5️⃣ 解 endpoint 列表
+                let (endpoints, Flag) = match Servers::from_endpoints(endpoint_bytes.to_vec()) {
+                    v => v,
+                };
+
+                // 6️⃣ 只处理 TCP client
+                let tcp = match client_type {
+                    ClientType::TCP(tcp) => tcp.clone(),
+                    _ => {
+                        eprintln!("❌ Online command not from TCP");
+                        return;
+                    }
+                };
+
+                // 7️⃣ 注册 client
+                // for ep in endpoints {
+                let addr = frame.body.address.clone();
+                let mut clients = context.clients.lock().await;
+
+                if is_inner {
+                    clients.add_inner(&addr, tcp.clone(), endpoints.clone());
+                } else {
+                    clients.add_external(&addr, tcp.clone(), endpoints.clone());
+                }
+    }
+
+    pub async fn on_node_offline(
+        frame: &Frame,
+        context: Arc<crate::context::Context>,
+        client_type: &crate::protocols::defines::ClientType,
+    ) {
+        // 处理 Node Offline 命令的逻辑
+        println!(
+            "Node Offline Command Received: addr={}, nonce={}",
+            frame.body.address, frame.body.nonce
+        );
+
+        // 这里可以添加更多处理逻辑，比如注销节点、更新状态等
+    } 
+    
+}
 
 impl CommandSender {
     pub async fn send_online(

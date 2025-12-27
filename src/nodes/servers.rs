@@ -181,7 +181,7 @@ impl Servers {
     pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化, 0表示内网
-            let mut inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
+            let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
 
             self.notify_online_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
