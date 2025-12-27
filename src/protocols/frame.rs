@@ -139,65 +139,6 @@ impl Frame {
         };
         Ok(Frame::sign(body, address)?)
     }
-
-    // pub fn extract_node_command(bytes: &Vec<u8>) {
-    //     // 1️⃣ 验证 Frame + 签名
-    //     let frame = match Frame::verify_bytes(bytes) {
-    //         Ok(f) => {
-    //             println!(
-    //                 "✅ Node Online: addr={}, nonce={}",
-    //                 f.body.address, f.body.nonce
-    //             );
-    //             f
-    //         }
-    //         Err(e) => {
-    //             eprintln!("❌ Frame verify failed: {:?}", e);
-    //             return;
-    //         }
-    //     };
-
-    //     // 2️⃣ 解出 Command
-    //     let cmd = match Command::receive(&frame.body.data) {
-    //         Ok(c) => {
-    //             println!(
-    //                 "接收到Command， Entity = {}, Action = {}",
-    //                 c.entity as u8, c.action as u8
-    //             );
-    //             c
-    //         }
-    //         Err(e) => {
-    //             eprintln!("❌ Command decode failed: {:?}", e);
-    //             return;
-    //         }
-    //     };
-
-    //     // 3️⃣ 主分发框架（当前只处理 Node）
-    //     match (cmd.entity as Entity, cmd.action as NodeAction) {
-    //         (Entity::Node, NodeAction::OnLine) => {
-    //             // TODO: Node 上线逻辑
-
-    //             println!(
-    //                 "✅ Node Online",
-    //             );
-    //         }
-
-    //         (Entity::Node, NodeAction::OffLine) => {
-    //             // TODO: Node 下线逻辑
-    //             println!(
-    //                 "⚠️ Node Offline: addr={}, nonce={}",
-    //                 frame.body.address, frame.body.nonce
-    //             );
-    //         }
-
-    //         _ => {
-    //             // 其他实体 / 动作暂不处理
-    //             println!(
-    //                 "ℹ️ Unsupported command: entity={:?}, action={:?}",
-    //                 cmd.entity, cmd.action
-    //             );
-    //         }
-    //     }
-    // }
 }
 
 #[cfg(test)]

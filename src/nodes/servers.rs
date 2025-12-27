@@ -203,12 +203,12 @@ impl Servers {
     pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
-            let mut inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
+            let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
             self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
                 .await;
 
             // external endpoints 序列化
-            let mut external_data = Servers::to_endpoints(&self.host_external_record, 1);
+            let external_data = Servers::to_endpoints(&self.host_external_record, 1);
             self.notify_offline_servers(
                 address.clone(),
                 &Some(external_data),

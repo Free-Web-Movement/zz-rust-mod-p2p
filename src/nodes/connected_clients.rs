@@ -4,12 +4,12 @@ use std::net::SocketAddr;
 
 
 #[derive(Clone)]
-pub struct Clients {
+pub struct ConnectedClients {
     pub inner: HashMap<String, Vec<(Arc<Mutex<TcpStream>>, Vec<SocketAddr>)>>,
     pub external: HashMap<String, Vec<(Arc<Mutex<TcpStream>>, Vec<SocketAddr>)>>,
 }
 
-impl Clients {
+impl ConnectedClients {
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
