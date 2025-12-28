@@ -139,10 +139,10 @@ impl Node {
         Ok(())
     }
 
-    pub async fn send_text_message(&self, receiver: Address, message: &str) -> anyhow::Result<()> {
+    pub async fn send_text_message(&self, receiver: String, message: &str) -> anyhow::Result<()> {
         // 构造消息
         let command = MessageCommand::new(
-            receiver.to_string(),
+            receiver.clone(),
             timestamp() as u64,
             message.to_string()
         );
@@ -162,7 +162,7 @@ impl Node {
         // 1️⃣ 尝试本地发送
         if let Some(context) = &self.context {
             let clients = context.clients.lock().await;
-            let local_conns = clients.get_connections(&receiver.to_string(), true);
+            let local_conns = clients.get_connections(&receiver, true);
 
             if !local_conns.is_empty() {
                 let futures = local_conns.into_iter().map(|tcp_arc| {
@@ -190,9 +190,8 @@ impl Node {
 
                 let futures = all_servers.map(|server| {
                     let bytes = bytes.clone();
-                    let receiver_addr = receiver.clone();
                     async move {
-                        let _ = server.command.send_text_message(&receiver_addr, bytes).await;
+                        let _ = server.command.send_text_message(&self.address, bytes).await;
                     }
                 });
 

@@ -88,7 +88,7 @@ impl ConnectedClients {
 
         /// 根据 address 查找对应的 TCP 连接
     /// 如果同时存在 inner 和 external，可以通过 `include_external` 控制是否包含 external
-    pub fn get_connections(&self, address: &str, include_external: bool) -> Vec<Arc<Mutex<Option<TcpStream>>>> {
+    pub fn get_connections(&self, address: &String, include_external: bool) -> Vec<Arc<Mutex<Option<TcpStream>>>> {
         let mut result = Vec::new();
 
         if let Some(list) = self.inner.get(address) {
