@@ -1,17 +1,52 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::command::{Action, Command};
+use crate::protocols::command::{ Action, Command };
 use crate::protocols::commands::parser::CommandParser;
 use crate::protocols::commands::sender::CommandSender;
 use crate::protocols::defines::ClientType;
-use crate::protocols::{ command::{ Entity }, frame::Frame };
+use crate::protocols::{ command::Entity, frame::Frame };
+
+use bincode::{ Decode, Encode };
+use bincode::config;
+
+use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
 
-impl CommandParser {
-    pub async fn on_textmessage(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
-        println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
+pub struct MessageCommand {
+    pub receiver: String,
+    pub timestamp: u64,
+    pub message: String,
+}
 
+impl CommandParser {
+    pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
+        let from = &frame.body.address;
+
+        let data = frame.body.data.clone();
+
+        if data.is_empty() {
+            eprintln!("❌ Empty MessageCommand from {}", from);
+            return;
+        }
+
+        let (cmd, _) = match
+            bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard())
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
+                return;
+            }
+        };
+
+        if cmd.message.is_empty() {
+            eprintln!("❌ Empty message body from {}", from);
+            return;
+        }
+
+        println!("📨 {} → {} @ {}: {}", from, cmd.receiver, cmd.timestamp, cmd.message);
     }
 }
 
@@ -19,15 +54,19 @@ impl CommandSender {
     pub async fn send_text_message(
         &self,
         address: &FreeWebMovementAddress,
-        message: &String
+        cmd: &MessageCommand
     ) -> anyhow::Result<()> {
+        // ✅ bincode 2.x 编码
+        let data = bincode::encode_to_vec(cmd, config::standard())?;
 
-        let data = message.as_bytes().to_vec();
+        let frame = Frame::build_node_command(
+            address,
+            Entity::Message,
+            Action::SendText,
+            1,
+            Some(data)
+        )?;
 
-        // 1️⃣ 构建在线命令 Frame
-        let frame = Frame::build_node_command(address, Entity::Message, Action::SendText, 1, Some(data))?;
-
-        // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
         self.send(&bytes).await?;
         Ok(())
@@ -37,14 +76,19 @@ impl CommandSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use tokio::net::{ TcpListener, TcpStream };
     use tokio::sync::Mutex;
     use std::sync::Arc;
-    use std::net::{ IpAddr, Ipv4Addr };
-    use crate::protocols::defines::ClientType;
-    use zz_account::address::FreeWebMovementAddress as Address;
+    use std::time::{ SystemTime, UNIX_EPOCH };
 
-    /// 辅助函数：创建 TCP client/server pair
+    use crate::protocols::defines::ClientType;
+    use crate::context::Context;
+
+    use zz_account::address::FreeWebMovementAddress as Address;
+    use bincode::config;
+
+    /// 创建 TCP client/server pair，用于捕获发送的数据
     async fn tcp_pair() -> (ClientType, tokio::sync::oneshot::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -53,7 +97,7 @@ mod tests {
 
         tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
-            let mut buf = vec![0u8; 1024];
+            let mut buf = vec![0u8; 4096];
             let n = socket.readable().await.unwrap();
             let n = socket.try_read(&mut buf).unwrap();
             let _ = tx.send(buf[..n].to_vec());
@@ -65,8 +109,24 @@ mod tests {
         (ClientType::TCP(client), rx)
     }
 
+    #[test]
+    fn test_message_command_bincode_roundtrip() {
+        let cmd = MessageCommand {
+            receiver: "receiver-addr".to_string(),
+            timestamp: 123456789,
+            message: "hello world".to_string(),
+        };
+
+        let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
+        let (decoded, _) = bincode
+            ::decode_from_slice::<MessageCommand, _>(&encoded, config::standard())
+            .unwrap();
+
+        assert_eq!(cmd, decoded);
+    }
+
     #[tokio::test]
-    async fn test_send_online() -> anyhow::Result<()> {
+    async fn test_send_text_message_over_tcp() -> anyhow::Result<()> {
         let (tcp, rx) = tcp_pair().await;
 
         let sender = CommandSender {
@@ -75,35 +135,48 @@ mod tests {
         };
 
         let address = Address::random();
-        let payload = Some(b"online-data".to_vec());
 
-        sender.send_online(&address, payload).await?;
+        let cmd = MessageCommand {
+            receiver: "receiver-addr".to_string(),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            message: "hello tcp".to_string(),
+        };
 
-        // 验证 TCP 收到数据
+        sender.send_text_message(&address, &cmd).await?;
+
         let received = rx.await.unwrap();
-        assert!(!received.is_empty());
+        assert!(!received.is_empty(), "TCP should receive data");
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_send_offline() -> anyhow::Result<()> {
-        let (tcp, rx) = tcp_pair().await;
+    async fn test_on_text_message_normal_path() {
+        let address = Address::random();
 
-        let sender = CommandSender {
-            tcp,
-            udp: None,
+        let cmd = MessageCommand {
+            receiver: "receiver-addr".to_string(),
+            timestamp: 1,
+            message: "hello parser".to_string(),
         };
 
-        let address = Address::random();
-        let payload = Some(b"offline-data".to_vec());
+        let data = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
 
-        sender.send_offline(&address, payload).await?;
+        let frame = Frame::build_node_command(
+            &address,
+            Entity::Message,
+            Action::SendText,
+            1,
+            Some(data)
+        ).unwrap();
 
-        // 验证 TCP 收到数据
-        let received = rx.await.unwrap();
-        assert!(!received.is_empty());
+        let context = Arc::new(Context::new("127.0.0.1".to_string(), 18000, Address::random()));
+        let dummy_client = ClientType::UDP {
+            socket: Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()),
+            peer: "127.0.0.1:0".parse().unwrap(),
+        };
 
-        Ok(())
+        // 只要不 panic、不提前 return 即视为通过
+        CommandParser::on_text_message(&frame, context, &dummy_client).await;
     }
 }

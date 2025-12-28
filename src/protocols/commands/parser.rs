@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     context::Context,
-    protocols::{
-        command::{Entity, Action},
-        defines::ClientType,
-        frame::Frame,
-    },
+    protocols::{ command::{ Entity, Action }, defines::ClientType, frame::Frame },
 };
 
 #[derive(Clone)]
@@ -25,21 +21,28 @@ impl CommandParser {
         // 2️⃣ 只处理 Node Online / Offline
         match (cmd.entity as Entity, cmd.action as Action) {
             (Entity::Node, Action::OnLine) => {
-              Self::on_node_online(frame, context, client_type).await;
+                Self::on_node_online(frame, context, client_type).await;
+            }
+
+            (Entity::Message, Action::SendText) => {
+                Self::on_text_message(frame, context, client_type).await;
             }
 
             (Entity::Node, Action::OffLine) => {
                 println!(
                     "⚠️ Node Offline: addr={}, nonce={}",
-                    frame.body.address, frame.body.nonce
+                    frame.body.address,
+                    frame.body.nonce
                 );
+                Self::on_node_offline(frame, context, client_type).await;
                 // 这里你以后可以做 remove
             }
 
             _ => {
                 println!(
                     "ℹ️ Unsupported command: entity={:?}, action={:?}",
-                    cmd.entity, cmd.action
+                    cmd.entity,
+                    cmd.action
                 );
             }
         }
