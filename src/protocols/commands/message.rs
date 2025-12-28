@@ -20,6 +20,16 @@ pub struct MessageCommand {
     pub message: String,
 }
 
+impl MessageCommand {
+    pub fn new(receiver: String, timestamp: u64, message: String) -> Self {
+        Self {
+            receiver,
+            timestamp,
+            message,
+        }
+    }
+}
+
 impl CommandParser {
     pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
         let from = &frame.body.address;
@@ -54,10 +64,10 @@ impl CommandSender {
     pub async fn send_text_message(
         &self,
         address: &FreeWebMovementAddress,
-        cmd: &MessageCommand
+        data: Vec<u8>
     ) -> anyhow::Result<()> {
         // ✅ bincode 2.x 编码
-        let data = bincode::encode_to_vec(cmd, config::standard())?;
+        // let data = bincode::encode_to_vec(cmd, config::standard())?;
 
         let frame = Frame::build_node_command(
             address,
@@ -141,8 +151,9 @@ mod tests {
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
             message: "hello tcp".to_string(),
         };
+        let data = bincode::encode_to_vec(cmd, config::standard())?;
 
-        sender.send_text_message(&address, &cmd).await?;
+        sender.send_text_message(&address, data).await?;
 
         let received = rx.await.unwrap();
         assert!(!received.is_empty(), "TCP should receive data");

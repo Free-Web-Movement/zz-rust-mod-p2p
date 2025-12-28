@@ -1,14 +1,19 @@
 use std::sync::Arc;
+use bincode::config;
+use futures::future::join_all;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
+use crate::nodes::connected_servers;
+use crate::protocols::command::{ Action, Entity };
+use crate::protocols::commands::message::MessageCommand;
+use crate::protocols::commands::sender::{ self, CommandSender };
 use crate::protocols::defines::Listener;
-use crate::{context::Context, nodes::servers::Servers};
-use crate::{
-    handlers::{tcp::TCPHandler, udp::UDPHandler},
-    nodes::storage::Storeage,
-};
-use crate::{nodes::net_info::NetInfo, util::time::timestamp};
+use crate::protocols::frame::Frame;
+use crate::{ context::Context, nodes::servers::Servers };
+use crate::{ handlers::{ tcp::TCPHandler, udp::UDPHandler }, nodes::storage::Storeage };
+use crate::{ nodes::net_info::NetInfo, util::time::timestamp };
 
 /* =========================
    NODE
@@ -19,14 +24,14 @@ pub struct Node {
     pub net_info: Option<NetInfo>,
     pub storage: Option<Storeage>,
     pub servers: Option<Servers>,
-    pub name: String,     // User defined name for the node, no need to be unique
+    pub name: String, // User defined name for the node, no need to be unique
     pub address: Address, // Unique network address of the node
-    pub ip: String,       // Bound IP address of the node
-    pub port: u16,        // Bound port of the node
-    pub stun_port: u16,   // STUN service port
-    pub trun_port: u16,   // TURN service port
+    pub ip: String, // Bound IP address of the node
+    pub port: u16, // Bound port of the node
+    pub stun_port: u16, // STUN service port
+    pub trun_port: u16, // TURN service port
     pub start_time: u128, // Timestamp when the node was started
-    pub stop_time: u128,  // Timestamp when the node was started
+    pub stop_time: u128, // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -38,7 +43,7 @@ impl Node {
         address: Address,
         ip: String,
         port: u16,
-        storage: Option<Storeage>,
+        storage: Option<Storeage>
     ) -> Self {
         Self {
             name,
@@ -80,16 +85,8 @@ impl Node {
         let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
         self.context = Some(context.clone());
 
-        let tcp = TCPHandler::bind(context.clone())
-            .await
-            .unwrap()
-            .as_ref()
-            .clone();
-        let udp = UDPHandler::bind(context.clone())
-            .await
-            .unwrap()
-            .as_ref()
-            .clone();
+        let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
@@ -99,7 +96,6 @@ impl Node {
             servers.connect().await;
             servers.notify_online(self.address.clone()).await.unwrap();
         }
-
     }
 
     pub async fn stop(&mut self) {
@@ -129,7 +125,7 @@ impl Node {
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
         let servers = Servers::new(
             storage.clone(),
-            self.net_info.as_ref().expect("net_info missing").clone(),
+            self.net_info.as_ref().expect("net_info missing").clone()
         );
 
         // 3️⃣ 保存当前节点 address
@@ -142,6 +138,70 @@ impl Node {
 
         Ok(())
     }
+
+    pub async fn send_text_message(&self, receiver: Address, message: &str) -> anyhow::Result<()> {
+        // 构造消息
+        let command = MessageCommand::new(
+            receiver.to_string(),
+            timestamp() as u64,
+            message.to_string()
+        );
+
+        // 编码成 payload
+        let payload = bincode::encode_to_vec(command, config::standard())?;
+        let frame = Frame::build_node_command(
+            &self.address,
+            Entity::Message,
+            Action::SendText,
+            1,
+            Some(payload.clone())
+        )?;
+
+        let bytes = Frame::to(frame);
+
+        // 1️⃣ 尝试本地发送
+        if let Some(context) = &self.context {
+            let clients = context.clients.lock().await;
+            let local_conns = clients.get_connections(&receiver.to_string(), true);
+
+            if !local_conns.is_empty() {
+                let futures = local_conns.into_iter().map(|tcp_arc| {
+                    let bytes = bytes.clone();
+                    async move {
+                        let mut guard = tcp_arc.lock().await;
+                        if let Some(stream) = &mut *guard {
+                            let _ = stream.write_all(&bytes).await;
+                        }
+                    }
+                });
+
+                join_all(futures).await;
+                return Ok(()); // 本地发送完成后直接返回
+            }
+        }
+
+        // 2️⃣ 本地没有 -> 向所有已连接服务器发送
+        if let Some(servers) = &self.servers {
+            if let Some(connected_servers) = &servers.connected_servers {
+                // 使用 iter().chain() 合并两个列表
+                let all_servers = connected_servers.inner
+                    .iter()
+                    .chain(connected_servers.external.iter());
+
+                let futures = all_servers.map(|server| {
+                    let bytes = bytes.clone();
+                    let receiver_addr = receiver.clone();
+                    async move {
+                        let _ = server.command.send_text_message(&receiver_addr, bytes).await;
+                    }
+                });
+
+                join_all(futures).await;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -150,13 +210,9 @@ mod tests {
     use zz_account::address::FreeWebMovementAddress as Address;
     #[tokio::test]
     async fn test_node_start_and_stop() {
-        let node1 = Arc::new(Mutex::new(Node::new(
-            "node".into(),
-            Address::random(),
-            "127.0.0.1".into(),
-            7001,
-            None,
-        )));
+        let node1 = Arc::new(
+            Mutex::new(Node::new("node".into(), Address::random(), "127.0.0.1".into(), 7001, None))
+        );
 
         let node_clone = node1.clone();
 
@@ -183,21 +239,17 @@ mod tests {
         use zz_account::address::FreeWebMovementAddress as Address;
 
         // create two nodes on different ports
-        let node_a = Arc::new(Mutex::new(Node::new(
-            "node-a".into(),
-            Address::random(),
-            "127.0.0.1".into(),
-            7101,
-            None,
-        )));
+        let node_a = Arc::new(
+            Mutex::new(
+                Node::new("node-a".into(), Address::random(), "127.0.0.1".into(), 7101, None)
+            )
+        );
 
-        let node_b = Arc::new(Mutex::new(Node::new(
-            "node-b".into(),
-            Address::random(),
-            "127.0.0.1".into(),
-            7102,
-            None,
-        )));
+        let node_b = Arc::new(
+            Mutex::new(
+                Node::new("node-b".into(), Address::random(), "127.0.0.1".into(), 7102, None)
+            )
+        );
 
         // start both nodes concurrently
         let a_task = {
