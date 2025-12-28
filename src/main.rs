@@ -1,12 +1,38 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+use clap::Parser;
 use tokio::{io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, sync::Mutex};
 use zz_p2p::{node::Node, nodes::storage::Storeage};
 use zz_account::address::FreeWebMovementAddress as Address;
 
+
+#[derive(Parser, Debug)]
+#[command(name = "zzp2p")]
+struct Opt {
+
+      /// IP 地址，例如 0.0.0.0
+    #[arg(long, default_value = "zz-p2p-node")]
+    name: String,
+
+    /// IP 地址，例如 0.0.0.0
+    #[arg(long, default_value = "0.0.0.0")]
+    ip: String,
+
+    /// TCP 端口
+    #[arg(long, default_value_t = 9000)]
+    port: u16,
+
+    /// 数据目录，用于存储节点持久化信息
+    #[arg(long)]
+    data_dir: Option<String>,
+}
+
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 初始化 storage
-    let storage = Storeage::new(None, None, None, None);
+
+      let opt = Opt::parse();
+
+    let storage = Storeage::new(opt.data_dir.as_deref(), None, None, None);
 
     // 获取或生成节点 address
     let address = if let Some(addr) = storage.read_address()? {
@@ -17,10 +43,10 @@ async fn main() -> anyhow::Result<()> {
 
     // 初始化 Node
     let node = Arc::new(Mutex::new(Node::new(
-        "node1".to_string(),
+        opt.name.clone(),
         address,
-        "0.0.0.0".to_string(),
-        9000,
+        opt.ip.clone(),
+        opt.port,
         Some(storage),
     )));
 
@@ -33,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    println!("Node started at {}:{}", "0.0.0.0", 9000);
+    println!("Node started at {}:{}", opt.ip, opt.port);
     println!("Type 'help' for commands.");
 
     // REPL 命令行
