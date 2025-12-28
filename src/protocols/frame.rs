@@ -5,7 +5,7 @@ use zz_account::address::FreeWebMovementAddress;
 use bincode::config;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 
-use crate::protocols::command::{Command, Entity, NodeAction};
+use crate::protocols::command::{Command, Entity, Action};
 
 /// ⚠️ 不要写返回类型！
 #[inline]
@@ -123,7 +123,7 @@ impl Frame {
     pub fn build_node_command(
         address: &FreeWebMovementAddress,
         entity: Entity,
-        action: NodeAction,
+        action: Action,
         version: u8,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<Self> {
@@ -144,7 +144,7 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::command::{Entity, NodeAction};
+    use crate::protocols::command::{Entity, Action};
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
@@ -186,7 +186,7 @@ mod tests {
     }
 
     fn make_command() -> Command {
-        Command::new(Entity::Node, NodeAction::OnLine, 1, Some(vec![1, 2, 3, 4]))
+        Command::new(Entity::Node, Action::OnLine, 1, Some(vec![1, 2, 3, 4]))
     }
 
     #[test]
@@ -361,7 +361,7 @@ mod tests {
         let frame = Frame::build_node_command(
             &address,
             Entity::Node,
-            NodeAction::OnLine,
+            Action::OnLine,
             1,
             payload.clone(),
         )?;
@@ -378,7 +378,7 @@ mod tests {
         assert!(frame.body.nonce > 0);
 
         // data 校验
-        let cmd_bytes = Command::send(Entity::Node, NodeAction::OnLine, 1, payload)?;
+        let cmd_bytes = Command::send(Entity::Node, Action::OnLine, 1, payload)?;
 
         assert_eq!(frame.body.data_length, cmd_bytes.len() as u32);
         assert_eq!(frame.body.data, cmd_bytes);
@@ -396,7 +396,7 @@ mod tests {
         let address = FreeWebMovementAddress::random();
 
         let frame =
-            Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
+            Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
 
         assert_eq!(frame.body.address, address.to_string());
         assert_eq!(frame.body.version, 1);
@@ -416,7 +416,7 @@ mod tests {
         let frame = Frame::build_node_command(
             &address,
             Entity::Node,
-            NodeAction::OnLine,
+            Action::OnLine,
             1,
             Some(b"online".to_vec()),
         )?;
@@ -434,7 +434,7 @@ mod tests {
         let address = FreeWebMovementAddress::random();
 
         let frame =
-            Frame::build_node_command(&address, Entity::Node, NodeAction::OffLine, 1, None)?;
+            Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
 
         let bytes = Frame::to(frame);
 
@@ -449,7 +449,7 @@ mod tests {
         let address = FreeWebMovementAddress::random();
 
         let mut frame =
-            Frame::build_node_command(&address, Entity::Node, NodeAction::OnLine, 1, None).unwrap();
+            Frame::build_node_command(&address, Entity::Node, Action::OnLine, 1, None).unwrap();
 
         // 🔥 篡改数据，制造非法 frame
         frame.body.data = vec![0xFF, 0xEE, 0xDD];

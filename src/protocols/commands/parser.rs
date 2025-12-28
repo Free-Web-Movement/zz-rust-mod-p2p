@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     context::Context,
     protocols::{
-        command::{Entity, NodeAction},
+        command::{Entity, Action},
         defines::ClientType,
         frame::Frame,
     },
@@ -23,12 +23,12 @@ impl CommandParser {
         };
 
         // 2️⃣ 只处理 Node Online / Offline
-        match (cmd.entity as Entity, cmd.action as NodeAction) {
-            (Entity::Node, NodeAction::OnLine) => {
+        match (cmd.entity as Entity, cmd.action as Action) {
+            (Entity::Node, Action::OnLine) => {
               Self::on_node_online(frame, context, client_type).await;
             }
 
-            (Entity::Node, NodeAction::OffLine) => {
+            (Entity::Node, Action::OffLine) => {
                 println!(
                     "⚠️ Node Offline: addr={}, nonce={}",
                     frame.body.address, frame.body.nonce

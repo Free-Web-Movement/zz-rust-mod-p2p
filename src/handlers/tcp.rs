@@ -220,7 +220,7 @@ async fn on_data(
 #[cfg(test)]
 mod tests {
     use crate::nodes::servers::Servers;
-    use crate::protocols::command::{Entity, NodeAction};
+    use crate::protocols::command::{Entity, Action};
 
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -276,7 +276,7 @@ mod tests {
         let frame = Frame::build_node_command(
             &addr_a,
             Entity::Node,
-            NodeAction::OnLine,
+            Action::OnLine,
             1,
             Some({
                 let data = Servers::to_endpoints(&vec![], 1); // 空 endpoint 也合法
