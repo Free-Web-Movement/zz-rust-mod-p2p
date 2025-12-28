@@ -76,19 +76,20 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        let mut parts = line.splitn(3, ' ');
+        // produce owned Strings so substrings can be moved into async tasks safely
+        let mut parts = line.splitn(3, ' ').map(str::to_string);
         let command = parts.next().unwrap();
-        match command {
+        match command.as_str() {
             "send" => {
                 let receiver = match parts.next() {
-                    Some(a) => a.to_string(),
+                    Some(a) => a,
                     None => {
                         println!("Usage: send <address> <message>");
                         continue;
                     }
                 };
                 let msg = match parts.next() {
-                    Some(m) => m.to_string(),
+                    Some(m) => m,
                     None => {
                         println!("Usage: send <address> <message>");
                         continue;
@@ -106,6 +107,36 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
             }
+
+                    "connect" => {
+            let ip = parts.next();
+            let port_str = parts.next();
+            if let (Some(ip), Some(port_str)) = (ip, port_str) {
+                let port: u16 = match port_str.parse() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        println!("Invalid port: {}", port_str);
+                        continue;
+                    }
+                };
+
+                let node_clone = node.clone();
+                tokio::spawn(async move {
+                    let mut n = node_clone.lock().await;
+                    if let Some(servers) = &mut n.servers {
+                        // 调用你的连接函数
+                        match servers.connect_to_node(ip.as_str(), port).await {
+                            Ok(_) => println!("Connected to {}:{}", ip, port),
+                            Err(e) => println!("Failed to connect: {:?}", e),
+                        }
+                    } else {
+                        println!("Servers not initialized");
+                    }
+                });
+            } else {
+                println!("Usage: connect <ip> <port>");
+            }
+        }
 
             "status" => {
                 let n = node.lock().await;

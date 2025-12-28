@@ -1,11 +1,16 @@
-use std::net::SocketAddr;
+use std::{ net::{ IpAddr, SocketAddr }, sync::Arc };
+use tokio::{ net::TcpStream, sync::Mutex };
 use zz_account::address::FreeWebMovementAddress;
+use anyhow::Result;
 
-use crate::nodes::{
-    connected_servers::{ ConnectedServer, ConnectedServers },
-    net_info,
-    record::NodeRecord,
-    storage,
+use crate::{
+    nodes::{
+        connected_servers::{ ConnectedServer, ConnectedServers },
+        net_info,
+        record::NodeRecord,
+        storage,
+    },
+    protocols::{ command, commands::sender::CommandSender, defines::ClientType },
 };
 
 use bincode::config;
@@ -79,6 +84,56 @@ impl Servers {
         self.connected_servers = Some(
             ConnectedServers::new(self.purified_inner.clone(), self.purified_external.clone()).await
         );
+    }
+
+    /// 连接到指定节点，并加入 connected_servers
+    pub async fn connect_to_node(&mut self, ip: &str, port: u16) -> Result<()> {
+        // 构造 socket 地址
+        let addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
+
+        // 尝试 TCP 连接
+        let stream = TcpStream::connect(addr).await?;
+        let tcp_arc = Arc::new(Mutex::new(Some(stream)));
+
+        // 构造 ConnectedServer
+        let command_sender = CommandSender {
+            tcp: ClientType::TCP(tcp_arc.clone()),
+            udp: None,
+        };
+        let record = NodeRecord {
+            endpoint: addr,
+            protocols: crate::protocols::defines::ProtocolCapability::TCP,
+            first_seen: chrono::Utc::now(),
+            last_seen: chrono::Utc::now(),
+            connected: true,
+            last_disappeared: None,
+            reachability_score: 100,
+            address: None,
+        };
+        let connected = ConnectedServer {
+            record,
+            command: command_sender,
+        };
+
+        // 判断内网/外网，加入 inner 或 external
+        if self.is_inner_ip(ip) {
+            // 内网
+            if let Some(connected_servers) = &mut self.connected_servers {
+                connected_servers.inner.push(connected);
+            }
+        } else {
+            // 外网
+            if let Some(connected_servers) = &mut self.connected_servers {
+                connected_servers.external.push(connected);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 简单判断是否是内网 IP
+    fn is_inner_ip(&self, ip: &str) -> bool {
+        ip.starts_with("192.168.") || ip.starts_with("10.") || ip.starts_with("172.16.")
     }
 
     pub fn add_inner_server(&mut self, server: NodeRecord) {
@@ -227,6 +282,16 @@ impl Servers {
         }
         Ok(())
     }
+    pub fn find_connected_server(&self, ip_addr: IpAddr, port: u16) -> Option<ConnectedServer> {
+        if let Some(connections) = &self.connected_servers {
+            for server in connections.inner.iter().chain(connections.external.iter()) {
+                if server.record.endpoint.ip() == ip_addr && server.record.endpoint.port() == port {
+                    return Some(server.clone());
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -309,7 +374,7 @@ mod tests {
             connected_servers: None,
         };
 
-        let a = node([10, 0, 0, 1], 1111);
+        let a: NodeRecord = node([10, 0, 0, 1], 1111);
         let b = node([10, 0, 0, 2], 2222);
 
         servers.add_inner_server(a.clone());
