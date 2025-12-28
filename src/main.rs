@@ -36,9 +36,13 @@ async fn main() -> anyhow::Result<()> {
 
     // 获取或生成节点 address
     let address = if let Some(addr) = storage.read_address()? {
+      println!("Using existing address: {}", &addr);
         addr
     } else {
-        Address::random()
+      let addr = Address::random();
+      println!("Generated new address: {}", &addr);
+      storage.save_address(&addr)?;
+      addr
     };
 
     // 初始化 Node

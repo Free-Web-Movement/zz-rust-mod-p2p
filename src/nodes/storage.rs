@@ -2,8 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::consts::{
-    DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
-    DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE, DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
+    DEFAULT_APP_DIR,
+    DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
+    DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE,
+    DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
 };
 
 use crate::nodes::record::NodeRecord;
@@ -22,12 +24,15 @@ impl Storeage {
         data_dir: Option<&str>,
         address_file_name: Option<&str>,
         external_list_file_name: Option<&str>,
-        inner_server_list_file_name: Option<&str>,
+        inner_server_list_file_name: Option<&str>
     ) -> Self {
         let app_dir = if let Some(dir) = data_dir {
+            println!("Using custom storage dir: {}", dir);
             PathBuf::from(dir)
         } else {
-            dirs_next::data_dir()
+            println!("Using default storage dir");
+            dirs_next
+                ::data_dir()
                 .map(|dir| dir.join(DEFAULT_APP_DIR))
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR))
         };
@@ -35,15 +40,16 @@ impl Storeage {
 
         let _ = fs::create_dir_all(&app_dir);
 
-        let address_file =
-            app_dir.join(address_file_name.unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE));
+        let address_file = app_dir.join(
+            address_file_name.unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE)
+        );
 
         let external_server_list_file = app_dir.join(
-            external_list_file_name.unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE),
+            external_list_file_name.unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE)
         );
 
         let inner_server_list_file = app_dir.join(
-            inner_server_list_file_name.unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE),
+            inner_server_list_file_name.unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE)
         );
 
         Storeage {
@@ -57,13 +63,16 @@ impl Storeage {
     /* ------------------ address ------------------ */
 
     pub fn save_address(&self, address: &FreeWebMovementAddress) -> anyhow::Result<()> {
+        println!("Saving address to {:?}", &self.address_file);
         let json = serde_json::to_vec_pretty(address)?;
         fs::write(&self.address_file, json)?;
         Ok(())
     }
 
     pub fn read_address(&self) -> anyhow::Result<Option<FreeWebMovementAddress>> {
+        println!("Reading address from {:?}", &self.address_file);
         if !self.address_file.exists() {
+          println!("Address file does not exist.");
             return Ok(None);
         }
 
@@ -74,13 +83,16 @@ impl Storeage {
     /* ------------------ server list (internal) ------------------ */
 
     fn save_server_list_to(&self, servers: &[NodeRecord], path: &PathBuf) -> anyhow::Result<()> {
+        println!("Saving server list to {:?}", path);
         let json = serde_json::to_string_pretty(servers)?;
         fs::write(path, json)?;
         Ok(())
     }
 
     fn read_server_list_from(&self, path: &PathBuf) -> anyhow::Result<Vec<NodeRecord>> {
+        println!("Reading server list from {:?}", path);
         if !path.exists() {
+            println!("Server list file does not exist.");
             return Ok(Vec::new());
         }
 
@@ -113,7 +125,7 @@ impl Storeage {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
     use tempfile::tempdir;
 
     fn dummy_record(port: u16) -> NodeRecord {
