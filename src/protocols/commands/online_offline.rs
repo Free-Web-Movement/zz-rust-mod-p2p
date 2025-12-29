@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::context::Context;
 use crate::nodes::servers::Servers;
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::commands::parser::CommandParser;
 use crate::protocols::commands::sender::CommandSender;
-use crate::protocols::defines::ClientType;
 use crate::protocols::{ command::{ Entity, Action }, frame::Frame };
 use zz_account::address::FreeWebMovementAddress;
 
@@ -28,13 +28,13 @@ impl CommandParser {
             (endpoints, flag) => (endpoints, flag == 0),
         };
         // 6️⃣ 只处理 TCP client
-        let tcp = match client_type {
-            ClientType::TCP(tcp) => tcp.clone(),
-            _ => {
-                eprintln!("❌ Online command not from TCP");
-                return;
-            }
-        };
+        // let tcp = match client_type {
+        //     ClientType::TCP(tcp) => tcp.clone(),
+        //     _ => {
+        //         eprintln!("❌ Online command not from TCP");
+        //         return;
+        //     }
+        // };
 
         // 7️⃣ 注册 client
         // for ep in endpoints {
@@ -42,16 +42,16 @@ impl CommandParser {
         let mut clients = context.clients.lock().await;
 
         if is_inner {
-            clients.add_inner(&addr, tcp.clone(), endpoints.clone());
+            clients.add_inner(&addr, client_type.clone(), endpoints.clone());
         } else {
-            clients.add_external(&addr, tcp.clone(), endpoints.clone());
+            clients.add_external(&addr, client_type.clone(), endpoints.clone());
         }
     }
 
     pub async fn on_node_offline(
         frame: &Frame,
         context: Arc<crate::context::Context>,
-        client_type: &crate::protocols::defines::ClientType
+        client_type: &ClientType
     ) {
         // 处理 Node Offline 命令的逻辑
         println!(
@@ -78,7 +78,9 @@ impl CommandSender {
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        self.send(&bytes).await?;
+
+        send_bytes(&self.tcp, &bytes).await;
+        // self.tcp.send(&bytes).await?;
         Ok(())
     }
 
@@ -92,19 +94,18 @@ impl CommandSender {
 
         // 2️⃣ 序列化 Frame
         let bytes = Frame::to(frame);
-        self.send(&bytes).await?;
+        send_bytes(&self.tcp, &bytes).await;
+        // self.send(&bytes).await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::protocols::client_type::to_client_type;
+
     use super::*;
     use tokio::net::{ TcpListener, TcpStream };
-    use tokio::sync::Mutex;
-    use std::sync::Arc;
-    use std::net::{ IpAddr, Ipv4Addr };
-    use crate::protocols::defines::ClientType;
     use zz_account::address::FreeWebMovementAddress as Address;
 
     /// 辅助函数：创建 TCP client/server pair
@@ -115,7 +116,7 @@ mod tests {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 1024];
             let n = socket.readable().await.unwrap();
             let n = socket.try_read(&mut buf).unwrap();
@@ -123,9 +124,9 @@ mod tests {
         });
 
         let client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let client = Arc::new(Mutex::new(Some(client)));
 
-        (ClientType::TCP(client), rx)
+        let tcp = to_client_type(client);
+        (tcp, rx)
     }
 
     #[tokio::test]

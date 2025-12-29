@@ -1,15 +1,12 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use futures::{StreamExt, stream};
-use tokio::{
-    net::TcpStream,
-    sync::Mutex,
-    time::timeout,
-};
+use futures::{ StreamExt, stream };
+use tokio::{ net::TcpStream, time::timeout };
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::{commands::sender::CommandSender, defines::ClientType};
+use crate::protocols::client_type::to_client_type;
+use crate::protocols::{ commands::sender::CommandSender };
 
 /// 已连接的服务器（控制面 + 数据面）
 ///
@@ -32,11 +29,12 @@ impl ConnectedServers {
 
     /// 🔗 仅使用 TCP 建立初始控制连接
     pub async fn connect(records: Vec<NodeRecord>) -> Vec<ConnectedServer> {
-        stream::iter(records)
+        stream
+            ::iter(records)
             .map(|record| async move {
                 match timeout(Self::CONNECT_TIMEOUT, TcpStream::connect(record.endpoint)).await {
                     Ok(Ok(stream)) => {
-                        let tcp = ClientType::TCP(Arc::new(Mutex::new(Some(stream))));
+                        let tcp = to_client_type(stream);
                         tracing::info!("tcp connect succeeded {}", record.endpoint);
                         Some(ConnectedServer {
                             record,
@@ -58,8 +56,7 @@ impl ConnectedServers {
             })
             .buffer_unordered(Self::MAX_CONCURRENT)
             .filter_map(|x| async { x })
-            .collect()
-            .await
+            .collect().await
     }
 
     pub async fn new(inner: Vec<NodeRecord>, external: Vec<NodeRecord>) -> Self {
@@ -73,13 +70,9 @@ impl ConnectedServers {
         &self,
         address: &FreeWebMovementAddress,
         data: Option<Vec<u8>>,
-        is_external: bool,
+        is_external: bool
     ) {
-        let all = if is_external {
-            self.inner.iter()
-        } else {
-            self.external.iter()
-        };
+        let all = if is_external { self.inner.iter() } else { self.external.iter() };
 
         let futures = all.map(|server| {
             let addr = address.clone();
@@ -97,13 +90,9 @@ impl ConnectedServers {
         &self,
         address: &FreeWebMovementAddress,
         data: Option<Vec<u8>>,
-        is_external: bool,
+        is_external: bool
     ) {
-        let all = if is_external {
-            self.inner.iter()
-        } else {
-            self.external.iter()
-        };
+        let all = if is_external { self.inner.iter() } else { self.external.iter() };
         let futures = all.map(|server| {
             let addr = address.clone();
             let payload = data.clone();
@@ -119,9 +108,10 @@ impl ConnectedServers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocols::client_type::send_bytes;
     use crate::protocols::defines::ProtocolCapability;
     use chrono::Utc;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
@@ -134,7 +124,7 @@ mod tests {
             connected: false,
             last_disappeared: None,
             reachability_score: 100,
-            address: None
+            address: None,
         }
     }
 
@@ -182,7 +172,9 @@ mod tests {
         assert_eq!(connected.len(), 1);
 
         let msg = b"hello-connected-server";
-        connected[0].command.send(msg).await?;
+
+        send_bytes(&connected[0].command.tcp, msg).await;
+        // connected[0].command.send(msg).await?;
 
         let received = server.await.unwrap();
         assert_eq!(received, msg);

@@ -6,6 +6,15 @@ pub const DEFAULT_ADDRESS_LOCALHOST: &str = "127.0.0.1";
 ///       项目级常量
 /// ==============================
 
+
+
+pub const HTTP_BUFFER_LENGTH: usize = 8 * 1024;
+/// 默认 TCP 读取缓冲区
+pub const TCP_BUFFER_LENGTH: usize = 8 * 1024;
+
+/// HTTP 探测用 peek 缓冲区
+pub const PEEK_TCP_BUFFER_LENGTH: usize = 1024;
+
 /// 项目名称（例如日志前缀）
 pub const PROJECT_NAME: &str = "Free-Web-Movement-P2P-Node";
 

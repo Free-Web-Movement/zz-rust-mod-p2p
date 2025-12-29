@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use bincode::config;
 use futures::future::join_all;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
+use crate::context;
+use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::message::MessageCommand;
 use crate::protocols::defines::Listener;
@@ -120,9 +121,12 @@ impl Node {
         }
         let storage = self.storage.as_ref().unwrap().clone();
 
+        let context = self.context.clone().unwrap();
+
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
         let servers = Servers::new(
             self.address.clone(),
+            context,
             storage.clone(),
             self.net_info.as_ref().expect("net_info missing").clone()
         );
@@ -168,20 +172,27 @@ impl Node {
             println!("Found {} local connections for {}", local_conns.len(), receiver);
 
             if !local_conns.is_empty() {
-                let futures = local_conns.into_iter().map(|tcp_arc| {
-                    let bytes = bytes.clone();
-                    let receiver = receiver.clone();
-                    async move {
-                        let mut guard = tcp_arc.lock().await;
-                        if let Some(stream) = &mut *guard {
-                            println!("Locally sending {} bytes to {}", bytes.len(), receiver.clone());
-                            let _ = stream.write_all(&bytes).await;
-                        }
-                    }
-                });
+                let bytes = bytes.clone();
+                // let receiver = receiver.clone();
+                let futures: Vec<_> = local_conns
+                    .into_iter()
+                    .map(|tcp_arc| {
+                        let bytes = bytes.clone();
+                        // let receiver = receiver.clone();
+                        println!("local tcp stream found.");
+                        tokio::spawn(async move {
+                            send_bytes(&tcp_arc, &bytes);
+                        })
+                    })
+                    .collect();
 
-                join_all(futures).await;
-                return Ok(()); // 本地发送完成后直接返回
+                // 等待全部发送完成
+                for f in futures {
+                    println!("sending!");
+                    let _ = f.await;
+                }
+
+                return Ok(());
             }
         }
 
@@ -288,7 +299,7 @@ mod tests {
 
         // trigger notify_online on each node's Servers (no-op if connected_servers is None)
         {
-            let mut n = node_a.lock().await;
+            let n = node_a.lock().await;
             let address = n.address.clone();
             if let Some(servers) = &n.servers {
                 let _ = servers.notify_online(address).await;
@@ -296,7 +307,7 @@ mod tests {
         }
 
         {
-            let mut n = node_b.lock().await;
+            let n = node_b.lock().await;
             let address = n.address.clone();
             if let Some(servers) = &n.servers {
                 let _ = servers.notify_online(address).await;

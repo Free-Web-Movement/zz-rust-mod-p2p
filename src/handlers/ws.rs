@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use tokio::{ io::AsyncWriteExt, net::TcpStream, sync::Mutex };
+use tokio::{ io::AsyncWriteExt, sync::Mutex };
 use base64::Engine;
 
-use crate::context::Context;
+use crate::{context::Context, protocols::client_type::{ClientType, send_bytes}};
 
 /// ==============================
 ///       WebSocket 常量
@@ -26,12 +26,12 @@ pub const HEADER_SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 
 
 pub struct WebSocketHandler {
-    stream: Arc<Mutex<Option<TcpStream>>>,
+    stream: Arc<ClientType>,
     context: Arc<Context>
 }
 
 impl WebSocketHandler {
-    pub fn new(stream: Arc<Mutex<Option<TcpStream>>>, context: Arc<Context>) -> Self {
+    pub fn new(stream: Arc<ClientType>, context: Arc<Context>) -> Self {
         Self {stream, context }
     }
     /// 判断是否为 WebSocket Upgrade
@@ -75,10 +75,8 @@ impl WebSocketHandler {
         );
 
         let stream = self.stream.clone();
-        let mut locked = stream.lock().await;
-        if let Some(ref mut s) = *locked {
-            s.write_all(response.as_bytes()).await?;
-        }
+
+        send_bytes(&stream, response.as_bytes());
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     context::Context,
-    protocols::{ command::{ Entity, Action }, defines::ClientType, frame::Frame },
+    protocols::{ client_type::ClientType, command::{ Action, Entity }, frame::Frame },
 };
 
 #[derive(Clone)]

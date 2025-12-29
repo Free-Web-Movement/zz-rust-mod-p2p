@@ -1,6 +1,6 @@
 use crate::{
     context::Context,
-    protocols::defines::{ClientType, Listener},
+    protocols::{client_type::ClientType, defines::Listener},
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -42,8 +42,11 @@ impl UDPHandler {
                     res = socket.recv_from(&mut buf) => {
                         match res {
                             Ok((n, src)) => {
-                                let protocol = ClientType::UDP { socket: socket.clone(), peer: src };
-                                println!("UDP received {} bytes from {}", n, src);
+                                // Use the received peer address directly to avoid converting between
+                                // different SocketAddr types (std vs tokio::net::unix).
+                                let peer = src;
+                                let protocol = ClientType::UDP { socket: socket.clone(), peer };
+                                println!("UDP received {} bytes from {}", n, peer);
                                 let _ = handler
                                     .clone()
                                     .on_data(&protocol, &buf[..n])
@@ -85,7 +88,7 @@ impl Listener for UDPHandler {
         received: &[u8], // remote_peer: &std::net::SocketAddr,
     ) -> anyhow::Result<()> {
         if let ClientType::UDP { socket: _, peer } = client {
-            println!("UDP received {} bytes from {}", received.len(), peer);
+            println!("UDP received {} bytes from {:?}", received.len(), peer);
             let _ = self.send(client, received).await;
         }
         Ok(())
@@ -93,7 +96,7 @@ impl Listener for UDPHandler {
 
     async fn send(self: &Arc<Self>, client: &ClientType, data: &[u8]) -> anyhow::Result<()> {
         if let ClientType::UDP { socket, peer } = client {
-            println!("UDP is sending {} bytes to {}", data.len(), peer);
+            println!("UDP is sending {} bytes to {:?}", data.len(), peer);
             socket.send_to(data, peer).await?;
         }
         Ok(())

@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::command::{ Action, Command };
+use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::command::Action;
 use crate::protocols::commands::parser::CommandParser;
 use crate::protocols::commands::sender::CommandSender;
-use crate::protocols::defines::ClientType;
 use crate::protocols::{ command::Entity, frame::Frame };
 
 use bincode::{ Decode, Encode };
-use bincode::config;
 
 use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
@@ -78,7 +77,9 @@ impl CommandSender {
         )?;
 
         let bytes = Frame::to(frame);
-        self.send(&bytes).await?;
+
+        send_bytes(&self.tcp, &bytes).await;
+        // self.send(&bytes).await?;
         Ok(())
     }
 }
@@ -87,13 +88,13 @@ impl CommandSender {
 mod tests {
     use super::*;
 
-    use tokio::net::{ TcpListener, TcpStream };
-    use tokio::sync::Mutex;
+    use tokio::net::{ TcpListener };
     use std::sync::Arc;
     use std::time::{ SystemTime, UNIX_EPOCH };
 
-    use crate::protocols::defines::ClientType;
     use crate::context::Context;
+    use crate::protocols::client_type::{ ClientType, to_client_type };
+    use tokio::{ io::AsyncWriteExt, net::{ TcpStream, UdpSocket, unix::SocketAddr }, sync::Mutex };
 
     use zz_account::address::FreeWebMovementAddress as Address;
     use bincode::config;
@@ -106,17 +107,16 @@ mod tests {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 4096];
-            let n = socket.readable().await.unwrap();
+            let _n = socket.readable().await.unwrap();
             let n = socket.try_read(&mut buf).unwrap();
             let _ = tx.send(buf[..n].to_vec());
         });
 
         let client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let client = Arc::new(Mutex::new(Some(client)));
-
-        (ClientType::TCP(client), rx)
+        let tcp = to_client_type(client);
+        (tcp, rx)
     }
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
         let context = Arc::new(Context::new("127.0.0.1".to_string(), 18000, Address::random()));
         let dummy_client = ClientType::UDP {
             socket: Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()),
-            peer: "127.0.0.1:0".parse().unwrap(),
+            peer: "127.0.0.1:0".parse().unwrap()
         };
 
         // 只要不 panic、不提前 return 即视为通过
