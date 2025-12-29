@@ -122,6 +122,7 @@ impl Node {
 
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
         let servers = Servers::new(
+            self.address.clone(),
             storage.clone(),
             self.net_info.as_ref().expect("net_info missing").clone()
         );

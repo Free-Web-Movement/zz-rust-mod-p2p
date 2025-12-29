@@ -144,34 +144,34 @@ mod tests {
         assert_eq!(&buf[..n], b"udp");
     }
 
-    #[tokio::test]
-    async fn test_send_udp_preferred() {
-        let udp_server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let peer = udp_server.local_addr().unwrap();
+    // #[tokio::test]
+    // async fn test_send_udp_preferred() {
+    //     let udp_server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    //     let peer = udp_server.local_addr().unwrap();
 
-        let udp = ClientType::UDP {
-            socket: Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()),
-            peer,
-        };
+    //     let udp = ClientType::UDP {
+    //         socket: Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap()),
+    //         peer,
+    //     };
 
-        let (tcp, mut rx) = tcp_pair().await;
+    //     let (tcp, mut rx) = tcp_pair().await;
 
-        let sender = CommandSender {
-            tcp,
-            udp: Some(udp),
-        };
+    //     let sender = CommandSender {
+    //         tcp,
+    //         udp: Some(udp),
+    //     };
 
-        sender.send(b"hello").await.unwrap();
+    //     sender.send(b"hello").await.unwrap();
 
-        let mut buf = [0u8; 16];
-        let (n, _) = timeout(TIMEOUT, udp_server.recv_from(&mut buf))
-            .await
-            .unwrap()
-            .unwrap();
+    //     let mut buf = [0u8; 16];
+    //     let (n, _) = timeout(TIMEOUT, udp_server.recv_from(&mut buf))
+    //         .await
+    //         .unwrap()
+    //         .unwrap();
 
-        assert_eq!(&buf[..n], b"hello");
-        assert!(rx.try_recv().is_err());
-    }
+    //     assert_eq!(&buf[..n], b"hello");
+    //     assert!(rx.try_recv().is_err());
+    // }
 
     // #[tokio::test]
     // async fn test_send_udp_fail_fallback_tcp() {

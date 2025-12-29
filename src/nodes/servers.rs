@@ -1,16 +1,27 @@
-use std::{ net::{ IpAddr, SocketAddr }, sync::Arc };
-use tokio::{ io::AsyncReadExt, net::TcpStream, sync::Mutex };
-use zz_account::address::FreeWebMovementAddress;
 use anyhow::Result;
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::Mutex,
+};
+use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    nodes::{
-        connected_servers::{ ConnectedServer, ConnectedServers },
+    handlers::tcp::TCP_BUFFER_LENGTH, nodes::{
+        connected_servers::{ConnectedServer, ConnectedServers},
         net_info,
         record::NodeRecord,
         storage,
-    },
-    protocols::{ commands::sender::CommandSender, defines::{ClientType, ProtocolCapability} },
+    }, protocols::{
+        command::{Action, Entity},
+        commands::sender::CommandSender,
+        defines::{ClientType, ProtocolCapability},
+        frame::Frame,
+    }
 };
 
 use bincode::config;
@@ -28,10 +39,15 @@ pub struct Servers {
     pub inner_connected: Vec<NodeRecord>,
     pub external_connected: Vec<NodeRecord>,
     pub connected_servers: Option<ConnectedServers>,
+    pub address: FreeWebMovementAddress,
 }
 
 impl Servers {
-    pub fn new(storage: storage::Storeage, net_info: net_info::NetInfo) -> Self {
+    pub fn new(
+        address: FreeWebMovementAddress,
+        storage: storage::Storeage,
+        net_info: net_info::NetInfo,
+    ) -> Self {
         let mut inner = storage.read_inner_server_list().unwrap_or_default();
         let mut external = storage.read_external_server_list().unwrap_or_default();
 
@@ -39,8 +55,8 @@ impl Servers {
         let host_external_record = NodeRecord::to_list(
             net_info.public_ips(),
             net_info.port,
-            crate::protocols::defines::ProtocolCapability::TCP |
-                crate::protocols::defines::ProtocolCapability::UDP
+            crate::protocols::defines::ProtocolCapability::TCP
+                | crate::protocols::defines::ProtocolCapability::UDP,
         );
 
         // 当前节点的内网IP
@@ -48,8 +64,8 @@ impl Servers {
         let host_inner_record = NodeRecord::to_list(
             net_info.local_ips(),
             net_info.port,
-            crate::protocols::defines::ProtocolCapability::TCP |
-                crate::protocols::defines::ProtocolCapability::UDP
+            crate::protocols::defines::ProtocolCapability::TCP
+                | crate::protocols::defines::ProtocolCapability::UDP,
         );
 
         // 合并当前节点公网记录到 external（用于广播）
@@ -63,7 +79,9 @@ impl Servers {
 
         // let connected_servers = Some(ConnectedServers::new(purified_inner.clone(), purified_external.clone()).await);
 
-        storage.save_external_server_list(&external).unwrap_or_default();
+        storage
+            .save_external_server_list(&external)
+            .unwrap_or_default();
 
         storage.save_inner_server_list(&inner).unwrap_or_default();
 
@@ -77,15 +95,17 @@ impl Servers {
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
             connected_servers: None,
+            address,
         }
     }
 
     pub async fn connect(&mut self) {
         self.connected_servers = Some(
-            ConnectedServers::new(self.purified_inner.clone(), self.purified_external.clone()).await
+            ConnectedServers::new(self.purified_inner.clone(), self.purified_external.clone())
+                .await,
         );
     }
-   /// 连接到指定节点，并加入 connected_servers，同时持续接收消息
+    /// 连接到指定节点，并加入 connected_servers，同时持续接收消息
     pub async fn connect_to_node(&mut self, ip: &str, port: u16) -> Result<()> {
         // 构造 socket 地址
         let addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
@@ -129,11 +149,28 @@ impl Servers {
             }
         }
 
+        // 🔹 立即发送本节点地址给服务器
+        {
+            let frame = Frame::build_node_command(
+                &self.address, // 本节点地址
+                Entity::Node,
+                Action::OnLine, // 用 ResponseAddress 表示发送自身地址
+                1,
+                Some(self.address.to_string().as_bytes().to_vec()),
+            )?;
+            let bytes = Frame::to(frame);
+
+            let mut guard = tcp_arc.lock().await;
+            if let Some(stream) = &mut *guard {
+                let _ = stream.write_all(&bytes).await;
+            }
+        }
+
         // 🔹 启动异步读取循环，持续接收服务器反馈
         let tcp_clone = tcp_arc.clone();
         let ip_owned = ip.to_string();
         tokio::spawn(async move {
-            let mut buf = vec![0u8; 4096];
+            let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
             loop {
                 let n = {
                     let mut guard = tcp_clone.lock().await;
@@ -146,7 +183,10 @@ impl Servers {
                             }
                             Ok(n) => n,
                             Err(e) => {
-                                eprintln!("Error reading from server {}:{} - {:?}", ip_owned, port, e);
+                                eprintln!(
+                                    "Error reading from server {}:{} - {:?}",
+                                    ip_owned, port, e
+                                );
                                 break;
                             }
                         }
@@ -189,22 +229,21 @@ impl Servers {
     }
 
     pub fn get_external_endpoints(&self) -> Vec<SocketAddr> {
-        self.external
-            .iter()
-            .map(|s| s.endpoint)
-            .collect()
+        self.external.iter().map(|s| s.endpoint).collect()
     }
 
     /// 🔥 关键函数：
     /// 从 external 中剔除“当前节点自己的公网 IP + 端口”
     pub fn purify_servers(
         to_be_purified: &[NodeRecord],
-        servers: &[NodeRecord]
+        servers: &[NodeRecord],
     ) -> Vec<NodeRecord> {
         servers
             .iter()
             .filter(|server| {
-                !to_be_purified.iter().any(|host| host.endpoint == server.endpoint)
+                !to_be_purified
+                    .iter()
+                    .any(|host| host.endpoint == server.endpoint)
             })
             .cloned()
             .collect()
@@ -223,10 +262,8 @@ impl Servers {
     }
 
     pub fn from_endpoints(endpoints: Vec<u8>) -> (Vec<SocketAddr>, u8) {
-        let (mut strings, _): (Vec<String>, _) = decode_from_slice(
-            &endpoints,
-            config::standard()
-        ).expect("decode endpoints failed");
+        let (mut strings, _): (Vec<String>, _) =
+            decode_from_slice(&endpoints, config::standard()).expect("decode endpoints failed");
 
         // 弹出最后一位作为 flag
         let flag_str = strings.pop().unwrap_or_else(|| "1".to_string());
@@ -250,11 +287,13 @@ impl Servers {
         &self,
         address: FreeWebMovementAddress,
         data: &Option<Vec<u8>>,
-        servers: &Vec<ConnectedServer>
+        servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            server.command
-                .send_online(&address, data.clone()).await
+            server
+                .command
+                .send_online(&address, data.clone())
+                .await
                 .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
         }
     }
@@ -264,11 +303,13 @@ impl Servers {
         &self,
         address: FreeWebMovementAddress,
         data: &Option<Vec<u8>>,
-        servers: &Vec<ConnectedServer>
+        servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            server.command
-                .send_offline(&address, data.clone()).await
+            server
+                .command
+                .send_offline(&address, data.clone())
+                .await
                 .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
         }
     }
@@ -279,11 +320,8 @@ impl Servers {
             // inner endpoints 序列化, 0表示内网
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
 
-            self.notify_online_servers(
-                address.clone(),
-                &Some(inner_data),
-                &connections.inner
-            ).await;
+            self.notify_online_servers(address.clone(), &Some(inner_data), &connections.inner)
+                .await;
 
             // external endpoints 序列化, 1表示外网
             let mut external_data = Servers::to_endpoints(&self.host_external_record, 1);
@@ -291,8 +329,9 @@ impl Servers {
             self.notify_online_servers(
                 address.clone(),
                 &Some(external_data),
-                &connections.external
-            ).await;
+                &connections.external,
+            )
+            .await;
         }
         Ok(())
     }
@@ -302,19 +341,17 @@ impl Servers {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
-            self.notify_offline_servers(
-                address.clone(),
-                &Some(inner_data),
-                &connections.inner
-            ).await;
+            self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
+                .await;
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record, 1);
             self.notify_offline_servers(
                 address.clone(),
                 &Some(external_data),
-                &connections.external
-            ).await;
+                &connections.external,
+            )
+            .await;
         }
         Ok(())
     }
@@ -335,8 +372,12 @@ mod tests {
     use crate::protocols::defines::ProtocolCapability;
 
     use super::*;
+    use bitcoin::address;
     use chrono::Utc;
-    use std::{ net::{ IpAddr, Ipv4Addr, SocketAddr }, vec };
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        vec,
+    };
 
     // ------------------------------
     // 测试辅助：构造 NodeRecord
@@ -363,7 +404,7 @@ mod tests {
 
         let external = vec![
             node([1, 1, 1, 1], 1000), // should be removed
-            node([3, 3, 3, 3], 3000)
+            node([3, 3, 3, 3], 3000),
         ];
 
         let purified = Servers::purify_servers(&host, &external);
@@ -398,6 +439,7 @@ mod tests {
     // ------------------------------
     #[test]
     fn test_add_inner_and_external_server() {
+        let address = FreeWebMovementAddress::random();
         let mut servers = Servers {
             inner: vec![],
             external: vec![],
@@ -408,6 +450,7 @@ mod tests {
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
             connected_servers: None,
+            address,
         };
 
         let a: NodeRecord = node([10, 0, 0, 1], 1111);
@@ -427,6 +470,7 @@ mod tests {
     // ------------------------------
     #[test]
     fn test_get_all_endpoints() {
+        let address = FreeWebMovementAddress::random();
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000)],
@@ -437,6 +481,7 @@ mod tests {
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
             connected_servers: None,
+            address,
         };
 
         let eps = servers.get_all_endpoints();
@@ -445,6 +490,7 @@ mod tests {
 
     #[test]
     fn test_get_external_endpoints() {
+        let address = FreeWebMovementAddress::random();
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
             external: vec![node([8, 8, 8, 8], 2000), node([1, 1, 1, 1], 3000)],
@@ -455,6 +501,7 @@ mod tests {
             inner_connected: Vec::new(),
             external_connected: Vec::new(),
             connected_servers: None,
+            address,
         };
 
         let eps = servers.get_external_endpoints();
