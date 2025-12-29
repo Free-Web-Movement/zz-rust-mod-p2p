@@ -43,11 +43,11 @@ pub async fn send_client(client: ClientType, data: &[u8]) -> Result<()> {
 
     pub async fn send(&self, data: &[u8]) -> anyhow::Result<()> {
         // UDP 优先
-        if let Some(udp) = &self.udp {
-            if Self::send_client(udp.clone(), data).await.is_ok() {
-                return Ok(());
-            }
-        }
+        // if let Some(udp) = &self.udp {
+        //     if Self::send_client(udp.clone(), data).await.is_ok() {
+        //         return Ok(());
+        //     }
+        // }
 
         // TCP fallback
         Self::send_client(self.tcp.clone(), data).await

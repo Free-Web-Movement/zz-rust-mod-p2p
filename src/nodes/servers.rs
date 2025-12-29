@@ -1,5 +1,5 @@
 use std::{ net::{ IpAddr, SocketAddr }, sync::Arc };
-use tokio::{ net::TcpStream, sync::Mutex };
+use tokio::{ io::AsyncReadExt, net::TcpStream, sync::Mutex };
 use zz_account::address::FreeWebMovementAddress;
 use anyhow::Result;
 
@@ -10,7 +10,7 @@ use crate::{
         record::NodeRecord,
         storage,
     },
-    protocols::{ command, commands::sender::CommandSender, defines::ClientType },
+    protocols::{ commands::sender::CommandSender, defines::{ClientType, ProtocolCapability} },
 };
 
 use bincode::config;
@@ -85,8 +85,7 @@ impl Servers {
             ConnectedServers::new(self.purified_inner.clone(), self.purified_external.clone()).await
         );
     }
-
-    /// 连接到指定节点，并加入 connected_servers
+   /// 连接到指定节点，并加入 connected_servers，同时持续接收消息
     pub async fn connect_to_node(&mut self, ip: &str, port: u16) -> Result<()> {
         // 构造 socket 地址
         let addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
@@ -95,14 +94,16 @@ impl Servers {
         let stream = TcpStream::connect(addr).await?;
         let tcp_arc = Arc::new(Mutex::new(Some(stream)));
 
-        // 构造 ConnectedServer
+        // 构造 CommandSender
         let command_sender = CommandSender {
             tcp: ClientType::TCP(tcp_arc.clone()),
             udp: None,
         };
+
+        // 构造 NodeRecord
         let record = NodeRecord {
             endpoint: addr,
-            protocols: crate::protocols::defines::ProtocolCapability::TCP,
+            protocols: ProtocolCapability::TCP,
             first_seen: chrono::Utc::now(),
             last_seen: chrono::Utc::now(),
             connected: true,
@@ -110,23 +111,58 @@ impl Servers {
             reachability_score: 100,
             address: None,
         };
+
+        // 构造 ConnectedServer
         let connected = ConnectedServer {
             record,
-            command: command_sender,
+            command: command_sender.clone(),
         };
 
         // 判断内网/外网，加入 inner 或 external
         if self.is_inner_ip(ip) {
-            // 内网
             if let Some(connected_servers) = &mut self.connected_servers {
                 connected_servers.inner.push(connected);
             }
         } else {
-            // 外网
             if let Some(connected_servers) = &mut self.connected_servers {
                 connected_servers.external.push(connected);
             }
         }
+
+        // 🔹 启动异步读取循环，持续接收服务器反馈
+        let tcp_clone = tcp_arc.clone();
+        let ip_owned = ip.to_string();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+            loop {
+                let n = {
+                    let mut guard = tcp_clone.lock().await;
+                    if let Some(stream) = &mut *guard {
+                        match stream.read(&mut buf).await {
+                            Ok(0) => {
+                                // 对端关闭连接
+                                println!("Server {}:{} closed connection", ip_owned, port);
+                                break;
+                            }
+                            Ok(n) => n,
+                            Err(e) => {
+                                eprintln!("Error reading from server {}:{} - {:?}", ip_owned, port, e);
+                                break;
+                            }
+                        }
+                    } else {
+                        // TcpStream 被释放
+                        break;
+                    }
+                };
+
+                // 处理收到的消息
+                let _data = &buf[..n];
+                // 这里可以解析 Frame 或 Command
+                println!("Received {} bytes from server {}:{}", n, ip_owned, port);
+                // TODO: Frame::from(data) 或 CommandSender 处理逻辑
+            }
+        });
 
         Ok(())
     }

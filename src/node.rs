@@ -5,10 +5,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::nodes::connected_servers;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::message::MessageCommand;
-use crate::protocols::commands::sender::{ self, CommandSender };
 use crate::protocols::defines::Listener;
 use crate::protocols::frame::Frame;
 use crate::{ context::Context, nodes::servers::Servers };
@@ -159,17 +157,23 @@ impl Node {
 
         let bytes = Frame::to(frame);
 
+        println!("Node is sending text message to {}: {}", receiver, message);
+
         // 1️⃣ 尝试本地发送
         if let Some(context) = &self.context {
             let clients = context.clients.lock().await;
             let local_conns = clients.get_connections(&receiver, true);
 
+            println!("Found {} local connections for {}", local_conns.len(), receiver);
+
             if !local_conns.is_empty() {
                 let futures = local_conns.into_iter().map(|tcp_arc| {
                     let bytes = bytes.clone();
+                    let receiver = receiver.clone();
                     async move {
                         let mut guard = tcp_arc.lock().await;
                         if let Some(stream) = &mut *guard {
+                            println!("Locally sending {} bytes to {}", bytes.len(), receiver.clone());
                             let _ = stream.write_all(&bytes).await;
                         }
                     }
@@ -200,6 +204,17 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    pub fn notify_online(&self) {
+        // TODO: Implement notify_online logic
+        if let Some(servers) = &self.servers {
+            let servers = servers.clone();
+            let address = self.address.clone();
+            tokio::spawn(async move {
+                let _ = servers.notify_online(address).await;
+            });
+        }
     }
 }
 

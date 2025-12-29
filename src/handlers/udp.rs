@@ -43,6 +43,7 @@ impl UDPHandler {
                         match res {
                             Ok((n, src)) => {
                                 let protocol = ClientType::UDP { socket: socket.clone(), peer: src };
+                                println!("UDP received {} bytes from {}", n, src);
                                 let _ = handler
                                     .clone()
                                     .on_data(&protocol, &buf[..n])

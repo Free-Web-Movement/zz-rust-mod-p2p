@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use futures::{StreamExt, stream};
 use tokio::{
-    net::{TcpStream, UdpSocket},
+    net::TcpStream,
     sync::Mutex,
     time::timeout,
 };
