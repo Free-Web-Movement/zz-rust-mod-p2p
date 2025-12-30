@@ -174,19 +174,35 @@ pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
 
 pub async fn send_online(
     client_type: &ClientType,
-    address: &FreeWebMovementAddress
+    address: &FreeWebMovementAddress,
+    data: Option<Vec<u8>>
 ) -> anyhow::Result<()> {
     let frame = Frame::build_node_command(
         &address, // 本节点地址
         Entity::Node,
         Action::OnLine, // 用 ResponseAddress 表示发送自身地址
         1,
-        Some(address.to_string().as_bytes().to_vec())
+        data
     )?;
     let bytes = Frame::to(frame);
 
     send_bytes(client_type, &bytes).await;
 
+    Ok(())
+}
+
+pub async fn send_offline(
+    client_type: &ClientType,
+    address: &FreeWebMovementAddress,
+    data: Option<Vec<u8>>
+) -> anyhow::Result<()> {
+    // 1️⃣ 构建在线命令 Frame
+    let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
+
+    // 2️⃣ 序列化 Frame
+    let bytes = Frame::to(frame);
+    send_bytes(&client_type, &bytes).await;
+    // self.send(&bytes).await?;
     Ok(())
 }
 

@@ -7,7 +7,7 @@ use zz_account::address::FreeWebMovementAddress as Address;
 use crate::context;
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::{ Action, Entity };
-use crate::protocols::commands::message::MessageCommand;
+use crate::protocols::commands::message::{MessageCommand, send_text_message};
 use crate::protocols::defines::Listener;
 use crate::protocols::frame::Frame;
 use crate::{ context::Context, nodes::servers::Servers };
@@ -207,7 +207,7 @@ impl Node {
                 let futures = all_servers.map(|server| {
                     let bytes = bytes.clone();
                     async move {
-                        let _ = server.command.send_text_message(&self.address, bytes).await;
+                      send_text_message(&server.client_type, &self.address, bytes).await;
                     }
                 });
 

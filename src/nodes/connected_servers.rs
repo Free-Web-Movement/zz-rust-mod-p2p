@@ -5,15 +5,14 @@ use tokio::{ net::TcpStream, time::timeout };
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::to_client_type;
-use crate::protocols::{ commands::sender::CommandSender };
+use crate::protocols::client_type::{ ClientType, send_offline, send_online, to_client_type };
 
 /// 已连接的服务器（控制面 + 数据面）
 ///
 #[derive(Clone)]
 pub struct ConnectedServer {
     pub record: NodeRecord,
-    pub command: CommandSender,
+    pub client_type: ClientType,
 }
 
 /// 已连接服务器集合（区分 inner / external）
@@ -38,10 +37,7 @@ impl ConnectedServers {
                         tracing::info!("tcp connect succeeded {}", record.endpoint);
                         Some(ConnectedServer {
                             record,
-                            command: CommandSender {
-                                tcp,
-                                udp: None, // UDP 后续协商
-                            },
+                            client_type: tcp
                         })
                     }
                     Ok(Err(e)) => {
@@ -76,9 +72,9 @@ impl ConnectedServers {
 
         let futures = all.map(|server| {
             let addr = address.clone();
-            let payload = data.clone();
+            let bytes = data.clone();
             async move {
-                let _ = server.command.send_online(&addr, payload).await;
+                let _ = send_online(&server.client_type, &addr, bytes).await;
             }
         });
 
@@ -97,7 +93,7 @@ impl ConnectedServers {
             let addr = address.clone();
             let payload = data.clone();
             async move {
-                let _ = server.command.send_offline(&addr, payload).await;
+                let _ = send_offline(&server.client_type, &addr, payload).await;
             }
         });
 
@@ -173,7 +169,7 @@ mod tests {
 
         let msg = b"hello-connected-server";
 
-        send_bytes(&connected[0].command.tcp, msg).await;
+        send_bytes(&connected[0].client_type, msg).await;
         // connected[0].command.send(msg).await?;
 
         let received = server.await.unwrap();

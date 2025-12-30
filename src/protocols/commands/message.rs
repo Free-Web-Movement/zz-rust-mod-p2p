@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::client_type::{ ClientType, send_bytes };
 use crate::protocols::command::Action;
 use crate::protocols::commands::parser::CommandParser;
-use crate::protocols::commands::sender::CommandSender;
 use crate::protocols::{ command::Entity, frame::Frame };
 
 use bincode::{ Decode, Encode };
@@ -59,29 +58,23 @@ impl CommandParser {
     }
 }
 
-impl CommandSender {
-    pub async fn send_text_message(
-        &self,
-        address: &FreeWebMovementAddress,
-        data: Vec<u8>
-    ) -> anyhow::Result<()> {
-        // ✅ bincode 2.x 编码
-        // let data = bincode::encode_to_vec(cmd, config::standard())?;
+pub async fn send_text_message(
+    client_type: &ClientType,
+    address: &FreeWebMovementAddress,
+    data: Vec<u8>
+) -> anyhow::Result<()> {
+    let frame = Frame::build_node_command(
+        address,
+        Entity::Message,
+        Action::SendText,
+        1,
+        Some(data)
+    )?;
 
-        let frame = Frame::build_node_command(
-            address,
-            Entity::Message,
-            Action::SendText,
-            1,
-            Some(data)
-        )?;
+    let bytes = Frame::to(frame);
 
-        let bytes = Frame::to(frame);
-
-        send_bytes(&self.tcp, &bytes).await;
-        // self.send(&bytes).await?;
-        Ok(())
-    }
+    send_bytes(client_type, &bytes).await;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -94,7 +87,7 @@ mod tests {
 
     use crate::context::Context;
     use crate::protocols::client_type::{ ClientType, to_client_type };
-    use tokio:: net::TcpStream ;
+    use tokio::net::TcpStream;
 
     use zz_account::address::FreeWebMovementAddress as Address;
     use bincode::config;
@@ -139,11 +132,6 @@ mod tests {
     async fn test_send_text_message_over_tcp() -> anyhow::Result<()> {
         let (tcp, rx) = tcp_pair().await;
 
-        let sender = CommandSender {
-            tcp,
-            udp: None,
-        };
-
         let address = Address::random();
 
         let cmd = MessageCommand {
@@ -153,7 +141,7 @@ mod tests {
         };
         let data = bincode::encode_to_vec(cmd, config::standard())?;
 
-        sender.send_text_message(&address, data).await?;
+        send_text_message(&tcp, &address, data).await?;
 
         let received = rx.await.unwrap();
         assert!(!received.is_empty(), "TCP should receive data");
@@ -184,7 +172,7 @@ mod tests {
         let context = Arc::new(Context::new("127.0.0.1".to_string(), 18000, Address::random()));
         let dummy_client = ClientType::UDP {
             socket: Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()),
-            peer: "127.0.0.1:0".parse().unwrap()
+            peer: "127.0.0.1:0".parse().unwrap(),
         };
 
         // 只要不 panic、不提前 return 即视为通过

@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use crate::context::Context;
 use crate::nodes::servers::Servers;
-use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::client_type:: ClientType ;
 use crate::protocols::commands::parser::CommandParser;
-use crate::protocols::commands::sender::CommandSender;
-use crate::protocols::{ command::{ Entity, Action }, frame::Frame };
-use zz_account::address::FreeWebMovementAddress;
+use crate::protocols:: frame::Frame ;
 
 impl CommandParser {
     pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
@@ -67,42 +65,43 @@ impl CommandParser {
     }
 }
 
-impl CommandSender {
-    pub async fn send_online(
-        &self,
-        address: &FreeWebMovementAddress,
-        data: Option<Vec<u8>>
-    ) -> anyhow::Result<()> {
-        // 1️⃣ 构建在线命令 Frame
-        let frame = Frame::build_node_command(address, Entity::Node, Action::OnLine, 1, data)?;
+// impl CommandSender {
+// pub async fn send_online(
+//     // &self,
+//     client_type: &ClientType,
+//     address: &FreeWebMovementAddress,
+//     data: Option<Vec<u8>>
+// ) -> anyhow::Result<()> {
+//     // 1️⃣ 构建在线命令 Frame
+//     let frame = Frame::build_node_command(address, Entity::Node, Action::OnLine, 1, data)?;
 
-        // 2️⃣ 序列化 Frame
-        let bytes = Frame::to(frame);
+//     // 2️⃣ 序列化 Frame
+//     let bytes = Frame::to(frame);
 
-        send_bytes(&self.tcp, &bytes).await;
-        // self.tcp.send(&bytes).await?;
-        Ok(())
-    }
+//     send_bytes(client_type, &bytes).await;
+//     // self.tcp.send(&bytes).await?;
+//     Ok(())
+// }
 
-    pub async fn send_offline(
-        &self,
-        address: &FreeWebMovementAddress,
-        data: Option<Vec<u8>>
-    ) -> anyhow::Result<()> {
-        // 1️⃣ 构建在线命令 Frame
-        let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
+// pub async fn send_offline(
+//     client_type: &ClientType,
+//     address: &FreeWebMovementAddress,
+//     data: Option<Vec<u8>>
+// ) -> anyhow::Result<()> {
+//     // 1️⃣ 构建在线命令 Frame
+//     let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
 
-        // 2️⃣ 序列化 Frame
-        let bytes = Frame::to(frame);
-        send_bytes(&self.tcp, &bytes).await;
-        // self.send(&bytes).await?;
-        Ok(())
-    }
-}
+//     // 2️⃣ 序列化 Frame
+//     let bytes = Frame::to(frame);
+//     send_bytes(&client_type, &bytes).await;
+//     // self.send(&bytes).await?;
+//     Ok(())
+// }
+// }
 
 #[cfg(test)]
 mod tests {
-    use crate::protocols::client_type::to_client_type;
+    use crate::protocols::client_type::{send_offline, send_online, to_client_type};
 
     use super::*;
     use tokio::net::{ TcpListener, TcpStream };
@@ -132,16 +131,12 @@ mod tests {
     #[tokio::test]
     async fn test_send_online() -> anyhow::Result<()> {
         let (tcp, rx) = tcp_pair().await;
-
-        let sender = CommandSender {
-            tcp,
-            udp: None,
-        };
-
         let address = Address::random();
         let payload = Some(b"online-data".to_vec());
 
-        sender.send_online(&address, payload).await?;
+        send_online(&tcp, &address, payload).await;
+
+        // sender.send_online(&address, payload).await?;
 
         // 验证 TCP 收到数据
         let received = rx.await.unwrap();
@@ -154,15 +149,10 @@ mod tests {
     async fn test_send_offline() -> anyhow::Result<()> {
         let (tcp, rx) = tcp_pair().await;
 
-        let sender = CommandSender {
-            tcp,
-            udp: None,
-        };
-
         let address = Address::random();
         let payload = Some(b"offline-data".to_vec());
 
-        sender.send_offline(&address, payload).await?;
+        send_offline(&tcp, &address, payload).await;
 
         // 验证 TCP 收到数据
         let received = rx.await.unwrap();

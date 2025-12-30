@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::{ net::{ IpAddr, SocketAddr }, sync::Arc };
-use tokio:: net:: TcpStream  ;
+use tokio::net::TcpStream;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
@@ -12,8 +12,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{ loop_read, send_online, to_client_type },
-        commands::sender::CommandSender,
+        client_type::{ loop_read, send_offline, send_online, to_client_type },
         defines::ProtocolCapability,
     },
 };
@@ -108,13 +107,8 @@ impl Servers {
         let stream = TcpStream::connect(addr).await?;
 
         let tcp = to_client_type(stream);
+        // let client_type = Arc::new(tcp.clone());
         let tcp_clone = tcp.clone();
-
-        // 构造 CommandSender
-        let command_sender = CommandSender {
-            tcp,
-            udp: None,
-        };
 
         // 构造 NodeRecord
         let record = NodeRecord {
@@ -131,7 +125,7 @@ impl Servers {
         // 构造 ConnectedServer
         let connected = ConnectedServer {
             record,
-            command: command_sender,
+            client_type: tcp,
         };
 
         // 判断内网/外网，加入 inner 或 external
@@ -148,7 +142,7 @@ impl Servers {
         // 🔹 立即发送本节点地址给服务器
         let stream = tcp_clone.clone();
         {
-            send_online(&tcp_clone, &self.address);
+            self.notify_online(self.address.clone());
         }
 
         {
@@ -242,13 +236,14 @@ impl Servers {
     pub async fn notify_online_servers(
         &self,
         address: FreeWebMovementAddress,
-        data: &Option<Vec<u8>>,
+        data: Option<Vec<u8>>,
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
-            server.command
-                .send_online(&address, data.clone()).await
-                .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
+            send_online(&server.client_type, &address, data.clone()).await;
+            // server.command
+            //     .send_online(&address, data.clone()).await
+            //     .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
         }
     }
 
@@ -260,9 +255,10 @@ impl Servers {
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
-            server.command
-                .send_offline(&address, data.clone()).await
-                .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
+            send_offline(&server.client_type, &address, data.clone()).await;
+            // server.command
+            //     .send_offline(&address, data.clone()).await
+            //     .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
         }
     }
 
@@ -272,18 +268,14 @@ impl Servers {
             // inner endpoints 序列化, 0表示内网
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
 
-            self.notify_online_servers(
-                address.clone(),
-                &Some(inner_data),
-                &connections.inner
-            ).await;
+            self.notify_online_servers(address.clone(), Some(inner_data), &connections.inner).await;
 
             // external endpoints 序列化, 1表示外网
             let mut external_data = Servers::to_endpoints(&self.host_external_record, 1);
             external_data.push(1);
             self.notify_online_servers(
                 address.clone(),
-                &Some(external_data),
+                Some(external_data),
                 &connections.external
             ).await;
         }
