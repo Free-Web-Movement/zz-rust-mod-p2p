@@ -128,9 +128,6 @@ async fn main() -> anyhow::Result<()> {
                             match servers.connect_to_node(ip.as_str(), port).await {
                                 Ok(_) => {
                                     println!("Connected to {}:{}", ip, port);
-                                    if let Err(e) = servers.notify_online(node.address.clone()).await {
-                                        println!("Failed to notify online: {:?}", e);
-                                    }
                                 }
                                 Err(e) => {
                                     println!("Failed to connect: {:?}", e);

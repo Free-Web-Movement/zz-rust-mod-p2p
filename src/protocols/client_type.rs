@@ -2,13 +2,15 @@ use std::{ net::SocketAddr, sync::Arc };
 
 use anyhow::Error;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
+use tokio_tungstenite::tungstenite::protocol::frame;
+use tokio_util::bytes;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     consts::TCP_BUFFER_LENGTH,
-    context::Context,
+    context::{ self, Context },
     handlers::ws::WebSocketHandler,
-    protocols::{ command::{ Action, Entity }, frame::Frame },
+    protocols::{ client_type, command::{ Action, Entity }, frame::Frame },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -66,9 +68,16 @@ impl StreamPair {
         Ok(())
     }
 
-    pub async fn loop_read(&self, contex: &Arc<Context>, addr: SocketAddr) {
-        let _ = contex;
+    pub async fn loop_read(
+        &self,
+        client_type: &ClientType,
+        context: &Arc<Context>,
+        addr: SocketAddr
+    ) {
+        println!("inside tcp loop reading");
         let reader = self.reader.clone();
+        let client_type = client_type.clone();
+        let context = context.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
             loop {
@@ -92,9 +101,11 @@ impl StreamPair {
                 };
 
                 // 处理收到的消息
-                let _data = &buf[..n];
+                let bytes = &buf[..n];
                 // 这里可以解析 Frame 或 Command
                 println!("Received {} bytes from server {:?}", n, addr);
+                let frame = Frame::from(&bytes.to_vec());
+                Frame::on(&frame, context.clone(), &client_type).await;
                 // TODO: Frame::from(data) 或 CommandSender 处理逻辑
             }
         });
@@ -116,13 +127,14 @@ impl StreamPair {
     }
 }
 
-pub async fn loop_read(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
+pub async fn loop_reading(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
+    println!("inside loop read!");
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => todo!(),
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-            stream_pair.loop_read(context, addr).await;
+            stream_pair.loop_read(client_type, context, addr).await;
         }
     }
 }
@@ -325,7 +337,7 @@ pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-          stream_pair.is_http_connection().await
+            stream_pair.is_http_connection().await
         }
     }
 }

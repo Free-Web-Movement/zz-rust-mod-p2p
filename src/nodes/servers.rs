@@ -12,7 +12,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{ loop_read, send_offline, send_online, to_client_type },
+        client_type::{ loop_reading, send_offline, send_online, to_client_type },
         defines::ProtocolCapability,
     },
 };
@@ -100,6 +100,7 @@ impl Servers {
     }
     /// 连接到指定节点，并加入 connected_servers，同时持续接收消息
     pub async fn connect_to_node(&mut self, ip: &str, port: u16) -> Result<()> {
+        println!("Connect to node: {}:{}", ip, port);
         // 构造 socket 地址
         let addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
 
@@ -128,6 +129,8 @@ impl Servers {
             client_type: tcp,
         };
 
+        println!("Connected server!");
+
         // 判断内网/外网，加入 inner 或 external
         if self.is_inner_ip(ip) {
             if let Some(connected_servers) = &mut self.connected_servers {
@@ -139,17 +142,23 @@ impl Servers {
             }
         }
 
-        // 🔹 立即发送本节点地址给服务器
-        let stream = tcp_clone.clone();
-        {
-            self.notify_online(self.address.clone());
-        }
+        let stream: crate::protocols::client_type::ClientType = tcp_clone.clone();
 
-        {
-            loop_read(&stream, &self.context, addr);
-        }
+        println!("out side notify_online");
 
-        // 🔹 启动异步读取循环，持续接收服务器反馈
+        println!("start loop reading");
+
+        // Clone the Arc<Context> so we can move it into the spawned task without borrowing self.
+        let context = Arc::clone(&self.context);
+        tokio::spawn(async move {
+            // Move-owned `stream` and `context` are referenced inside the async block,
+            // so no non-'static borrow from `self` escapes.
+            loop_reading(&stream, &context, addr).await;
+        });
+
+        // {
+            let _ = self.notify_online(self.address.clone()).await;
+        // }
 
         Ok(())
     }
@@ -240,7 +249,8 @@ impl Servers {
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
-            send_online(&server.client_type, &address, data.clone()).await;
+            let _ = send_online(&server.client_type, &address, data.clone()).await;
+            println!("notify send!");
             // server.command
             //     .send_online(&address, data.clone()).await
             //     .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
@@ -255,7 +265,7 @@ impl Servers {
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
-            send_offline(&server.client_type, &address, data.clone()).await;
+            let _ = send_offline(&server.client_type, &address, data.clone()).await;
             // server.command
             //     .send_offline(&address, data.clone()).await
             //     .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
@@ -264,6 +274,7 @@ impl Servers {
 
     /// 🔹 通知所有已连接服务器当前节点的上线
     pub async fn notify_online(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
+        println!("Notifying node online start: ");
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化, 0表示内网
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
@@ -279,6 +290,9 @@ impl Servers {
                 &connections.external
             ).await;
         }
+
+        println!("Notifying node online end.");
+
         Ok(())
     }
 

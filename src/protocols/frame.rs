@@ -145,6 +145,7 @@ impl Frame {
     }
 
     pub async fn on(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
+      println!("inside on data!");
         // 1️⃣ 解 Command
         let cmd = match frame.body.command_from_data() {
             Ok(c) => c,
