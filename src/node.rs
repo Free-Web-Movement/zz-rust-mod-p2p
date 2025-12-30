@@ -144,11 +144,11 @@ impl Node {
 
     pub async fn send_text_message(&self, receiver: String, message: &str) -> anyhow::Result<()> {
         // 构造消息
-        let command = MessageCommand::new(
-            receiver.clone(),
-            timestamp() as u64,
-            message.to_string()
-        );
+        let command = MessageCommand {
+            receiver: receiver.clone(),
+            timestamp: timestamp() as u64,
+            message: message.to_string()
+        };
 
         // 编码成 payload
         let payload = bincode::encode_to_vec(command, config::standard())?;

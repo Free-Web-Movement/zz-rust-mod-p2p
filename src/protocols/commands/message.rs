@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
 use crate::protocols::command::Action;
-use crate::protocols::commands::parser::CommandParser;
 use crate::protocols::{ command::Entity, frame::Frame };
 
 use bincode::{ Decode, Encode };
@@ -18,44 +17,32 @@ pub struct MessageCommand {
     pub message: String,
 }
 
-impl MessageCommand {
-    pub fn new(receiver: String, timestamp: u64, message: String) -> Self {
-        Self {
-            receiver,
-            timestamp,
-            message,
-        }
+pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
+    let from = &frame.body.address;
+
+    let data = frame.body.data.clone();
+
+    if data.is_empty() {
+        eprintln!("❌ Empty MessageCommand from {}", from);
+        return;
     }
-}
 
-impl CommandParser {
-    pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
-        let from = &frame.body.address;
-
-        let data = frame.body.data.clone();
-
-        if data.is_empty() {
-            eprintln!("❌ Empty MessageCommand from {}", from);
+    let (cmd, _) = match
+        bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard())
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
             return;
         }
+    };
 
-        let (cmd, _) = match
-            bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard())
-        {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
-                return;
-            }
-        };
-
-        if cmd.message.is_empty() {
-            eprintln!("❌ Empty message body from {}", from);
-            return;
-        }
-
-        println!("📨 {} → {} @ {}: {}", from, cmd.receiver, cmd.timestamp, cmd.message);
+    if cmd.message.is_empty() {
+        eprintln!("❌ Empty message body from {}", from);
+        return;
     }
+
+    println!("📨 {} → {} @ {}: {}", from, cmd.receiver, cmd.timestamp, cmd.message);
 }
 
 pub async fn send_text_message(
@@ -176,6 +163,6 @@ mod tests {
         };
 
         // 只要不 panic、不提前 return 即视为通过
-        CommandParser::on_text_message(&frame, context, &dummy_client).await;
+        on_text_message(&frame, context, &dummy_client).await;
     }
 }
