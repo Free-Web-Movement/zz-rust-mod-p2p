@@ -1,10 +1,6 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use bitflags::bitflags;
 use serde::{ Deserialize, Serialize };
-
-use crate::context::Context;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +30,4 @@ pub enum ProtocolCommand {
 #[async_trait]
 pub trait Listener: Sync + 'static {
     async fn run(&mut self) -> anyhow::Result<()>;
-    async fn new(context: Arc<Context>) -> Arc<Self>;
-    async fn stop(self: &Arc<Self>) -> anyhow::Result<()>;
 }

@@ -95,14 +95,4 @@ impl Listener for TCPHandler {
         let arc_self = Arc::new(self.clone());
         arc_self.start().await
     }
-    async fn new(context: Arc<Context>) -> Arc<Self> {
-        TCPHandler::bind(context).await.unwrap()
-    }
-    async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
-        // TCPListener does not have a built-in stop method.
-        // You would need to implement your own mechanism to stop the listener.
-        self.context.token.cancel();
-        let _ = TcpStream::connect(format!("{}:{}", self.context.ip, self.context.port)).await;
-        Ok(())
-    }
 }

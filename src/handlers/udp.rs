@@ -27,7 +27,6 @@ impl UDPHandler {
     pub async fn start(self: Arc<Self>) -> anyhow::Result<()> {
         let socket = self.listener.clone();
         let shutdown = self.context.token.clone();
-        let handler = self.clone();
 
         tokio::spawn(async move {
             let mut buf = vec![0u8; PEEK_UDP_BUFFER_LENGTH];
@@ -69,19 +68,14 @@ impl Listener for UDPHandler {
         let arc_self = Arc::new(self.clone());
         arc_self.start().await
     }
-
-    async fn new(context: Arc<Context>) -> Arc<Self> {
-        UDPHandler::bind(context).await.unwrap()
-    }
-
-    async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
-        self.context.token.cancel();
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+    use crate::protocols::client_type::stop;
+
     use super::*;
     use tokio::net::UdpSocket;
     use zz_account::address::FreeWebMovementAddress;
@@ -121,6 +115,8 @@ mod tests {
         let address = FreeWebMovementAddress::random();
         let context = Arc::new(Context::new(ip.to_string(), port, address));
 
+        let context_clone = context.clone();
+
         let server = UDPHandler::bind(context).await?;
         let server_clone = Arc::clone(&server);
 
@@ -138,7 +134,14 @@ mod tests {
             let (n, _) = client.recv_from(&mut buf).await?;
             assert_eq!(&buf[..n], *msg);
         }
-        server.clone().stop().await?;
+
+        let ipv4: Ipv4Addr = "127.0.0.1".parse().unwrap();
+        let client_type = ClientType::UDP { 
+          socket: Arc::new(client), 
+          peer: SocketAddr::V4(SocketAddrV4::new(ipv4, port)),
+        };
+        let _ = stop(&client_type, &context_clone).await;
+        // server.clone().stop().await?;
 
         Ok(())
     }

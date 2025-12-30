@@ -124,7 +124,7 @@ impl StreamPair {
 
 pub async fn loop_read(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
-        ClientType::UDP { socket, peer } => todo!(),
+        ClientType::UDP { socket: _, peer: _ } => todo!(),
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
@@ -134,7 +134,7 @@ pub async fn loop_read(client_type: &ClientType, context: &Arc<Context>, addr: S
 }
 pub async fn close_client_type(client_type: &ClientType) {
     match client_type {
-        ClientType::UDP { socket, peer } => todo!(),
+        ClientType::UDP { socket: _, peer: _ } => todo!(),
         ClientType::TCP(sp) | ClientType::HTTP(sp) | ClientType::WS(sp) => {
             sp.close().await;
         }
@@ -192,7 +192,7 @@ pub async fn send_online(
 
 pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
-        ClientType::UDP { socket, peer } => todo!(),
+        ClientType::UDP { socket: _, peer: _ } => todo!(),
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
@@ -203,7 +203,7 @@ pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: Soc
 
 pub async fn read_http(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
-        ClientType::UDP { socket, peer } => todo!(),
+        ClientType::UDP { socket: _, peer: _ } => todo!(),
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
@@ -309,11 +309,25 @@ pub async fn on_tcp_data(stream_pair: &StreamPair, contex: &Arc<Context>, addr: 
 
 pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
     match client_type {
-        ClientType::UDP { socket, peer } => todo!(),
+        ClientType::UDP { socket: _, peer: _ } => { Ok(false) }
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-            stream_pair.is_http_connection().await
+            let _ = stream_pair.is_http_connection().await;
+            Ok(true)
         }
     }
+}
+
+pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::Result<()> {
+    context.token.cancel();
+    match client_type {
+        ClientType::UDP { socket: _, peer: _ } => {}
+        | ClientType::TCP(_stream_pair)
+        | ClientType::HTTP(_stream_pair)
+        | ClientType::WS(_stream_pair) => {
+            let _ = TcpStream::connect(format!("{}:{}", context.ip, context.port)).await;
+        }
+    }
+    Ok(())
 }
