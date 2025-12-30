@@ -4,10 +4,9 @@ use futures::future::join_all;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::context;
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::{ Action, Entity };
-use crate::protocols::commands::message::{MessageCommand, send_text_message};
+use crate::protocols::commands::message::{ MessageCommand, send_text_message };
 use crate::protocols::defines::Listener;
 use crate::protocols::frame::Frame;
 use crate::{ context::Context, nodes::servers::Servers };
@@ -85,10 +84,10 @@ impl Node {
         self.context = Some(context.clone());
 
         let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        // let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
-        self.udp_handler = Some(self.listen(udp).await);
+        // self.udp_handler = Some(self.listen(udp).await);
         self.net_info = Some(NetInfo::collect(port).unwrap());
         let _ = self.init_storage_and_server_list(port);
         if let Some(servers) = &mut self.servers {
@@ -109,7 +108,7 @@ impl Node {
             None => (),
         }
         self.tcp_handler.take();
-        self.udp_handler.take();
+        // self.udp_handler.take();
 
         self.stop_time = timestamp();
     }
@@ -147,7 +146,7 @@ impl Node {
         let command = MessageCommand {
             receiver: receiver.clone(),
             timestamp: timestamp() as u64,
-            message: message.to_string()
+            message: message.to_string(),
         };
 
         // 编码成 payload
@@ -180,9 +179,7 @@ impl Node {
                         let bytes = bytes.clone();
                         // let receiver = receiver.clone();
                         println!("local tcp stream found.");
-                        tokio::spawn(async move {
-                            send_bytes(&tcp_arc, &bytes);
-                        })
+                        tokio::spawn(async move { send_bytes(&tcp_arc, &bytes).await })
                     })
                     .collect();
 
@@ -207,7 +204,7 @@ impl Node {
                 let futures = all_servers.map(|server| {
                     let bytes = bytes.clone();
                     async move {
-                      send_text_message(&server.client_type, &self.address, bytes).await;
+                        let _ = send_text_message(&server.client_type, &self.address, bytes).await;
                     }
                 });
 
@@ -220,10 +217,13 @@ impl Node {
 
     pub fn notify_online(&self) {
         // TODO: Implement notify_online logic
+        println!("Notify online!");
         if let Some(servers) = &self.servers {
             let servers = servers.clone();
+            println!("Server found!");
             let address = self.address.clone();
             tokio::spawn(async move {
+                println!("Server notifyed to {}!", address.clone());
                 let _ = servers.notify_online(address).await;
             });
         }

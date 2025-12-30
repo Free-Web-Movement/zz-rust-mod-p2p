@@ -325,8 +325,7 @@ pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-            let _ = stream_pair.is_http_connection().await;
-            Ok(true)
+          stream_pair.is_http_connection().await
         }
     }
 }

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::sync::Arc;
 use tokio::{
-    io::{self, AsyncBufReadExt, BufReader},
+    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;
@@ -122,14 +122,19 @@ async fn main() -> anyhow::Result<()> {
                     let node_clone = node.clone();
                     tokio::spawn(async move {
                         let mut n = node_clone.lock().await;
+                        let node = n.clone();
                         if let Some(servers) = &mut n.servers {
                             // 调用你的连接函数
                             match servers.connect_to_node(ip.as_str(), port).await {
                                 Ok(_) => {
                                     println!("Connected to {}:{}", ip, port);
-                                    n.notify_online();
+                                    if let Err(e) = servers.notify_online(node.address.clone()).await {
+                                        println!("Failed to notify online: {:?}", e);
+                                    }
                                 }
-                                Err(e) => println!("Failed to connect: {:?}", e),
+                                Err(e) => {
+                                    println!("Failed to connect: {:?}", e);
+                                }
                             }
                         } else {
                             println!("Servers not initialized");
