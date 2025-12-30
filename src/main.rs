@@ -1,7 +1,7 @@
 use clap::Parser;
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tokio::{
-    io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{self, AsyncBufReadExt, BufReader},
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;

@@ -1,24 +1,22 @@
 use std::sync::Arc;
 
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
 
 use bincode::config;
-use bincode::serde::{decode_from_slice, encode_to_vec};
+use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
 use crate::protocols::client_type::ClientType;
-use crate::protocols::command::{Command, Entity, Action};
+use crate::protocols::command::{ Command, Entity, Action };
 use crate::protocols::commands::message::on_text_message;
-use crate::protocols::commands::online_offline::{on_node_offline, on_node_online};
+use crate::protocols::commands::online_offline::{ on_node_offline, on_node_online };
 
 /// ⚠️ 不要写返回类型！
 #[inline]
 pub fn frame_config() -> impl bincode::config::Config {
-    config::standard()
-        .with_fixed_int_encoding()
-        .with_big_endian()
+    config::standard().with_fixed_int_encoding().with_big_endian()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +48,7 @@ impl FrameBody {
         public_key: Vec<u8>,
         nonce: u64,
         data_length: u32,
-        data: Vec<u8>,
+        data: Vec<u8>
     ) -> Self {
         FrameBody {
             version,
@@ -131,7 +129,7 @@ impl Frame {
         entity: Entity,
         action: Action,
         version: u8,
-        data: Option<Vec<u8>>,
+        data: Option<Vec<u8>>
     ) -> anyhow::Result<Self> {
         let cmd_bytes = Command::send(entity, action, version, data)?;
 
@@ -147,44 +145,50 @@ impl Frame {
     }
 
     pub async fn on(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
-    // 1️⃣ 解 Command
-    let cmd = match frame.body.command_from_data() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("❌ Command decode failed: {:?}", e);
-            return;
-        }
-    };
+        // 1️⃣ 解 Command
+        let cmd = match frame.body.command_from_data() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("❌ Command decode failed: {:?}", e);
+                return;
+            }
+        };
 
-    // 2️⃣ 只处理 Node Online / Offline
-    match (cmd.entity as Entity, cmd.action as Action) {
-        (Entity::Node, Action::OnLine) => {
-            on_node_online(frame, context, client_type).await;
-        }
+        // 2️⃣ 只处理 Node Online / Offline
+        match (cmd.entity as Entity, cmd.action as Action) {
+            (Entity::Node, Action::OnLine) => {
+                on_node_online(frame, context, client_type).await;
+            }
 
-        (Entity::Message, Action::SendText) => {
-            on_text_message(frame, context, client_type).await;
-        }
+            (Entity::Message, Action::SendText) => {
+                on_text_message(frame, context, client_type).await;
+            }
 
-        (Entity::Node, Action::OffLine) => {
-            println!("⚠️ Node Offline: addr={}, nonce={}", frame.body.address, frame.body.nonce);
-            on_node_offline(frame, context, client_type).await;
-            // 这里你以后可以做 remove
-        }
+            (Entity::Node, Action::OffLine) => {
+                println!(
+                    "⚠️ Node Offline: addr={}, nonce={}",
+                    frame.body.address,
+                    frame.body.nonce
+                );
+                on_node_offline(frame, context, client_type).await;
+                // 这里你以后可以做 remove
+            }
 
-        _ => {
-            println!("ℹ️ Unsupported command: entity={:?}, action={:?}", cmd.entity, cmd.action);
+            _ => {
+                println!(
+                    "ℹ️ Unsupported command: entity={:?}, action={:?}",
+                    cmd.entity,
+                    cmd.action
+                );
+            }
         }
     }
-}
-
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::command::{Entity, Action};
+    use crate::protocols::command::{ Entity, Action };
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
@@ -239,7 +243,7 @@ mod tests {
             addr.public_key.to_bytes(),
             100,
             4,
-            vec![9, 8, 7, 6],
+            vec![9, 8, 7, 6]
         );
 
         assert_eq!(body.version, 1);
@@ -258,7 +262,7 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             0,
-            vec![],
+            vec![]
         );
 
         let cmd = make_command();
@@ -282,13 +286,13 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             1,
-            vec![0xAA],
+            vec![0xaa]
         );
 
-        let frame = Frame::new(body.clone(), vec![0xBB]);
+        let frame = Frame::new(body.clone(), vec![0xbb]);
 
         assert_eq!(frame.body.version, body.version);
-        assert_eq!(frame.signature, vec![0xBB]);
+        assert_eq!(frame.signature, vec![0xbb]);
     }
 
     #[tokio::test]
@@ -301,7 +305,7 @@ mod tests {
             identity.public_key.to_bytes(),
             42,
             5,
-            b"hello".to_vec(),
+            b"hello".to_vec()
         );
 
         let frame = Frame::sign(body.clone(), &identity)?;
@@ -311,10 +315,7 @@ mod tests {
         let verified = Frame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
-        assert_eq!(
-            frame.body.address.to_string(),
-            verified.body.address.to_string()
-        );
+        assert_eq!(frame.body.address.to_string(), verified.body.address.to_string());
 
         Ok(())
     }
@@ -329,7 +330,7 @@ mod tests {
             identity.public_key.to_bytes(),
             7,
             3,
-            vec![1, 2, 3],
+            vec![1, 2, 3]
         );
 
         let frame = Frame::sign(body, &identity).unwrap();
@@ -351,7 +352,7 @@ mod tests {
             identity.public_key.to_bytes(),
             9,
             3,
-            vec![1, 2, 3],
+            vec![1, 2, 3]
         );
 
         let mut frame = Frame::sign(body.clone(), &identity).unwrap();
@@ -374,14 +375,7 @@ mod tests {
         // 只要能成功编码解码即视为一致
         let addr = FreeWebMovementAddress::random();
 
-        let body = FrameBody::new(
-            1,
-            addr.to_string(),
-            addr.public_key.to_bytes(),
-            0,
-            0,
-            vec![],
-        );
+        let body = FrameBody::new(1, addr.to_string(), addr.public_key.to_bytes(), 0, 0, vec![]);
 
         let bytes = encode_to_vec(&body, cfg1).unwrap();
         let (decoded, _): (FrameBody, usize) = decode_from_slice(&bytes, cfg2).unwrap();
@@ -403,16 +397,13 @@ mod tests {
             Entity::Node,
             Action::OnLine,
             1,
-            payload.clone(),
+            payload.clone()
         )?;
 
         // 4️⃣ 基本结构校验
         assert_eq!(frame.body.version, 1);
         assert_eq!(frame.body.address, address.to_string());
-        assert_eq!(
-            frame.body.public_key,
-            address.public_key.to_bytes().to_vec()
-        );
+        assert_eq!(frame.body.public_key, address.public_key.to_bytes().to_vec());
 
         // nonce 应该存在（不为 0 不是强约束，但通常如此）
         assert!(frame.body.nonce > 0);
@@ -435,8 +426,7 @@ mod tests {
     fn test_build_node_command_without_data() -> anyhow::Result<()> {
         let address = FreeWebMovementAddress::random();
 
-        let frame =
-            Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
+        let frame = Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
 
         assert_eq!(frame.body.address, address.to_string());
         assert_eq!(frame.body.version, 1);
@@ -458,7 +448,7 @@ mod tests {
             Entity::Node,
             Action::OnLine,
             1,
-            Some(b"online".to_vec()),
+            Some(b"online".to_vec())
         )?;
 
         let bytes = Frame::to(frame);
@@ -473,8 +463,7 @@ mod tests {
     fn test_extract_node_command_offline() -> anyhow::Result<()> {
         let address = FreeWebMovementAddress::random();
 
-        let frame =
-            Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
+        let frame = Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
 
         let bytes = Frame::to(frame);
 
@@ -488,11 +477,16 @@ mod tests {
     fn test_extract_node_command_with_tampered_frame_should_not_panic() {
         let address = FreeWebMovementAddress::random();
 
-        let mut frame =
-            Frame::build_node_command(&address, Entity::Node, Action::OnLine, 1, None).unwrap();
+        let mut frame = Frame::build_node_command(
+            &address,
+            Entity::Node,
+            Action::OnLine,
+            1,
+            None
+        ).unwrap();
 
         // 🔥 篡改数据，制造非法 frame
-        frame.body.data = vec![0xFF, 0xEE, 0xDD];
+        frame.body.data = vec![0xff, 0xee, 0xdd];
 
         let bytes = Frame::to(frame);
 

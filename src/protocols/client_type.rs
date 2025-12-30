@@ -100,12 +100,6 @@ impl StreamPair {
         });
     }
 
-    pub async fn on_data(&self, context: &Arc<Context>, data: &[u8]) -> anyhow::Result<()> {
-        let _ = data;
-        let _ = context;
-        Ok(())
-    }
-
     pub async fn is_http_connection(&self) -> anyhow::Result<bool> {
         let mut buf = [0u8; TCP_BUFFER_LENGTH];
 
@@ -212,7 +206,7 @@ pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: Soc
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-            on_tcp_data(stream_pair, context, addr).await;
+            on_tcp_data(client_type, stream_pair, context, addr).await;
         }
     }
 }
@@ -284,12 +278,16 @@ pub async fn on_http_data(
     println!("HTTP connection closed {:?}", addr);
 }
 
-pub async fn on_tcp_data(stream_pair: &StreamPair, contex: &Arc<Context>, addr: SocketAddr) {
+pub async fn on_tcp_data(
+    client_type: &ClientType,
+    stream_pair: &StreamPair,
+    context: &Arc<Context>,
+    addr: SocketAddr
+) {
     let mut buf = vec![0u8; 64 * 1024];
-
     loop {
         tokio::select! {
-            _ = contex.token.cancelled() => {
+            _ = context.token.cancelled() => {
                 println!("TCP connection shutdown {:?}", addr);
                 break;
             }
@@ -305,11 +303,9 @@ pub async fn on_tcp_data(stream_pair: &StreamPair, contex: &Arc<Context>, addr: 
                         break;
                     }
                     Ok(n) => {
-                        // ❗ 已经释放 reader 锁
-                        if let Err(e) = stream_pair.on_data(contex, &buf[..n]).await {
-                            eprintln!("on_data error from {:?}: {:?}", addr, e);
-                            break;
-                        }
+                      println!("TCP received {} bytes", n);
+                      let frame = Frame::from(&buf[..n].to_vec());
+                      Frame::on(&frame, context.clone(), client_type).await;
                     }
                     Err(e) => {
                         eprintln!("TCP read error from {:?}: {:?}", addr, e);
