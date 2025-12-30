@@ -8,7 +8,7 @@ use crate::{
     consts::TCP_BUFFER_LENGTH,
     context::Context,
     handlers::ws::WebSocketHandler,
-    protocols::{ client_type, command::{ Action, Entity }, defines::Listener, frame::Frame },
+    protocols::{ command::{ Action, Entity }, frame::Frame },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -46,7 +46,7 @@ impl StreamPair {
 
     pub async fn send(&self, bytes: &[u8]) {
         let mut writer = self.writer.lock().await;
-        writer.write_all(&bytes).await;
+        let _ = writer.write_all(&bytes).await;
     }
 
     pub async fn send_online(&self, address: &FreeWebMovementAddress) -> Result<(), Error> {
@@ -67,6 +67,7 @@ impl StreamPair {
     }
 
     pub async fn loop_read(&self, contex: &Arc<Context>, addr: SocketAddr) {
+        let _ = contex;
         let reader = self.reader.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; TCP_BUFFER_LENGTH];
@@ -100,6 +101,8 @@ impl StreamPair {
     }
 
     pub async fn on_data(&self, context: &Arc<Context>, data: &[u8]) -> anyhow::Result<()> {
+        let _ = data;
+        let _ = context;
         Ok(())
     }
 
@@ -122,11 +125,11 @@ impl StreamPair {
 pub async fn loop_read(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket, peer } => todo!(),
-        ClientType::TCP(stream_pair) => {
+        | ClientType::TCP(stream_pair)
+        | ClientType::HTTP(stream_pair)
+        | ClientType::WS(stream_pair) => {
             stream_pair.loop_read(context, addr).await;
         }
-        ClientType::HTTP(stream_pair) => todo!(),
-        ClientType::WS(stream_pair) => todo!(),
     }
 }
 pub async fn close_client_type(client_type: &ClientType) {
@@ -152,15 +155,20 @@ pub fn to_client_type(stream: TcpStream) -> ClientType {
 
 pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
     match client_type {
-        crate::protocols::client_type::ClientType::UDP { socket, peer } => todo!(),
-        crate::protocols::client_type::ClientType::TCP(stream_pair) => {
-            let mut writer = stream_pair.writer.lock().await;
-            if let Err(e) = writer.write_all(&bytes).await {
-                eprintln!("Failed to send bytes: {:?}", e);
+        crate::protocols::client_type::ClientType::UDP { socket, peer } => {
+            println!("UDP is sending {} bytes to {:?}", bytes.len(), peer);
+            if let Err(e) = socket.send_to(bytes, peer).await {
+                eprintln!("Failed to send UDP bytes: {:?}", e);
             }
         }
-        crate::protocols::client_type::ClientType::HTTP(stream_pair) => todo!(),
-        crate::protocols::client_type::ClientType::WS(stream_pair) => todo!(),
+        | crate::protocols::client_type::ClientType::TCP(stream_pair)
+        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
+        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
+            let mut writer = stream_pair.writer.lock().await;
+            if let Err(e) = writer.write_all(&bytes).await {
+                eprintln!("Failed to send TCP bytes: {:?}", e);
+            }
+        }
     }
 }
 
@@ -177,30 +185,30 @@ pub async fn send_online(
     )?;
     let bytes = Frame::to(frame);
 
-    send_bytes(client_type, &bytes);
+    send_bytes(client_type, &bytes).await;
 
     Ok(())
 }
 
-pub async fn on_data(client_type: &ClientType, contex: &Arc<Context>, addr: SocketAddr) {
+pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket, peer } => todo!(),
-        ClientType::TCP(stream_pair) => {
-            on_tcp_data(stream_pair, contex, addr).await;
+        | ClientType::TCP(stream_pair)
+        | ClientType::HTTP(stream_pair)
+        | ClientType::WS(stream_pair) => {
+            on_tcp_data(stream_pair, context, addr).await;
         }
-        ClientType::HTTP(stream_pair) => todo!(),
-        ClientType::WS(stream_pair) => todo!(),
     }
 }
 
 pub async fn read_http(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket, peer } => todo!(),
-        ClientType::TCP(stream_pair) => {
+        | ClientType::TCP(stream_pair)
+        | ClientType::HTTP(stream_pair)
+        | ClientType::WS(stream_pair) => {
             on_http_data(client_type, stream_pair, context, addr).await;
         }
-        ClientType::HTTP(stream_pair) => todo!(),
-        ClientType::WS(stream_pair) => todo!(),
     }
 }
 
@@ -244,7 +252,7 @@ pub async fn on_http_data(
                         ));
 
                         // ⚠️ 升级阶段不要持锁
-                        ws.respond_websocket_handshake(data).await;
+                        let _ = ws.respond_websocket_handshake(data).await;
                         break;
                     }
                     }
@@ -302,8 +310,10 @@ pub async fn on_tcp_data(stream_pair: &StreamPair, contex: &Arc<Context>, addr: 
 pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
     match client_type {
         ClientType::UDP { socket, peer } => todo!(),
-        ClientType::TCP(stream_pair) => { stream_pair.is_http_connection().await }
-        ClientType::HTTP(stream_pair) => todo!(),
-        ClientType::WS(stream_pair) => todo!(),
+        | ClientType::TCP(stream_pair)
+        | ClientType::HTTP(stream_pair)
+        | ClientType::WS(stream_pair) => {
+            stream_pair.is_http_connection().await
+        }
     }
 }

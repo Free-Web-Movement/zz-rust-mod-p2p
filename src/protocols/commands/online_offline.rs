@@ -61,7 +61,7 @@ impl CommandParser {
         );
         let addr = frame.body.address.clone();
         let mut clients = context.clients.lock().await;
-        clients.remove_client(&addr);
+        clients.remove_client(&addr).await;
 
         // 这里可以添加更多处理逻辑，比如注销节点、更新状态等
     }
@@ -118,7 +118,7 @@ mod tests {
         tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 1024];
-            let n = socket.readable().await.unwrap();
+            let _n = socket.readable().await.unwrap();
             let n = socket.try_read(&mut buf).unwrap();
             let _ = tx.send(buf[..n].to_vec());
         });

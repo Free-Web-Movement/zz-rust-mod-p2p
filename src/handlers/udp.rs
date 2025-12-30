@@ -1,6 +1,6 @@
 use crate::{
     context::Context,
-    protocols::{client_type::ClientType, defines::Listener},
+    protocols::{ client_type::{ ClientType, send_bytes }, defines::Listener },
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -45,12 +45,9 @@ impl UDPHandler {
                                 // Use the received peer address directly to avoid converting between
                                 // different SocketAddr types (std vs tokio::net::unix).
                                 let peer = src;
-                                let protocol = ClientType::UDP { socket: socket.clone(), peer };
+                                let client_type = ClientType::UDP { socket: socket.clone(), peer };
                                 println!("UDP received {} bytes from {}", n, peer);
-                                let _ = handler
-                                    .clone()
-                                    .on_data(&protocol, &buf[..n])
-                                    .await;
+                                send_bytes(&client_type, &buf[..n]).await;
                             }
                             Err(e) => {
                                 eprintln!("UDP recv error: {:?}", e);
@@ -79,26 +76,6 @@ impl Listener for UDPHandler {
 
     async fn stop(self: &Arc<Self>) -> anyhow::Result<()> {
         self.context.token.cancel();
-        Ok(())
-    }
-
-    async fn on_data(
-        self: &Arc<Self>,
-        client: &ClientType,
-        received: &[u8], // remote_peer: &std::net::SocketAddr,
-    ) -> anyhow::Result<()> {
-        if let ClientType::UDP { socket: _, peer } = client {
-            println!("UDP received {} bytes from {:?}", received.len(), peer);
-            let _ = self.send(client, received).await;
-        }
-        Ok(())
-    }
-
-    async fn send(self: &Arc<Self>, client: &ClientType, data: &[u8]) -> anyhow::Result<()> {
-        if let ClientType::UDP { socket, peer } = client {
-            println!("UDP is sending {} bytes to {:?}", data.len(), peer);
-            socket.send_to(data, peer).await?;
-        }
         Ok(())
     }
 }

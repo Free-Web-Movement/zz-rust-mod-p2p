@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio::{ io::AsyncWriteExt, sync::Mutex };
 use base64::Engine;
 
 use crate::{context::Context, protocols::client_type::{ClientType, send_bytes}};
@@ -76,7 +75,7 @@ impl WebSocketHandler {
 
         let stream = self.stream.clone();
 
-        send_bytes(&stream, response.as_bytes());
+        send_bytes(&stream, response.as_bytes()).await;
         Ok(())
     }
 }
