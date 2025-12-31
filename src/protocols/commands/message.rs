@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::client_type::{ClientType, forward_frame, send_bytes};
 use crate::protocols::command::Action;
 use crate::protocols::{command::Entity, frame::Frame};
 
@@ -17,7 +17,7 @@ pub struct MessageCommand {
     pub message: String,
 }
 
-pub async fn on_text_message(frame: &Frame, context: Arc<Context>, _client_type: &ClientType) {
+pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
     let from = &frame.body.address;
 
     // 1️⃣ 先从 frame.body.data 解 Command
@@ -57,35 +57,15 @@ pub async fn on_text_message(frame: &Frame, context: Arc<Context>, _client_type:
         // on_text_message(frame, context, client_type).await;
 
         // on_receive_message();
+        println!("Message received!");
         return;
     }
 
-    // ===== 2️⃣ 查本地 clients =====
-    {
-        let clients = context.clients.lock().await;
-        let conns = clients.get_connections(&receiver, true);
+    // 如果是作为服务器接收的消息，即地址不是节点地址时，
+    // 要转发消息
 
-        if !conns.is_empty() {
-            let bytes = Frame::to(frame.clone());
-            for ct in conns {
-                send_bytes(&ct, &bytes).await;
-            }
-            return; // 🚨 非常重要
-        }
-    }
+    forward_frame(receiver, frame, context).await;
 
-    // ===== 3️⃣ 查 servers，向其它服务器转发 =====
-    let servers = &context.clone().servers;
-    let servers = servers.lock().await;
-    let bytes = Frame::to(frame.clone());
-
-    if let Some(servers) = servers.connected_servers.clone() {
-        let all = servers.inner.iter().chain(servers.external.iter());
-
-        for server in all {
-            send_bytes(&server.client_type, &bytes).await;
-        }
-    }
 }
 
 pub async fn send_text_message(
@@ -210,6 +190,6 @@ mod tests {
         };
 
         // 只要不 panic、不提前 return 即视为通过
-        on_text_message(&frame, context, &dummy_client).await;
+        on_text_message(&frame, context).await;
     }
 }

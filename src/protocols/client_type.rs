@@ -2,15 +2,13 @@ use std::{ net::SocketAddr, sync::Arc };
 
 use anyhow::Error;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
-use tokio_tungstenite::tungstenite::protocol::frame;
-use tokio_util::bytes;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     consts::TCP_BUFFER_LENGTH,
-    context::{ self, Context },
+    context:: Context ,
     handlers::ws::WebSocketHandler,
-    protocols::{ client_type, command::{ Action, Entity }, frame::Frame },
+    protocols::{ command::{ Action, Entity }, frame::Frame },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -353,4 +351,33 @@ pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::R
         }
     }
     Ok(())
+}
+
+pub async fn forward_frame(receiver: String ,frame: &Frame, context: Arc<Context>) {
+      // ===== 2️⃣ 查本地 clients =====
+    {
+        let clients = context.clients.lock().await;
+        let conns = clients.get_connections(&receiver, true);
+
+        if !conns.is_empty() {
+            let bytes = Frame::to(frame.clone());
+            for ct in conns {
+                send_bytes(&ct, &bytes).await;
+            }
+            return; // 🚨 非常重要
+        }
+    }
+
+    // ===== 3️⃣ 查 servers，向其它服务器转发 =====
+    let servers = &context.clone().servers;
+    let servers = servers.lock().await;
+    let bytes = Frame::to(frame.clone());
+
+    if let Some(servers) = servers.connected_servers.clone() {
+        let all = servers.inner.iter().chain(servers.external.iter());
+
+        for server in all {
+            send_bytes(&server.client_type, &bytes).await;
+        }
+    }
 }

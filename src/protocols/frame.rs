@@ -162,7 +162,7 @@ impl Frame {
             }
 
             (Entity::Message, Action::SendText) => {
-                on_text_message(frame, context, client_type).await;
+                on_text_message(frame, context).await;
             }
 
             (Entity::Node, Action::OffLine) => {
