@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType, forward_frame, send_bytes};
-use crate::protocols::command::Action;
-use crate::protocols::{command::Entity, frame::Frame};
+use crate::protocols::client_type::forward_frame;
+use crate::protocols::frame::Frame;
 
 use bincode::{Decode, Encode};
 
 use serde::{Deserialize, Serialize};
-use zz_account::address::FreeWebMovementAddress;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageCommand {
     pub receiver: String,
-    pub timestamp: u64,
+    pub timestamp: u128,
     pub message: String,
 }
 
@@ -68,19 +66,21 @@ pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
 
 }
 
-pub async fn send_text_message(
-    client_type: &ClientType,
-    address: &FreeWebMovementAddress,
-    data: Vec<u8>,
-) -> anyhow::Result<()> {
-    let frame =
-        Frame::build_node_command(address, Entity::Message, Action::SendText, 1, Some(data))?;
+// pub async fn send_text_message(
+//     client_type: &ClientType,
+//     address: &FreeWebMovementAddress,
+//     data: Vec<u8>,
+// ) -> anyhow::Result<()> {
+//     let frame =
+//         Frame::build_node_command(address, Entity::Message, Action::SendText, 1, Some(data))?;
 
-    let bytes = Frame::to(frame);
+//     let bytes = Frame::to(frame);
 
-    send_bytes(client_type, &bytes).await;
-    Ok(())
-}
+//     println!("send bytes: {:?}", bytes);
+
+//     send_bytes(client_type, &bytes).await;
+//     Ok(())
+// }
 
 #[cfg(test)]
 mod tests {
@@ -94,6 +94,7 @@ mod tests {
     use crate::nodes::servers::Servers;
     use crate::nodes::storage::{self, Storeage};
     use crate::protocols::client_type::{ClientType, to_client_type};
+    use crate::protocols::command::{Action, Entity};
     use tokio::net::TcpStream;
 
     use bincode::config;
@@ -132,30 +133,6 @@ mod tests {
             bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
 
         assert_eq!(cmd, decoded);
-    }
-
-    #[tokio::test]
-    async fn test_send_text_message_over_tcp() -> anyhow::Result<()> {
-        let (tcp, rx) = tcp_pair().await;
-
-        let address = Address::random();
-
-        let cmd = MessageCommand {
-            receiver: "receiver-addr".to_string(),
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            message: "hello tcp".to_string(),
-        };
-        let data = bincode::encode_to_vec(cmd, config::standard())?;
-
-        send_text_message(&tcp, &address, data).await?;
-
-        let received = rx.await.unwrap();
-        assert!(!received.is_empty(), "TCP should receive data");
-
-        Ok(())
     }
 
     #[tokio::test]

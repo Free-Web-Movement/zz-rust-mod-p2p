@@ -6,7 +6,7 @@ use tokio::{
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;
-use zz_p2p::{node::Node, nodes::{servers, storage::Storeage}};
+use zz_p2p::{node::Node, nodes::{servers, storage::Storeage}, protocols::client_type::send_text_message};
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]
@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
                 let recv_for_print = receiver.clone();
                 tokio::spawn(async move {
                     let n = node_clone.lock().await;
-                    if let Err(e) = n.send_text_message(receiver, &msg).await {
+                    if let Err(e) = send_text_message(receiver, n.context.clone().unwrap(),&msg).await {
                         println!("Failed to send message: {:?}", e);
                     } else {
                         println!("Message sent to {}", recv_for_print);
