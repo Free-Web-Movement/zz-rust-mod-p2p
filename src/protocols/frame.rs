@@ -85,33 +85,6 @@ impl FrameBody {
         let cmd = Command::deserialize(&self.data)?;
         Ok(cmd)
     }
-
-    pub fn encrypt_command(&mut self, cmd: &Command, key: &[u8; 32]) -> anyhow::Result<()> {
-        let plaintext = cmd.serialize()?;
-
-        let (nonce, ciphertext) = encrypt_data(key, &plaintext)?;
-
-        self.crypto = CryptoState::Encrypted { nonce };
-        self.data_length = plaintext.len() as u32;
-        self.data = ciphertext;
-
-        Ok(())
-    }
-    pub fn command_from_data_with_crypto(&self, context: &Context) -> anyhow::Result<Command> {
-        let plaintext = match &self.crypto {
-            CryptoState::Plain => self.data.clone(),
-
-            CryptoState::Encrypted { nonce } => {
-                let session = context.session_keys
-                    .get(&self.address)
-                    .ok_or_else(|| anyhow::anyhow!("no session key for address"))?;
-
-                decrypt_data(&session.key, nonce, &self.data)?
-            }
-        };
-
-        Command::deserialize(&plaintext)
-    }
 }
 
 pub fn encrypt_data(key: &[u8; 32], plaintext: &[u8]) -> anyhow::Result<([u8; 12], Vec<u8>)> {
