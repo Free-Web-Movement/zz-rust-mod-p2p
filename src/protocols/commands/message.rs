@@ -20,15 +20,26 @@ pub struct MessageCommand {
 pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
     let from = &frame.body.address;
 
-    let data = frame.body.data.clone();
+    // 1️⃣ 先从 frame.body.data 解 Command
+    let command = match frame.body.command_from_data() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("❌ Command decode failed from {}: {:?}", from, e);
+            return;
+        }
+    };
 
-    if data.is_empty() {
-        eprintln!("❌ Empty MessageCommand from {}", from);
+    // 2️⃣ 再从 Command.data 解 MessageCommand
+    let Some(data) = command.data else {
+        eprintln!("❌ Empty command.data from {}", from);
         return;
-    }
+    };
 
-    let (cmd, _) = match
-        bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard())
+    let (msg, _) = match
+        bincode::decode_from_slice::<MessageCommand, _>(
+            &data,
+            bincode::config::standard(),
+        )
     {
         Ok(v) => v,
         Err(e) => {
@@ -37,12 +48,13 @@ pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type
         }
     };
 
-    if cmd.message.is_empty() {
-        eprintln!("❌ Empty message body from {}", from);
-        return;
-    }
-
-    println!("📨 {} → {} @ {}: {}", from, cmd.receiver, cmd.timestamp, cmd.message);
+    println!(
+        "📨 {} → {} @ {}: {}",
+        from,
+        msg.receiver,
+        msg.timestamp,
+        msg.message
+    );
 }
 
 pub async fn send_text_message(
