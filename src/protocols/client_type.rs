@@ -1,8 +1,6 @@
 use std::{ net::SocketAddr, sync::Arc };
 
 use anyhow::Error;
-use bincode::config;
-use futures::future::join_all;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
 use zz_account::address::FreeWebMovementAddress;
 
@@ -10,8 +8,7 @@ use crate::{
     consts::TCP_BUFFER_LENGTH,
     context::Context,
     handlers::ws::WebSocketHandler,
-    protocols::{ command::{ Action, Entity }, commands::message::MessageCommand, frame::Frame },
-    util::time::timestamp,
+    protocols::{ command::{ Action, Entity }, frame::Frame },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -50,23 +47,6 @@ impl StreamPair {
     pub async fn send(&self, bytes: &[u8]) {
         let mut writer = self.writer.lock().await;
         let _ = writer.write_all(&bytes).await;
-    }
-
-    pub async fn send_online(&self, address: &FreeWebMovementAddress) -> Result<(), Error> {
-        let frame = Frame::build_node_command(
-            address, // 本节点地址
-            Entity::Node,
-            Action::OnLine, // 用 ResponseAddress 表示发送自身地址
-            1,
-            Some(address.to_string().as_bytes().to_vec())
-        )?;
-        let bytes = Frame::to(frame);
-
-        let mut guard = self.writer.lock().await;
-
-        let writer = &mut *guard;
-        writer.write_all(&bytes).await?;
-        Ok(())
     }
 
     pub async fn loop_read(
@@ -177,40 +157,6 @@ pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
             }
         }
     }
-}
-
-pub async fn send_online(
-    client_type: &ClientType,
-    address: &FreeWebMovementAddress,
-    data: Option<Vec<u8>>
-) -> anyhow::Result<()> {
-    let frame = Frame::build_node_command(
-        &address, // 本节点地址
-        Entity::Node,
-        Action::OnLine, // 用 ResponseAddress 表示发送自身地址
-        1,
-        data
-    )?;
-    let bytes = Frame::to(frame);
-
-    send_bytes(client_type, &bytes).await;
-
-    Ok(())
-}
-
-pub async fn send_offline(
-    client_type: &ClientType,
-    address: &FreeWebMovementAddress,
-    data: Option<Vec<u8>>
-) -> anyhow::Result<()> {
-    // 1️⃣ 构建在线命令 Frame
-    let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
-
-    // 2️⃣ 序列化 Frame
-    let bytes = Frame::to(frame);
-    send_bytes(&client_type, &bytes).await;
-    // self.send(&bytes).await?;
-    Ok(())
 }
 
 pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
@@ -353,118 +299,5 @@ pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::R
             let _ = TcpStream::connect(format!("{}:{}", context.ip, context.port)).await;
         }
     }
-    Ok(())
-}
-
-pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context>) {
-    // ===== 2️⃣ 查本地 clients =====
-    {
-        let clients = context.clients.lock().await;
-        let conns = clients.get_connections(&receiver, true);
-
-        if !conns.is_empty() {
-            let bytes = Frame::to(frame.clone());
-            for ct in conns {
-                send_bytes(&ct, &bytes).await;
-            }
-            return; // 🚨 非常重要
-        }
-    }
-
-    // ===== 3️⃣ 查 servers，向其它服务器转发 =====
-    let servers = &context.clone().servers;
-    let servers = servers.lock().await;
-    let bytes = Frame::to(frame.clone());
-
-    if let Some(servers) = servers.connected_servers.clone() {
-        let all = servers.inner.iter().chain(servers.external.iter());
-
-        for server in all {
-            send_bytes(&server.client_type, &bytes).await;
-        }
-    }
-}
-
-// 本地Node向外发送
-pub async fn send_text_message(
-    receiver: String,
-    context: Arc<Context>,
-    message: &str
-) -> anyhow::Result<()> {
-    // 构造消息
-    let command = MessageCommand {
-        receiver: receiver.clone(),
-        timestamp: timestamp(),
-        message: message.to_string(),
-    };
-
-    // 编码成 payload
-    let payload = bincode::encode_to_vec(command, config::standard())?;
-    let frame = Frame::build_node_command(
-        &context.address,
-        Entity::Message,
-        Action::SendText,
-        1,
-        Some(payload.clone())
-    )?;
-
-    let bytes = Frame::to(frame);
-
-    println!(
-        "Node is sending text message from {} to {}: {}",
-        context.address.to_string(),
-        receiver,
-        message
-    );
-
-    // 1️⃣ 尝试本地发送
-    let clients = context.clients.lock().await;
-    let local_conns = clients.get_connections(&receiver, true);
-
-    println!("Found {} local connections for {}", local_conns.len(), receiver);
-
-    if !local_conns.is_empty() {
-        let bytes = bytes.clone();
-        // let receiver = receiver.clone();
-        let futures: Vec<_> = local_conns
-            .into_iter()
-            .map(|tcp_arc| {
-                let bytes = bytes.clone();
-                // let receiver = receiver.clone();
-                println!("local tcp stream found.");
-                tokio::spawn(async move { send_bytes(&tcp_arc, &bytes).await })
-            })
-            .collect();
-
-        // 等待全部发送完成
-        for f in futures {
-            println!("sending!");
-            let _ = f.await;
-        }
-
-        return Ok(());
-    }
-
-    // 2️⃣ 本地没有 -> 向所有已连接服务器发送
-    {
-        let servers = &context.clone().servers;
-        let servers = servers.lock().await;
-        if let Some(connected_servers) = &servers.connected_servers {
-            // 使用 iter().chain() 合并两个列表
-            let all_servers = connected_servers.inner
-                .iter()
-                .chain(connected_servers.external.iter());
-
-            let futures = all_servers.map(|server| {
-                let bytes = bytes.clone();
-                async move {
-                    let _ = send_bytes(&server.client_type, &bytes).await;
-                }
-            });
-
-            join_all(futures).await;
-        }
-    }
-
     Ok(())
 }

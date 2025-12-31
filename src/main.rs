@@ -5,7 +5,7 @@ use tokio::{
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;
-use zz_p2p::{node::Node, nodes::storage::Storeage, protocols::client_type::send_text_message};
+use zz_p2p::{node::Node, nodes::storage::Storeage, protocols::commands::message::send_text_message};
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]

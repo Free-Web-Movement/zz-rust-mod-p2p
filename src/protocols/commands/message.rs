@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use crate::context::Context;
-use crate::protocols::client_type::forward_frame;
+use crate::protocols::client_type::send_bytes;
+use crate::protocols::command::{Action, Entity};
+use crate::util::time::timestamp;
+use crate::{context::Context, protocols::frame::forward_frame};
 use crate::protocols::frame::Frame;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, config};
 
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
@@ -14,6 +17,91 @@ pub struct MessageCommand {
     pub timestamp: u128,
     pub message: String,
 }
+
+// 本地Node向外发送
+pub async fn send_text_message(
+    receiver: String,
+    context: Arc<Context>,
+    message: &str
+) -> anyhow::Result<()> {
+    // 构造消息
+    let command = MessageCommand {
+        receiver: receiver.clone(),
+        timestamp: timestamp(),
+        message: message.to_string(),
+    };
+
+    // 编码成 payload
+    let payload = bincode::encode_to_vec(command, config::standard())?;
+    let frame = Frame::build_node_command(
+        &context.address,
+        Entity::Message,
+        Action::SendText,
+        1,
+        Some(payload.clone())
+    )?;
+
+    let bytes = Frame::to(frame);
+
+    println!(
+        "Node is sending text message from {} to {}: {}",
+        context.address.to_string(),
+        receiver,
+        message
+    );
+
+    // 1️⃣ 尝试本地发送
+    let clients = context.clients.lock().await;
+    let local_conns = clients.get_connections(&receiver, true);
+
+    println!("Found {} local connections for {}", local_conns.len(), receiver);
+
+    if !local_conns.is_empty() {
+        let bytes = bytes.clone();
+        // let receiver = receiver.clone();
+        let futures: Vec<_> = local_conns
+            .into_iter()
+            .map(|tcp_arc| {
+                let bytes = bytes.clone();
+                // let receiver = receiver.clone();
+                println!("local tcp stream found.");
+                tokio::spawn(async move { send_bytes(&tcp_arc, &bytes).await })
+            })
+            .collect();
+
+        // 等待全部发送完成
+        for f in futures {
+            println!("sending!");
+            let _ = f.await;
+        }
+
+        return Ok(());
+    }
+
+    // 2️⃣ 本地没有 -> 向所有已连接服务器发送
+    {
+        let servers = &context.clone().servers;
+        let servers = servers.lock().await;
+        if let Some(connected_servers) = &servers.connected_servers {
+            // 使用 iter().chain() 合并两个列表
+            let all_servers = connected_servers.inner
+                .iter()
+                .chain(connected_servers.external.iter());
+
+            let futures = all_servers.map(|server| {
+                let bytes = bytes.clone();
+                async move {
+                    let _ = send_bytes(&server.client_type, &bytes).await;
+                }
+            });
+
+            join_all(futures).await;
+        }
+    }
+
+    Ok(())
+}
+
 
 pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
     let from = &frame.body.address;

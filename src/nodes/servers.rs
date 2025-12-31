@@ -12,8 +12,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{ loop_reading, send_offline, send_online, to_client_type },
-        defines::ProtocolCapability,
+        client_type::{ loop_reading, to_client_type }, commands::online_offline::{send_offline, send_online}, defines::ProtocolCapability
     },
 };
 

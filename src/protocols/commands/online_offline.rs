@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use zz_account::address::FreeWebMovementAddress;
+
 use crate::context::Context;
 use crate::nodes::servers::Servers;
-use crate::protocols::client_type::ClientType;
+use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::command::{Action, Entity};
 use crate::protocols::frame::Frame;
 
 pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
@@ -44,9 +47,43 @@ pub async fn on_node_offline(
     // 这里可以添加更多处理逻辑，比如注销节点、更新状态等
 }
 
+pub async fn send_online(
+    client_type: &ClientType,
+    address: &FreeWebMovementAddress,
+    data: Option<Vec<u8>>
+) -> anyhow::Result<()> {
+    let frame = Frame::build_node_command(
+        &address, // 本节点地址
+        Entity::Node,
+        Action::OnLine, // 用 ResponseAddress 表示发送自身地址
+        1,
+        data
+    )?;
+    let bytes = Frame::to(frame);
+
+    send_bytes(client_type, &bytes).await;
+
+    Ok(())
+}
+
+pub async fn send_offline(
+    client_type: &ClientType,
+    address: &FreeWebMovementAddress,
+    data: Option<Vec<u8>>
+) -> anyhow::Result<()> {
+    // 1️⃣ 构建在线命令 Frame
+    let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
+
+    // 2️⃣ 序列化 Frame
+    let bytes = Frame::to(frame);
+    send_bytes(&client_type, &bytes).await;
+    // self.send(&bytes).await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::protocols::client_type::{ send_offline, send_online, to_client_type };
+    use crate::protocols::client_type::{to_client_type };
 
     use super::*;
     use tokio::net::{ TcpListener, TcpStream };

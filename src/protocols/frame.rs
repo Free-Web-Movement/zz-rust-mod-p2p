@@ -8,7 +8,7 @@ use bincode::config;
 use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
-use crate::protocols::client_type::ClientType;
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{ Command, Entity, Action };
 use crate::protocols::commands::message::on_text_message;
 use crate::protocols::commands::online_offline::{ on_node_offline, on_node_online };
@@ -253,6 +253,57 @@ impl Frame {
         }
     }
 }
+
+
+pub async fn forward_frame(
+    receiver: String,
+    frame: &Frame,
+    context: Arc<Context>,
+) {
+    // ⚠️ 重要安全原则：
+    // - 不解密
+    // - 不反序列化 Command
+    // - 不修改 Frame
+    // - 只做字节级转发
+
+    // ===== 1️⃣ 查本地 clients =====
+    {
+        let clients = context.clients.lock().await;
+
+        // true = 包含直连 & 已认证连接
+        let conns = clients.get_connections(&receiver, true);
+
+        if !conns.is_empty() {
+            let bytes = Frame::to(frame.clone());
+
+            for ct in conns {
+                // ⚠️ 只发 bytes，不传 Frame
+                send_bytes(&ct, &bytes).await;
+            }
+
+            // 🚨 非常重要：找到就必须 return
+            // 否则会造成多路径重复转发
+            return;
+        }
+    }
+
+    // ===== 2️⃣ 查 servers，向其它服务器转发 =====
+    let servers_guard = context.servers.lock().await;
+    let bytes = Frame::to(frame.clone());
+
+    if let Some(servers) = &servers_guard.connected_servers {
+        let all = servers
+            .inner
+            .iter()
+            .chain(servers.external.iter());
+
+        for server in all {
+            // ⚠️ server.client_type 本质也是一条连接
+            send_bytes(&server.client_type, &bytes).await;
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
