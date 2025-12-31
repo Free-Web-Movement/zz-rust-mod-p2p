@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use crate::context::Context;
-use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::Action;
-use crate::protocols::{ command::Entity, frame::Frame };
+use crate::protocols::{command::Entity, frame::Frame};
 
-use bincode::{ Decode, Encode };
+use bincode::{Decode, Encode};
 
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 use zz_account::address::FreeWebMovementAddress;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
@@ -17,7 +17,7 @@ pub struct MessageCommand {
     pub message: String,
 }
 
-pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type: &ClientType) {
+pub async fn on_text_message(frame: &Frame, context: Arc<Context>, _client_type: &ClientType) {
     let from = &frame.body.address;
 
     // 1️⃣ 先从 frame.body.data 解 Command
@@ -35,40 +35,66 @@ pub async fn on_text_message(frame: &Frame, _context: Arc<Context>, _client_type
         return;
     };
 
-    let (msg, _) = match
-        bincode::decode_from_slice::<MessageCommand, _>(
-            &data,
-            bincode::config::standard(),
-        )
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
-            return;
-        }
-    };
+    let (msg, _) =
+        match bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard()) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
+                return;
+            }
+        };
 
     println!(
         "📨 {} → {} @ {}: {}",
-        from,
-        msg.receiver,
-        msg.timestamp,
-        msg.message
+        from, msg.receiver, msg.timestamp, msg.message
     );
+
+    let receiver = msg.receiver.clone();
+
+    // ===== 1️⃣ 如果 receiver 是自己 =====
+    if receiver == context.address.to_string() {
+        // ✔️ 消费消息
+        // on_text_message(frame, context, client_type).await;
+
+        // on_receive_message();
+        return;
+    }
+
+    // ===== 2️⃣ 查本地 clients =====
+    {
+        let clients = context.clients.lock().await;
+        let conns = clients.get_connections(&receiver, true);
+
+        if !conns.is_empty() {
+            let bytes = Frame::to(frame.clone());
+            for ct in conns {
+                send_bytes(&ct, &bytes).await;
+            }
+            return; // 🚨 非常重要
+        }
+    }
+
+    // ===== 3️⃣ 查 servers，向其它服务器转发 =====
+    let servers = &context.clone().servers;
+    let servers = servers.lock().await;
+    let bytes = Frame::to(frame.clone());
+
+    if let Some(servers) = servers.connected_servers.clone() {
+        let all = servers.inner.iter().chain(servers.external.iter());
+
+        for server in all {
+            send_bytes(&server.client_type, &bytes).await;
+        }
+    }
 }
 
 pub async fn send_text_message(
     client_type: &ClientType,
     address: &FreeWebMovementAddress,
-    data: Vec<u8>
+    data: Vec<u8>,
 ) -> anyhow::Result<()> {
-    let frame = Frame::build_node_command(
-        address,
-        Entity::Message,
-        Action::SendText,
-        1,
-        Some(data)
-    )?;
+    let frame =
+        Frame::build_node_command(address, Entity::Message, Action::SendText, 1, Some(data))?;
 
     let bytes = Frame::to(frame);
 
@@ -79,17 +105,19 @@ pub async fn send_text_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use tokio::net::{ TcpListener };
     use std::sync::Arc;
-    use std::time::{ SystemTime, UNIX_EPOCH };
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::net::TcpListener;
 
     use crate::context::Context;
-    use crate::protocols::client_type::{ ClientType, to_client_type };
+    use crate::nodes::net_info::{self, NetInfo};
+    use crate::nodes::servers::Servers;
+    use crate::nodes::storage::{self, Storeage};
+    use crate::protocols::client_type::{ClientType, to_client_type};
     use tokio::net::TcpStream;
 
-    use zz_account::address::FreeWebMovementAddress as Address;
     use bincode::config;
+    use zz_account::address::FreeWebMovementAddress as Address;
 
     /// 创建 TCP client/server pair，用于捕获发送的数据
     async fn tcp_pair() -> (ClientType, tokio::sync::oneshot::Receiver<Vec<u8>>) {
@@ -120,9 +148,8 @@ mod tests {
         };
 
         let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-        let (decoded, _) = bincode
-            ::decode_from_slice::<MessageCommand, _>(&encoded, config::standard())
-            .unwrap();
+        let (decoded, _) =
+            bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
 
         assert_eq!(cmd, decoded);
     }
@@ -135,7 +162,10 @@ mod tests {
 
         let cmd = MessageCommand {
             receiver: "receiver-addr".to_string(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             message: "hello tcp".to_string(),
         };
         let data = bincode::encode_to_vec(cmd, config::standard())?;
@@ -160,15 +190,20 @@ mod tests {
 
         let data = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
 
-        let frame = Frame::build_node_command(
-            &address,
-            Entity::Message,
-            Action::SendText,
-            1,
-            Some(data)
-        ).unwrap();
+        let frame =
+            Frame::build_node_command(&address, Entity::Message, Action::SendText, 1, Some(data))
+                .unwrap();
 
-        let context = Arc::new(Context::new("127.0.0.1".to_string(), 18000, Address::random()));
+        let storage = Storeage::new(None, None, None, None);
+        let net_info = NetInfo::new(1010);
+        let server = Servers::new(address, storage, net_info);
+
+        let context = Arc::new(Context::new(
+            "127.0.0.1".to_string(),
+            18000,
+            Address::random(),
+            server,
+        ));
         let dummy_client = ClientType::UDP {
             socket: Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()),
             peer: "127.0.0.1:0".parse().unwrap(),

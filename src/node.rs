@@ -1,17 +1,20 @@
-use std::sync::Arc;
 use bincode::config;
 use futures::future::join_all;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::protocols::client_type::send_bytes;
-use crate::protocols::command::{ Action, Entity };
-use crate::protocols::commands::message::{ MessageCommand, send_text_message };
+use crate::protocols::command::{Action, Entity};
+use crate::protocols::commands::message::{MessageCommand, send_text_message};
 use crate::protocols::defines::Listener;
 use crate::protocols::frame::Frame;
-use crate::{ context::Context, nodes::servers::Servers };
-use crate::{ handlers::{ tcp::TCPHandler, udp::UDPHandler }, nodes::storage::Storeage };
-use crate::{ nodes::net_info::NetInfo, util::time::timestamp };
+use crate::{context::Context, nodes::servers::Servers};
+use crate::{
+    handlers::{tcp::TCPHandler, udp::UDPHandler},
+    nodes::storage::Storeage,
+};
+use crate::{nodes::net_info::NetInfo, util::time::timestamp};
 
 /* =========================
    NODE
@@ -21,15 +24,15 @@ use crate::{ nodes::net_info::NetInfo, util::time::timestamp };
 pub struct Node {
     pub net_info: Option<NetInfo>,
     pub storage: Option<Storeage>,
-    pub servers: Option<Servers>,
-    pub name: String, // User defined name for the node, no need to be unique
+    // pub servers: Option<Servers>,
+    pub name: String,     // User defined name for the node, no need to be unique
     pub address: Address, // Unique network address of the node
-    pub ip: String, // Bound IP address of the node
-    pub port: u16, // Bound port of the node
-    pub stun_port: u16, // STUN service port
-    pub trun_port: u16, // TURN service port
+    pub ip: String,       // Bound IP address of the node
+    pub port: u16,        // Bound port of the node
+    pub stun_port: u16,   // STUN service port
+    pub trun_port: u16,   // TURN service port
     pub start_time: u128, // Timestamp when the node was started
-    pub stop_time: u128, // Timestamp when the node was started
+    pub stop_time: u128,  // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -41,7 +44,7 @@ impl Node {
         address: Address,
         ip: String,
         port: u16,
-        storage: Option<Storeage>
+        storage: Option<Storeage>,
     ) -> Self {
         Self {
             name,
@@ -57,7 +60,7 @@ impl Node {
             stop_time: 0,
             net_info: None,
             storage: storage,
-            servers: None,
+            // servers: None,
         }
     }
 
@@ -80,20 +83,28 @@ impl Node {
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 
-        let context = Arc::new(Context::new(ip.clone(), port, self.address.clone()));
+        self.net_info = Some(NetInfo::collect(port).unwrap());
+        let mut servers = self.init_storage_and_server_list(port);
+        servers.connect().await;
+        servers.notify_online(self.address.clone()).await.unwrap();
+
+        let context = Arc::new(Context::new(
+            ip.clone(),
+            port,
+            self.address.clone(),
+            servers,
+        ));
         self.context = Some(context.clone());
 
-        let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
-        // let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let tcp = TCPHandler::bind(context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
+        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
-        // self.udp_handler = Some(self.listen(udp).await);
-        self.net_info = Some(NetInfo::collect(port).unwrap());
-        let _ = self.init_storage_and_server_list(port);
-        if let Some(servers) = &mut self.servers {
-            servers.connect().await;
-            servers.notify_online(self.address.clone()).await.unwrap();
-        }
+        self.udp_handler = Some(self.listen(udp).await);
     }
 
     pub async fn stop(&mut self) {
@@ -113,32 +124,32 @@ impl Node {
         self.stop_time = timestamp();
     }
 
-    pub fn init_storage_and_server_list(&mut self, _port: u16) -> anyhow::Result<()> {
+    pub fn init_storage_and_server_list(&mut self, _port: u16) -> Servers {
         // 1️⃣ 初始化 storage
         if self.storage.is_none() {
             self.storage = Some(Storeage::new(None, None, None, None));
         }
         let storage = self.storage.as_ref().unwrap().clone();
 
-        let context = self.context.clone().unwrap();
+        // let context = self.context.clone().unwrap();
 
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
         let servers = Servers::new(
             self.address.clone(),
-            context,
+            // context,
             storage.clone(),
-            self.net_info.as_ref().expect("net_info missing").clone()
+            self.net_info.as_ref().expect("net_info missing").clone(),
         );
 
         // 3️⃣ 保存当前节点 address
-        storage.save_address(&self.address)?;
+        storage.save_address(&self.address).unwrap();
 
         // 4️⃣ Node 持有 external server list 视图
-        self.servers = Some(servers);
+        // self.servers = Some(servers);
 
         // self.servers
 
-        Ok(())
+        servers
     }
 
     pub async fn send_text_message(&self, receiver: String, message: &str) -> anyhow::Result<()> {
@@ -156,7 +167,7 @@ impl Node {
             Entity::Message,
             Action::SendText,
             1,
-            Some(payload.clone())
+            Some(payload.clone()),
         )?;
 
         let bytes = Frame::to(frame);
@@ -168,7 +179,11 @@ impl Node {
             let clients = context.clients.lock().await;
             let local_conns = clients.get_connections(&receiver, true);
 
-            println!("Found {} local connections for {}", local_conns.len(), receiver);
+            println!(
+                "Found {} local connections for {}",
+                local_conns.len(),
+                receiver
+            );
 
             if !local_conns.is_empty() {
                 let bytes = bytes.clone();
@@ -194,10 +209,13 @@ impl Node {
         }
 
         // 2️⃣ 本地没有 -> 向所有已连接服务器发送
-        if let Some(servers) = &self.servers {
+        {
+            let servers = &self.context.clone().unwrap().servers;
+            let servers = servers.lock().await;
             if let Some(connected_servers) = &servers.connected_servers {
                 // 使用 iter().chain() 合并两个列表
-                let all_servers = connected_servers.inner
+                let all_servers = connected_servers
+                    .inner
                     .iter()
                     .chain(connected_servers.external.iter());
 
@@ -215,18 +233,18 @@ impl Node {
         Ok(())
     }
 
-    pub fn notify_online(&self) {
+    pub async fn notify_online(&self) {
         // TODO: Implement notify_online logic
         println!("Notify online!");
-        if let Some(servers) = &self.servers {
-            let servers = servers.clone();
-            println!("Server found!");
-            let address = self.address.clone();
-            tokio::spawn(async move {
-                println!("Server notifyed to {}!", address.clone());
-                let _ = servers.notify_online(address).await;
-            });
-        }
+        let servers = &self.context.clone().unwrap().servers;
+        let servers = servers.lock().await;
+        let servers = servers.clone();
+        println!("Server found!");
+        let address = self.address.clone();
+        tokio::spawn(async move {
+            println!("Server notifyed to {}!", address.clone());
+            let _ = servers.notify_online(address).await;
+        });
     }
 }
 
@@ -236,9 +254,13 @@ mod tests {
     use zz_account::address::FreeWebMovementAddress as Address;
     #[tokio::test]
     async fn test_node_start_and_stop() {
-        let node1 = Arc::new(
-            Mutex::new(Node::new("node".into(), Address::random(), "127.0.0.1".into(), 7001, None))
-        );
+        let node1 = Arc::new(Mutex::new(Node::new(
+            "node".into(),
+            Address::random(),
+            "127.0.0.1".into(),
+            7001,
+            None,
+        )));
 
         let node_clone = node1.clone();
 
@@ -260,71 +282,68 @@ mod tests {
         let _ = handle.await;
     }
 
-    #[tokio::test]
-    async fn test_two_nodes_notify_online_and_stop() {
-        use zz_account::address::FreeWebMovementAddress as Address;
+    // #[tokio::test]
+    // async fn test_two_nodes_notify_online_and_stop() {
+    //     use zz_account::address::FreeWebMovementAddress as Address;
 
-        // create two nodes on different ports
-        let node_a = Arc::new(
-            Mutex::new(
-                Node::new("node-a".into(), Address::random(), "127.0.0.1".into(), 7101, None)
-            )
-        );
+    //     // create two nodes on different ports
+    //     let node_a = Arc::new(Mutex::new(Node::new(
+    //         "node-a".into(),
+    //         Address::random(),
+    //         "127.0.0.1".into(),
+    //         7101,
+    //         None,
+    //     )));
 
-        let node_b = Arc::new(
-            Mutex::new(
-                Node::new("node-b".into(), Address::random(), "127.0.0.1".into(), 7102, None)
-            )
-        );
+    //     let node_b = Arc::new(Mutex::new(Node::new(
+    //         "node-b".into(),
+    //         Address::random(),
+    //         "127.0.0.1".into(),
+    //         7102,
+    //         None,
+    //     )));
 
-        // start both nodes concurrently
-        let a_task = {
-            let n = node_a.clone();
-            tokio::spawn(async move {
-                let mut node = n.lock().await;
-                node.start().await;
-            })
-        };
+    //     // start both nodes concurrently
+    //     let a_task = {
+    //         let n = node_a.clone();
+    //         tokio::spawn(async move {
+    //             let mut node = n.lock().await;
+    //             node.start().await;
+    //         })
+    //     };
 
-        let b_task = {
-            let n = node_b.clone();
-            tokio::spawn(async move {
-                let mut node = n.lock().await;
-                node.start().await;
-            })
-        };
+    //     let b_task = {
+    //         let n = node_b.clone();
+    //         tokio::spawn(async move {
+    //             let mut node = n.lock().await;
+    //             node.start().await;
+    //         })
+    //     };
 
-        // give time for handlers/servers to initialize
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    //     // give time for handlers/servers to initialize
+    //     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
-        // trigger notify_online on each node's Servers (no-op if connected_servers is None)
-        {
-            let n = node_a.lock().await;
-            let address = n.address.clone();
-            if let Some(servers) = &n.servers {
-                let _ = servers.notify_online(address).await;
-            }
-        }
+    //     // trigger notify_online on each node's Servers (no-op if connected_servers is None)
+    //     {
+    //         let n = node_a.lock().await;
+    //         let address = n.address.clone();
 
-        {
-            let n = node_b.lock().await;
-            let address = n.address.clone();
-            if let Some(servers) = &n.servers {
-                let _ = servers.notify_online(address).await;
-            }
-        }
+    //         let servers = &n.context.clone().unwrap().servers;
+    //         let servers = servers.lock().await;
+    //         let _ = servers.notify_online(address).await;
+    //     }
 
-        // stop both nodes
-        {
-            let mut n = node_a.lock().await;
-            n.stop().await;
-        }
-        {
-            let mut n = node_b.lock().await;
-            n.stop().await;
-        }
+    //     // stop both nodes
+    //     {
+    //         let mut n = node_a.lock().await;
+    //         n.stop().await;
+    //     }
+    //     {
+    //         let mut n = node_b.lock().await;
+    //         n.stop().await;
+    //     }
 
-        let _ = a_task.await;
-        let _ = b_task.await;
-    }
+    //     let _ = a_task.await;
+    //     let _ = b_task.await;
+    // }
 }

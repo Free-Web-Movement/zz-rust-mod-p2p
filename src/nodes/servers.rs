@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    context::Context,
+    context::{self, Context},
     nodes::{
         connected_servers::{ ConnectedServer, ConnectedServers },
         net_info,
@@ -33,13 +33,13 @@ pub struct Servers {
     pub external_connected: Vec<NodeRecord>,
     pub connected_servers: Option<ConnectedServers>,
     pub address: FreeWebMovementAddress,
-    context: Arc<Context>,
+    // context: Arc<Context>,
 }
 
 impl Servers {
     pub fn new(
         address: FreeWebMovementAddress,
-        context: Arc<Context>,
+        // context: Arc<Context>,
         storage: storage::Storeage,
         net_info: net_info::NetInfo
     ) -> Self {
@@ -89,7 +89,7 @@ impl Servers {
             external_connected: Vec::new(),
             connected_servers: None,
             address,
-            context,
+            // context,
         }
     }
 
@@ -99,7 +99,7 @@ impl Servers {
         );
     }
     /// 连接到指定节点，并加入 connected_servers，同时持续接收消息
-    pub async fn connect_to_node(&mut self, ip: &str, port: u16) -> Result<()> {
+    pub async fn connect_to_node(&mut self, ip: &str, port: u16, context: &Arc<Context>) -> Result<()> {
         println!("Connect to node: {}:{}", ip, port);
         // 构造 socket 地址
         let addr: SocketAddr = format!("{}:{}", ip, port).parse()?;
@@ -149,7 +149,7 @@ impl Servers {
         println!("start loop reading");
 
         // Clone the Arc<Context> so we can move it into the spawned task without borrowing self.
-        let context = Arc::clone(&self.context);
+        let context = Arc::clone(&context);
         tokio::spawn(async move {
             // Move-owned `stream` and `context` are referenced inside the async block,
             // so no non-'static borrow from `self` escapes.
@@ -398,7 +398,6 @@ mod tests {
     #[test]
     fn test_add_inner_and_external_server() {
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new("127.0.0.1".to_string(), 10000, address.clone()));
         let mut servers = Servers {
             inner: vec![],
             external: vec![],
@@ -410,7 +409,6 @@ mod tests {
             external_connected: Vec::new(),
             connected_servers: None,
             address,
-            context,
         };
 
         let a: NodeRecord = node([10, 0, 0, 1], 1111);
@@ -431,7 +429,6 @@ mod tests {
     #[test]
     fn test_get_all_endpoints() {
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new("127.0.0.1".to_string(), 10000, address.clone()));
 
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
@@ -444,7 +441,6 @@ mod tests {
             external_connected: Vec::new(),
             connected_servers: None,
             address,
-            context,
         };
 
         let eps = servers.get_all_endpoints();
@@ -454,7 +450,6 @@ mod tests {
     #[test]
     fn test_get_external_endpoints() {
         let address = FreeWebMovementAddress::random();
-        let context = Arc::new(Context::new("127.0.0.1".to_string(), 10000, address.clone()));
 
         let servers = Servers {
             inner: vec![node([127, 0, 0, 1], 1000)],
@@ -467,7 +462,6 @@ mod tests {
             external_connected: Vec::new(),
             connected_servers: None,
             address,
-            context,
         };
 
         let eps = servers.get_external_endpoints();

@@ -1,11 +1,12 @@
 use clap::Parser;
+use tokio_tungstenite::tungstenite::handshake::server;
 use std::sync::Arc;
 use tokio::{
     io::{self, AsyncBufReadExt, BufReader},
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;
-use zz_p2p::{node::Node, nodes::storage::Storeage};
+use zz_p2p::{node::Node, nodes::{servers, storage::Storeage}};
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]
@@ -121,11 +122,14 @@ async fn main() -> anyhow::Result<()> {
 
                     let node_clone = node.clone();
                     tokio::spawn(async move {
-                        let mut n = node_clone.lock().await;
+                        let n = node_clone.lock().await;
                         // let node = n.clone();
-                        if let Some(servers) = &mut n.servers {
+                        if let Some(context) = &n.context {
+                            let servers = &context.servers;
+                            // let mut servers = servers_mutex.lock().await;
                             // 调用你的连接函数
-                            match servers.connect_to_node(ip.as_str(), port).await {
+                            let mut servers_guard = servers.lock().await;
+                            match servers_guard.connect_to_node(ip.as_str(), port, &context).await {
                                 Ok(_) => {
                                     println!("Connected to {}:{}", ip, port);
                                 }
@@ -157,9 +161,10 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                if let Some(servers) = &n.servers {
+                if let Some(context) = &n.context {
                     println!("Connected servers:");
-                    if let Some(connected) = &servers.connected_servers {
+                    let servers_guard = context.servers.lock().await;
+                    if let Some(connected) = &servers_guard.connected_servers {
                         for s in connected.inner.iter().chain(connected.external.iter()) {
                             println!(" - {}", s.record.endpoint);
                         }

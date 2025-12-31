@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::nodes::connected_clients::ConnectedClients;
+use crate::nodes::{connected_clients::ConnectedClients, servers::Servers};
 
 pub struct Context {
     pub ip: String,
@@ -14,10 +14,11 @@ pub struct Context {
     pub clients: Mutex<ConnectedClients>,
     pub global: Value,
     pub local: Value,
+    pub servers: Mutex<Servers>,
 }
 
 impl Context {
-    pub fn new(ip: String, port: u16, address: Address) -> Self {
+    pub fn new(ip: String, port: u16, address: Address, servers: Servers) -> Self {
         Self {
             ip,
             port,
@@ -26,6 +27,7 @@ impl Context {
             clients: Mutex::new(ConnectedClients::new()),
             global: Value::Object(serde_json::Map::new()),
             local: Value::Object(serde_json::Map::new()),
+            servers: Mutex::new(servers)
         }
     }
 }
