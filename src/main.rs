@@ -1,12 +1,11 @@
 use clap::Parser;
-use tokio_tungstenite::tungstenite::handshake::server;
 use std::sync::Arc;
 use tokio::{
     io::{self, AsyncBufReadExt, BufReader},
     sync::Mutex,
 };
 use zz_account::address::FreeWebMovementAddress as Address;
-use zz_p2p::{node::Node, nodes::{servers, storage::Storeage}, protocols::client_type::send_text_message};
+use zz_p2p::{node::Node, nodes::storage::Storeage, protocols::client_type::send_text_message};
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]

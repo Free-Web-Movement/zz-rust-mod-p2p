@@ -78,7 +78,7 @@ impl Node {
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 
         self.net_info = Some(NetInfo::collect(port).unwrap());
-        let mut servers = self.init_storage_and_server_list(port);
+        let mut servers = self.init_storage_and_servers(port);
         servers.connect().await;
         servers.notify_online(self.address.clone()).await.unwrap();
 
@@ -118,31 +118,22 @@ impl Node {
         self.stop_time = timestamp();
     }
 
-    pub fn init_storage_and_server_list(&mut self, _port: u16) -> Servers {
+    pub fn init_storage_and_servers(&mut self, _port: u16) -> Servers {
         // 1️⃣ 初始化 storage
         if self.storage.is_none() {
             self.storage = Some(Storeage::new(None, None, None, None));
         }
         let storage = self.storage.as_ref().unwrap().clone();
 
-        // let context = self.context.clone().unwrap();
-
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
         let servers = Servers::new(
             self.address.clone(),
-            // context,
             storage.clone(),
             self.net_info.as_ref().expect("net_info missing").clone(),
         );
 
         // 3️⃣ 保存当前节点 address
         storage.save_address(&self.address).unwrap();
-
-        // 4️⃣ Node 持有 external server list 视图
-        // self.servers = Some(servers);
-
-        // self.servers
-
         servers
     }
 
@@ -194,69 +185,4 @@ mod tests {
 
         let _ = handle.await;
     }
-
-    // #[tokio::test]
-    // async fn test_two_nodes_notify_online_and_stop() {
-    //     use zz_account::address::FreeWebMovementAddress as Address;
-
-    //     // create two nodes on different ports
-    //     let node_a = Arc::new(Mutex::new(Node::new(
-    //         "node-a".into(),
-    //         Address::random(),
-    //         "127.0.0.1".into(),
-    //         7101,
-    //         None,
-    //     )));
-
-    //     let node_b = Arc::new(Mutex::new(Node::new(
-    //         "node-b".into(),
-    //         Address::random(),
-    //         "127.0.0.1".into(),
-    //         7102,
-    //         None,
-    //     )));
-
-    //     // start both nodes concurrently
-    //     let a_task = {
-    //         let n = node_a.clone();
-    //         tokio::spawn(async move {
-    //             let mut node = n.lock().await;
-    //             node.start().await;
-    //         })
-    //     };
-
-    //     let b_task = {
-    //         let n = node_b.clone();
-    //         tokio::spawn(async move {
-    //             let mut node = n.lock().await;
-    //             node.start().await;
-    //         })
-    //     };
-
-    //     // give time for handlers/servers to initialize
-    //     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-
-    //     // trigger notify_online on each node's Servers (no-op if connected_servers is None)
-    //     {
-    //         let n = node_a.lock().await;
-    //         let address = n.address.clone();
-
-    //         let servers = &n.context.clone().unwrap().servers;
-    //         let servers = servers.lock().await;
-    //         let _ = servers.notify_online(address).await;
-    //     }
-
-    //     // stop both nodes
-    //     {
-    //         let mut n = node_a.lock().await;
-    //         n.stop().await;
-    //     }
-    //     {
-    //         let mut n = node_b.lock().await;
-    //         n.stop().await;
-    //     }
-
-    //     let _ = a_task.await;
-    //     let _ = b_task.await;
-    // }
 }

@@ -3,8 +3,13 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
+use std::collections::HashMap;
 
-use crate::nodes::{connected_clients::ConnectedClients, servers::Servers};
+use crate::nodes::{ connected_clients::ConnectedClients, servers::Servers };
+
+pub struct SessionKey {
+    pub key: [u8; 32],
+}
 
 pub struct Context {
     pub ip: String,
@@ -15,6 +20,7 @@ pub struct Context {
     pub global: Value,
     pub local: Value,
     pub servers: Mutex<Servers>,
+    pub session_keys: HashMap<String, SessionKey>,
 }
 
 impl Context {
@@ -27,7 +33,8 @@ impl Context {
             clients: Mutex::new(ConnectedClients::new()),
             global: Value::Object(serde_json::Map::new()),
             local: Value::Object(serde_json::Map::new()),
-            servers: Mutex::new(servers)
+            servers: Mutex::new(servers),
+            session_keys: HashMap::new()
         }
     }
 }

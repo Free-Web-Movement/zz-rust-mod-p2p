@@ -66,33 +66,16 @@ pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
 
 }
 
-// pub async fn send_text_message(
-//     client_type: &ClientType,
-//     address: &FreeWebMovementAddress,
-//     data: Vec<u8>,
-// ) -> anyhow::Result<()> {
-//     let frame =
-//         Frame::build_node_command(address, Entity::Message, Action::SendText, 1, Some(data))?;
-
-//     let bytes = Frame::to(frame);
-
-//     println!("send bytes: {:?}", bytes);
-
-//     send_bytes(client_type, &bytes).await;
-//     Ok(())
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::net::TcpListener;
 
     use crate::context::Context;
-    use crate::nodes::net_info::{self, NetInfo};
+    use crate::nodes::net_info::NetInfo;
     use crate::nodes::servers::Servers;
-    use crate::nodes::storage::{self, Storeage};
+    use crate::nodes::storage::Storeage;
     use crate::protocols::client_type::{ClientType, to_client_type};
     use crate::protocols::command::{Action, Entity};
     use tokio::net::TcpStream;
@@ -161,10 +144,6 @@ mod tests {
             Address::random(),
             server,
         ));
-        let dummy_client = ClientType::UDP {
-            socket: Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()),
-            peer: "127.0.0.1:0".parse().unwrap(),
-        };
 
         // 只要不 panic、不提前 return 即视为通过
         on_text_message(&frame, context).await;

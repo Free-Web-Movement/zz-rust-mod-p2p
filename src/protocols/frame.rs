@@ -12,11 +12,23 @@ use crate::protocols::client_type::ClientType;
 use crate::protocols::command::{ Command, Entity, Action };
 use crate::protocols::commands::message::on_text_message;
 use crate::protocols::commands::online_offline::{ on_node_offline, on_node_online };
+use chacha20poly1305::{ aead::{ Aead, KeyInit }, ChaCha20Poly1305, Key, Nonce };
 
 /// ⚠️ 不要写返回类型！
 #[inline]
 pub fn frame_config() -> impl bincode::config::Config {
     config::standard().with_fixed_int_encoding().with_big_endian()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CryptoState {
+    /// 明文（仅用于 Online / Offline / KeyExchange）
+    Plain,
+
+    /// 使用地址绑定的临时会话密钥
+    Encrypted {
+        nonce: [u8; 12], // AEAD nonce
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +44,8 @@ pub struct FrameBody {
 
     /// 防重放随机数
     pub nonce: u64,
+
+    pub crypto: CryptoState, // ⭐ 新增
 
     /// 明文长度
     pub data_length: u32,
@@ -55,6 +69,7 @@ impl FrameBody {
             address,
             public_key,
             nonce,
+            crypto: CryptoState::Plain,
             data_length,
             data,
         }
@@ -70,6 +85,58 @@ impl FrameBody {
         let cmd = Command::deserialize(&self.data)?;
         Ok(cmd)
     }
+
+    pub fn encrypt_command(&mut self, cmd: &Command, key: &[u8; 32]) -> anyhow::Result<()> {
+        let plaintext = cmd.serialize()?;
+
+        let (nonce, ciphertext) = encrypt_data(key, &plaintext)?;
+
+        self.crypto = CryptoState::Encrypted { nonce };
+        self.data_length = plaintext.len() as u32;
+        self.data = ciphertext;
+
+        Ok(())
+    }
+    pub fn command_from_data_with_crypto(&self, context: &Context) -> anyhow::Result<Command> {
+        let plaintext = match &self.crypto {
+            CryptoState::Plain => self.data.clone(),
+
+            CryptoState::Encrypted { nonce } => {
+                let session = context.session_keys
+                    .get(&self.address)
+                    .ok_or_else(|| anyhow::anyhow!("no session key for address"))?;
+
+                decrypt_data(&session.key, nonce, &self.data)?
+            }
+        };
+
+        Command::deserialize(&plaintext)
+    }
+}
+
+pub fn encrypt_data(key: &[u8; 32], plaintext: &[u8]) -> anyhow::Result<([u8; 12], Vec<u8>)> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+
+    let nonce: [u8; 12] = rand::random();
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce), plaintext)
+        .map_err(|_| anyhow::anyhow!("encrypt failed"))?;
+
+    Ok((nonce, ciphertext))
+}
+
+pub fn decrypt_data(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8]
+) -> anyhow::Result<Vec<u8>> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(nonce), ciphertext)
+        .map_err(|_| anyhow::anyhow!("decrypt failed"))?;
+
+    Ok(plaintext)
 }
 
 /// 端到端安全帧（只做加密与校验）
@@ -139,13 +206,14 @@ impl Frame {
             nonce: rand::thread_rng().r#gen(),
             data_length: cmd_bytes.len() as u32,
             version,
+            crypto: CryptoState::Plain,
             data: cmd_bytes,
         };
         Ok(Frame::sign(body, address)?)
     }
 
     pub async fn on(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
-      println!("inside on data!");
+        println!("inside on data!");
         // 1️⃣ 解 Command
         let cmd = match frame.body.command_from_data() {
             Ok(c) => c,
@@ -184,7 +252,6 @@ impl Frame {
             }
         }
     }
-
 }
 
 #[cfg(test)]
@@ -192,6 +259,40 @@ mod tests {
     use super::*;
     use crate::protocols::command::{ Entity, Action };
     use zz_account::address::FreeWebMovementAddress;
+
+    #[test]
+    fn test_encrypt_decrypt_ok() {
+        let key = [7u8; 32];
+        let plaintext = b"hello freewebmovement";
+
+        let (nonce, cipher) = encrypt_data(&key, plaintext).unwrap();
+        let decrypted = decrypt_data(&key, &nonce, &cipher).unwrap();
+
+        assert_eq!(plaintext.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_decrypt_with_wrong_key_fail() {
+        let key1 = [1u8; 32];
+        let key2 = [2u8; 32];
+        let plaintext = b"secret message";
+
+        let (nonce, cipher) = encrypt_data(&key1, plaintext).unwrap();
+        let result = decrypt_data(&key2, &nonce, &cipher);
+
+        assert!(result.is_err());
+    }
+
+    fn test_decrypt_with_wrong_nonce_fail() {
+        let key = [9u8; 32];
+        let plaintext = b"attack at dawn";
+
+        let (mut nonce, cipher) = encrypt_data(&key, plaintext).unwrap();
+        nonce[0] ^= 0xff;
+
+        let result = decrypt_data(&key, &nonce, &cipher);
+        assert!(result.is_err());
+    }
 
     #[tokio::test]
     async fn test_frame_sign_and_verify() -> anyhow::Result<()> {
@@ -204,6 +305,7 @@ mod tests {
             address: identity.to_string(),
             public_key: identity.public_key.to_bytes(),
             nonce: 42,
+            crypto: CryptoState::Plain,
             data_length: 5,
             data: b"hello".to_vec(),
         };

@@ -28,6 +28,7 @@ chrono = { version = "0.4", features = ["serde"] }
 bitflags = { version = "2.10.0", features = ["serde"] }
 if-addrs = "0.14.0"
 tracing = "0.1.44"
+chacha20poly1305 = "0.10.1"
 
 
 [dev-dependencies]
