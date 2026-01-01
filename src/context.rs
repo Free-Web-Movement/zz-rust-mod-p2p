@@ -5,7 +5,10 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::{nodes::{connected_clients::ConnectedClients, servers::Servers}, protocols::session_key::SessionKey};
+use crate::{
+    nodes::{connected_clients::ConnectedClients, servers::Servers},
+    protocols::session_key::SessionKey,
+};
 
 pub struct Context {
     pub ip: String,
@@ -17,6 +20,7 @@ pub struct Context {
     pub local: Value,
     pub servers: Mutex<Servers>,
     pub session_keys: Mutex<HashMap<String, SessionKey>>,
+    pub temp_sessions: Mutex<HashMap<[u8; 16], SessionKey>>, // 临时 session_id → SessionKey
 }
 
 impl Context {
@@ -31,6 +35,7 @@ impl Context {
             local: Value::Object(serde_json::Map::new()),
             servers: Mutex::new(servers),
             session_keys: Mutex::new(HashMap::new()),
+            temp_sessions: Mutex::new(HashMap::new()),
         }
     }
 }
