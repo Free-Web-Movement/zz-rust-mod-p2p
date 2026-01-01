@@ -284,4 +284,73 @@ mod tests {
 
         assert!(err.to_string().contains("session not found"));
     }
+
+    #[tokio::test]
+    async fn test_online_ack_with_session_id_binding() -> Result<()> {
+        // A = 发起方，S = 接收方（服务器 / 对端）
+        let ctx_a = dummy_context();
+        let ctx_s = dummy_context();
+
+        let addr_a = "addr-A".to_string();
+        let addr_s = "addr-S".to_string();
+
+        /* ---------------- A: create temp session ---------------- */
+
+        let session_id = ctx_a.create_temp_session().await;
+
+        let a_public = {
+            let map = ctx_a.temp_sessions.lock().await;
+            map.get(&session_id).expect("A temp session exists").ephemeral_public
+        };
+
+        /* ---------------- S: receive ONLINE ---------------- */
+        /*
+        关键点：
+        - S 不能直接 move 到 permanent
+        - S 必须也用 session_id 暂存
+    */
+        let sk_s = SessionKey::new();
+        ctx_s.temp_sessions.lock().await.insert(session_id, sk_s);
+
+        let s_public = {
+            let map = ctx_s.temp_sessions.lock().await;
+            map.get(&session_id).expect("S temp session exists").ephemeral_public
+        };
+
+        /* ---------------- S -> A : ONLINE_ACK ---------------- */
+        /*
+        ACK 内容语义上等价于：
+        {
+            session_id,
+            address: S,
+            public_key: s_public
+        }
+    */
+
+        /* ---------------- A: receive ACK ---------------- */
+
+        ctx_a
+            .move_temp_to_permanent(session_id, addr_s.clone()).await
+            .expect("A move temp -> permanent");
+
+        ctx_a.session_establish(&addr_s, &s_public).await.expect("A establish");
+
+        /* ---------------- S: finalize after ACK ---------------- */
+
+        ctx_s
+            .move_temp_to_permanent(session_id, addr_a.clone()).await
+            .expect("S move temp -> permanent");
+
+        ctx_s.session_establish(&addr_a, &a_public).await.expect("S establish");
+
+        /* ---------------- verify secure channel ---------------- */
+
+        let msg = b"hello via established session";
+        let ct = ctx_a.session_enc(&addr_s, msg).await?;
+        let pt = ctx_s.session_dec(&addr_a, &ct).await?;
+
+        assert_eq!(pt, msg);
+
+        Ok(())
+    }
 }
