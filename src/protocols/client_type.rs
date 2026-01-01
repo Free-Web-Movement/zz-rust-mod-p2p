@@ -1,8 +1,6 @@
 use std::{ net::SocketAddr, sync::Arc };
 
-use anyhow::Error;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
-use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     consts::TCP_BUFFER_LENGTH,

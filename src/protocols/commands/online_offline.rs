@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
@@ -7,6 +9,14 @@ use crate::nodes::servers::Servers;
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::frame::Frame;
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
+pub struct OnlineCommand {
+    pub endpoints: Vec<u8>,
+    pub ephemeral_public_key: [u8;32],
+}
 
 pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
     println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
