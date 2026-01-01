@@ -4,20 +4,16 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, rand_core},
 };
 use rand_core::{OsRng, RngCore};
-use serde_json::Value;
-
-use std::collections::HashMap;
-use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 use x25519_dalek::{EphemeralSecret, PublicKey};
-use zz_account::address::FreeWebMovementAddress as Address;
 
-use crate::nodes::{connected_clients::ConnectedClients, servers::Servers};
+use crate::util::time::timestamp;
 
 pub struct SessionKey {
     pub key: Option<[u8; 32]>,                     // 对称 session_key
     pub ephemeral_secret: Option<EphemeralSecret>, // 一次性
     pub ephemeral_public: PublicKey,               // 可缓存
+    pub created_at: u128,
+    pub updated_at: u128,
 }
 
 impl SessionKey {
@@ -30,7 +26,19 @@ impl SessionKey {
             key: None,
             ephemeral_secret: Some(secret),
             ephemeral_public: public,
+            created_at: timestamp(),
+            updated_at: timestamp()
         }
+    }
+
+        #[inline]
+    pub fn touch(&mut self) {
+        self.updated_at = timestamp();
+    }
+
+    #[inline]
+    pub fn is_expired(&self, ttl_ms: u128) -> bool {
+        timestamp().saturating_sub(self.updated_at) > ttl_ms
     }
 
     pub fn establish(&mut self, peer_public: &PublicKey) -> Result<()> {
