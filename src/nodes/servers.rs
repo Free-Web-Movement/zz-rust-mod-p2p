@@ -315,6 +315,8 @@ impl Servers {
 
             let inner_bytes = inner_cmd.to_bytes();
 
+            println!("inner bytes: {:?}", inner_bytes);
+
             self.notify_online_servers(address.clone(), Some(inner_bytes), &connections.inner)
                 .await;
 
@@ -328,6 +330,7 @@ impl Servers {
             };
 
             let external_bytes = external_cmd.to_bytes();
+            println!("external bytes: {:?}", external_bytes);
 
             self.notify_online_servers(
                 address.clone(),

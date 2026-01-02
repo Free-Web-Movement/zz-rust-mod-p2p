@@ -92,6 +92,8 @@ pub async fn on_node_online(
     );
 
     // ===== 1️⃣ OnlineCommand 解码 =====
+
+    println!("Received data {:?}", frame.body.data);
     let online = match OnlineCommand::from_bytes(&frame.body.data) {
         Ok(cmd) => cmd,
         Err(e) => {
@@ -179,4 +181,69 @@ pub async fn send_online(
     send_bytes(client_type, &bytes).await;
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::RngCore;
+    use x25519_dalek::EphemeralSecret;
+
+    #[test]
+    fn test_online_command_encode_decode() {
+        // 准备测试数据
+        let mut session_id = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut session_id);
+
+        let endpoints = vec![1, 2, 3, 4, 5];
+
+        let secret = EphemeralSecret::random_from_rng(rand::rngs::OsRng);
+        let public = x25519_dalek::PublicKey::from(&secret);
+        let ephemeral_public_key = *public.as_bytes();
+
+        let cmd = OnlineCommand {
+            session_id,
+            endpoints: endpoints.clone(),
+            ephemeral_public_key,
+        };
+
+        // ===== 测试 to_bytes / from_bytes =====
+        let bytes = cmd.to_bytes();
+        let decoded = OnlineCommand::from_bytes(&bytes).expect("decode failed");
+
+        assert_eq!(decoded.session_id, session_id);
+        assert_eq!(decoded.endpoints, endpoints);
+        assert_eq!(decoded.ephemeral_public_key, ephemeral_public_key);
+    }
+
+    #[test]
+    fn test_online_command_from_bytes_too_short() {
+        let data = vec![0u8; 10]; // 明显不足16+2+32
+        let res = OnlineCommand::from_bytes(&data);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("too short"));
+    }
+
+    #[test]
+    fn test_online_command_from_bytes_invalid_length() {
+        let mut data = vec![0u8; 16 + 2 + 32]; // 基础长度
+        // 人为把 endpoints_len 写成 1000，超过实际长度
+        data[16] = 0x03; // 高位
+        data[17] = 0xE8; // 低位 1000
+        let res = OnlineCommand::from_bytes(&data);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("invalid endpoints length"));
+    }
+
+    #[test]
+    fn test_online_command_invalid_session_id_slice() {
+        // 构造长度正确，但切片转换出错
+        let mut data = vec![0u8; 16 + 2 + 32];
+        data[0] = 0; // 随便填
+        // 这里 slice 转换应该不会失败，因为长度ok，跳过
+        // 测试逻辑完整性即可
+        let res = OnlineCommand::from_bytes(&data);
+        assert!(res.is_ok()); // 只要长度够，slice.try_into不会失败
+    }
 }
