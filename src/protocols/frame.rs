@@ -11,7 +11,8 @@ use crate::context::Context;
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{ Command, Entity, Action };
 use crate::protocols::commands::message::on_text_message;
-use crate::protocols::commands::online_offline::{ on_node_offline, on_node_online };
+use crate::protocols::commands::offline::on_node_offline;
+use crate::protocols::commands::online::on_node_online;
 use chacha20poly1305::{ aead::{ Aead, KeyInit }, ChaCha20Poly1305, Key, Nonce };
 
 /// ⚠️ 不要写返回类型！

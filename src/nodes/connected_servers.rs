@@ -6,7 +6,8 @@ use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
 use crate::protocols::client_type::{ ClientType,to_client_type };
-use crate::protocols::commands::online_offline::{send_offline, send_online};
+use crate::protocols::commands::offline::send_offline;
+use crate::protocols::commands::online::send_online;
 
 /// 已连接的服务器（控制面 + 数据面）
 ///

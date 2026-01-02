@@ -12,7 +12,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{ loop_reading, to_client_type }, commands::online_offline::{send_offline, send_online}, defines::ProtocolCapability
+        client_type::{ loop_reading, to_client_type }, commands::{offline::send_offline, online::send_online}, defines::ProtocolCapability
     },
 };
 
@@ -250,9 +250,6 @@ impl Servers {
         for server in servers {
             let _ = send_online(&server.client_type, &address, data.clone()).await;
             println!("notify send!");
-            // server.command
-            //     .send_online(&address, data.clone()).await
-            //     .unwrap_or_else(|e| tracing::warn!("notify_online failed: {:?}", e));
         }
     }
 
@@ -265,9 +262,6 @@ impl Servers {
     ) {
         for server in servers {
             let _ = send_offline(&server.client_type, &address, data.clone()).await;
-            // server.command
-            //     .send_offline(&address, data.clone()).await
-            //     .unwrap_or_else(|e| tracing::warn!("notify_offline failed: {:?}", e));
         }
     }
 

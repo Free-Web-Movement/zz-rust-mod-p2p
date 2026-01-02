@@ -1,2 +1,4 @@
-pub mod online_offline;
+pub mod online;
+pub mod offline;
+pub mod ack;
 pub mod message;

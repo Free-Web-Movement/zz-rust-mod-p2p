@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use anyhow::Result;
+use anyhow::anyhow;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -17,11 +19,71 @@ pub struct OnlineCommand {
     pub ephemeral_public_key: [u8; 32],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
-pub struct OnlineAckCommand {
-    pub session_id: [u8; 16],           // 对应 send_online 的 session_id
-    pub ephemeral_public_key: [u8; 32], // 对方 ephemeral 公钥
+
+impl OnlineCommand {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(
+            16 + 2 + self.endpoints.len() + 32
+        );
+
+        // session_id
+        buf.extend_from_slice(&self.session_id);
+
+        // endpoints length (u16, BE)
+        let len = self.endpoints.len() as u16;
+        buf.extend_from_slice(&len.to_be_bytes());
+
+        // endpoints
+        buf.extend_from_slice(&self.endpoints);
+
+        // ephemeral public key
+        buf.extend_from_slice(&self.ephemeral_public_key);
+
+        buf
+    }
+
+        pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        // 最小长度检查
+        if data.len() < 16 + 2 + 32 {
+            return Err(anyhow!("online command too short"));
+        }
+
+        let mut offset = 0;
+
+        // session_id
+        let session_id: [u8; 16] = data[offset..offset + 16]
+            .try_into()
+            .map_err(|_| anyhow!("invalid session_id"))?;
+        offset += 16;
+
+        // endpoints length
+        let endpoints_len = u16::from_be_bytes(
+            data[offset..offset + 2].try_into().unwrap()
+        ) as usize;
+        offset += 2;
+
+        // endpoints bounds check
+        if data.len() < offset + endpoints_len + 32 {
+            return Err(anyhow!("invalid endpoints length"));
+        }
+
+        // endpoints
+        let endpoints = data[offset..offset + endpoints_len].to_vec();
+        offset += endpoints_len;
+
+        // ephemeral public key
+        let ephemeral_public_key: [u8; 32] = data[offset..offset + 32]
+            .try_into()
+            .map_err(|_| anyhow!("invalid public key"))?;
+
+        Ok(Self {
+            session_id,
+            endpoints,
+            ephemeral_public_key,
+        })
+    }
 }
+
 
 pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
     println!(
@@ -47,22 +109,6 @@ pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &
     }
 }
 
-pub async fn on_node_offline(
-    frame: &Frame,
-    context: Arc<crate::context::Context>,
-    client_type: &ClientType,
-) {
-    // 处理 Node Offline 命令的逻辑
-    println!(
-        "Node Offline Command Received: addr={}, nonce={}",
-        frame.body.address, frame.body.nonce
-    );
-    let addr = frame.body.address.clone();
-    let mut clients = context.clients.lock().await;
-    clients.remove_client(&addr).await;
-
-    // 这里可以添加更多处理逻辑，比如注销节点、更新状态等
-}
 
 pub async fn send_online(
     client_type: &ClientType,
@@ -80,20 +126,5 @@ pub async fn send_online(
 
     send_bytes(client_type, &bytes).await;
 
-    Ok(())
-}
-
-pub async fn send_offline(
-    client_type: &ClientType,
-    address: &FreeWebMovementAddress,
-    data: Option<Vec<u8>>,
-) -> anyhow::Result<()> {
-    // 1️⃣ 构建在线命令 Frame
-    let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
-
-    // 2️⃣ 序列化 Frame
-    let bytes = Frame::to(frame);
-    send_bytes(&client_type, &bytes).await;
-    // self.send(&bytes).await?;
     Ok(())
 }
