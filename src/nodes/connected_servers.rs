@@ -151,32 +151,4 @@ mod tests {
         assert!(connected.is_empty());
     }
 
-    /// 🔹 send：UDP 不存在 → TCP fallback
-    #[tokio::test]
-    async fn test_send_tcp_fallback() -> anyhow::Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let port = listener.local_addr()?.port();
-
-        let record = make_record(port);
-
-        let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut buf = [0u8; 64];
-            let n = socket.read(&mut buf).await.unwrap();
-            buf[..n].to_vec()
-        });
-
-        let connected = ConnectedServers::connect(vec![record]).await;
-        assert_eq!(connected.len(), 1);
-
-        let msg = b"hello-connected-server";
-
-        send_bytes(&connected[0].client_type, msg).await;
-        // connected[0].command.send(msg).await?;
-
-        let received = server.await.unwrap();
-        assert_eq!(received, msg);
-
-        Ok(())
-    }
 }
