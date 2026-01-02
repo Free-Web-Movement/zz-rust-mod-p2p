@@ -1,11 +1,21 @@
+use std::sync::Arc;
+
+use anyhow::{Result, anyhow};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, anyhow};
+
+use crate::{
+    context::Context,
+    protocols::{
+        client_type::{self, ClientType},
+        frame::Frame,
+    },
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct OnlineAckCommand {
-    pub session_id: [u8; 16],          // 临时 session id
-    pub address: String,               // ⚠️ 明确：String
+    pub session_id: [u8; 16],           // 临时 session id
+    pub address: String,                // ⚠️ 明确：String
     pub ephemeral_public_key: [u8; 32], // 对方 ephemeral 公钥
 }
 
@@ -14,9 +24,7 @@ impl OnlineAckCommand {
         let addr_bytes = self.address.as_bytes();
         let addr_len = addr_bytes.len() as u16;
 
-        let mut buf = Vec::with_capacity(
-            16 + 2 + addr_bytes.len() + 32
-        );
+        let mut buf = Vec::with_capacity(16 + 2 + addr_bytes.len() + 32);
 
         // session_id
         buf.extend_from_slice(&self.session_id);
@@ -50,11 +58,7 @@ impl OnlineAckCommand {
         offset += 16;
 
         // address length
-        let addr_len = u16::from_be_bytes(
-            data[offset..offset + 2]
-                .try_into()
-                .unwrap()
-        ) as usize;
+        let addr_len = u16::from_be_bytes(data[offset..offset + 2].try_into().unwrap()) as usize;
         offset += 2;
 
         // 边界检查
@@ -63,11 +67,9 @@ impl OnlineAckCommand {
         }
 
         // address
-        let address = std::str::from_utf8(
-            &data[offset..offset + addr_len]
-        )
-        .map_err(|_| anyhow!("address is not valid utf-8"))?
-        .to_string();
+        let address = std::str::from_utf8(&data[offset..offset + addr_len])
+            .map_err(|_| anyhow!("address is not valid utf-8"))?
+            .to_string();
         offset += addr_len;
 
         // ephemeral public key
@@ -83,14 +85,66 @@ impl OnlineAckCommand {
     }
 }
 
+pub async fn on_node_online_ack(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
+    println!(
+        "✅ Node OnlineAck: from={}, nonce={}",
+        frame.body.address, frame.body.nonce
+    );
 
+    // ===== 1️⃣ 解码 OnlineAckCommand =====
+    let ack = match OnlineAckCommand::from_bytes(&frame.body.data) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("❌ decode OnlineAckCommand failed: {e}");
+            return;
+        }
+    };
+
+    // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
+    let session = {
+        let mut temp_sessions = context.temp_sessions.lock().await;
+
+        let mut session = match temp_sessions.remove(&ack.session_id) {
+            Some(s) => s,
+            None => {
+                eprintln!(
+                    "❌ temp session not found for session_id={:?}",
+                    ack.session_id
+                );
+                return;
+            }
+        };
+
+        let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
+        if let Err(e) = session.establish(&peer_pub) {
+            eprintln!("❌ session establish failed: {e}");
+            return;
+        }
+
+        session.touch();
+        session
+        // ✅ temp_sessions 锁在这里释放
+    };
+
+    // ===== 3️⃣ 写入永久 session_keys（address → session）=====
+    {
+        let mut sessions = context.session_keys.lock().await;
+        sessions.insert(ack.address.clone(), session);
+        // ✅ session_keys 锁在这里释放
+    }
+
+    println!(
+        "🔐 Session established with {} (session_id={:?})",
+        ack.address, ack.session_id
+    );
+}
 
 #[cfg(test)]
 mod tests {
     use crate::protocols::commands::online::OnlineCommand;
 
     use super::*;
-    use rand::{rngs::OsRng, RngCore};
+    use rand::{RngCore, rngs::OsRng};
 
     fn rand_session_id() -> [u8; 16] {
         let mut id = [0u8; 16];
@@ -132,7 +186,7 @@ mod tests {
     fn test_online_command_bad_endpoint_len() {
         let mut data = vec![0u8; 16];
         data.extend_from_slice(&10u16.to_be_bytes()); // ep_len = 10
-        data.extend_from_slice(&[1, 2]);              // 实际只有 2
+        data.extend_from_slice(&[1, 2]); // 实际只有 2
         data.extend_from_slice(&[0u8; 32]);
 
         let err = OnlineCommand::from_bytes(&data).unwrap_err();
@@ -167,7 +221,7 @@ mod tests {
     fn test_online_ack_invalid_address_len() {
         let mut data = vec![0u8; 16];
         data.extend_from_slice(&5u16.to_be_bytes()); // addr_len = 5
-        data.extend_from_slice(&[1, 2]);             // 实际 2
+        data.extend_from_slice(&[1, 2]); // 实际 2
         data.extend_from_slice(&[0u8; 32]);
 
         let err = OnlineAckCommand::from_bytes(&data).unwrap_err();

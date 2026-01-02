@@ -2,7 +2,6 @@ use anyhow::Result;
 use bincode::config;
 use bincode::{Decode, Encode};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub enum Entity {
     Node = 1,
@@ -13,10 +12,11 @@ pub enum Entity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub enum Action {
-
     //Node Actions
     OnLine = 1,
+    OnLineAck,
     OffLine,
+    Ack,
     Update,
 
     //Message Actions
@@ -67,7 +67,12 @@ impl Command {
     ========================= */
 
     /// send = build + encode (protocol layer, no IO)
-    pub fn send(entity: Entity, action: Action, version: u8, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
+    pub fn send(
+        entity: Entity,
+        action: Action,
+        version: u8,
+        data: Option<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
         let cmd = Command::new(entity, action, version, data);
         cmd.serialize()
     }
@@ -94,13 +99,7 @@ mod tests {
     fn test_send_receive_roundtrip() {
         let payload = vec![10, 20, 30];
 
-        let bytes = Command::send(
-            Entity::Node,
-            Action::OnLine,
-            1,
-            Some(payload.clone()),
-        )
-        .unwrap();
+        let bytes = Command::send(Entity::Node, Action::OnLine, 1, Some(payload.clone())).unwrap();
 
         let cmd = Command::receive(&bytes).unwrap();
 

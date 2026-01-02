@@ -80,22 +80,30 @@ impl Node {
         self.net_info = Some(NetInfo::collect(port).unwrap());
         let mut servers = self.init_storage_and_servers(port);
         servers.connect().await;
-        servers.notify_online(self.address.clone()).await.unwrap();
 
         let context = Arc::new(Context::new(
             ip.clone(),
             port,
             self.address.clone(),
-            servers,
+            servers.clone(),
         ));
         self.context = Some(context.clone());
+
+        servers
+            .notify_online(self.address.clone(), &context.clone())
+            .await
+            .unwrap();
 
         let tcp = TCPHandler::bind(context.clone())
             .await
             .unwrap()
             .as_ref()
             .clone();
-        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(context.clone())
+            .await
+            .unwrap()
+            .as_ref()
+            .clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
@@ -145,9 +153,10 @@ impl Node {
         let servers = servers.clone();
         println!("Server found!");
         let address = self.address.clone();
+        let context = self.context.clone().unwrap().clone();
         tokio::spawn(async move {
             println!("Server notifyed to {}!", address.clone());
-            let _ = servers.notify_online(address).await;
+            let _ = servers.notify_online(address, &context).await;
         });
     }
 }

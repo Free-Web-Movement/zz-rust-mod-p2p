@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use anyhow::Result;
 use anyhow::anyhow;
+use std::sync::Arc;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ use crate::context::Context;
 use crate::nodes::servers::Servers;
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{Action, Entity};
+use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::Frame;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
@@ -19,12 +20,9 @@ pub struct OnlineCommand {
     pub ephemeral_public_key: [u8; 32],
 }
 
-
 impl OnlineCommand {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(
-            16 + 2 + self.endpoints.len() + 32
-        );
+        let mut buf = Vec::with_capacity(16 + 2 + self.endpoints.len() + 32);
 
         // session_id
         buf.extend_from_slice(&self.session_id);
@@ -42,7 +40,7 @@ impl OnlineCommand {
         buf
     }
 
-        pub fn from_bytes(data: &[u8]) -> Result<Self> {
+    pub fn from_bytes(data: &[u8]) -> Result<Self> {
         // 最小长度检查
         if data.len() < 16 + 2 + 32 {
             return Err(anyhow!("online command too short"));
@@ -57,9 +55,8 @@ impl OnlineCommand {
         offset += 16;
 
         // endpoints length
-        let endpoints_len = u16::from_be_bytes(
-            data[offset..offset + 2].try_into().unwrap()
-        ) as usize;
+        let endpoints_len =
+            u16::from_be_bytes(data[offset..offset + 2].try_into().unwrap()) as usize;
         offset += 2;
 
         // endpoints bounds check
@@ -84,31 +81,86 @@ impl OnlineCommand {
     }
 }
 
-
-pub async fn on_node_online(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
+pub async fn on_node_online(
+    frame: &Frame,
+    context: Arc<Context>,
+    client_type: &ClientType,
+) -> Option<Frame> {
     println!(
         "✅ Node Online: addr={}, nonce={}",
         frame.body.address, frame.body.nonce
     );
-    if frame.body.data.len() < 1 {
-        eprintln!("❌ Online data too short");
-        return;
-    }
 
-    let (endpoints, is_inner) = match Servers::from_endpoints(frame.body.data.to_vec()) {
-        (endpoints, flag) => (endpoints, flag == 0),
+    // ===== 1️⃣ OnlineCommand 解码 =====
+    let online = match OnlineCommand::from_bytes(&frame.body.data) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("❌ decode OnlineCommand failed: {e}");
+            return None;
+        }
     };
 
-    let addr = frame.body.address.clone();
-    let mut clients = context.clients.lock().await;
+    // ===== 2️⃣ session_id → temp session（⚠️ 限定作用域）=====
+    let (server_pub, ack_frame) = {
+        let mut temp_sessions = context.temp_sessions.lock().await;
 
-    if is_inner {
-        clients.add_inner(&addr, client_type.clone(), endpoints.clone());
-    } else {
-        clients.add_external(&addr, client_type.clone(), endpoints.clone());
+        let session = match temp_sessions.get_mut(&online.session_id) {
+            Some(s) => s,
+            None => {
+                eprintln!("❌ temp session not found: {:?}", online.session_id);
+                return None;
+            }
+        };
+
+        let peer_pub = x25519_dalek::PublicKey::from(online.ephemeral_public_key);
+        if let Err(e) = session.establish(&peer_pub) {
+            eprintln!("❌ session establish failed: {e}");
+            return None;
+        }
+
+        session.touch();
+
+        let ack = OnlineAckCommand {
+            session_id: online.session_id,
+            address: context.address.to_string(),
+            ephemeral_public_key: *session.ephemeral_public.as_bytes(),
+        };
+
+        let frame = Frame::build_node_command(
+            &context.address,
+            Entity::Node,
+            Action::OnLineAck,
+            frame.body.version,
+            Some(ack.to_bytes()),
+        )
+        .expect("build OnlineAck frame failed");
+
+        // ✅ temp_sessions 锁在这里释放
+        (ack.ephemeral_public_key, frame)
+    };
+
+    // ===== 3️⃣ clients 登记（⚠️ 也限定作用域）=====
+    {
+        let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
+            (endpoints, flag) => (endpoints, flag == 0),
+        };
+
+        let addr = frame.body.address.clone();
+        let mut clients = context.clients.lock().await;
+
+        if is_inner {
+            clients.add_inner(&addr, client_type.clone(), endpoints);
+        } else {
+            clients.add_external(&addr, client_type.clone(), endpoints);
+        }
+        // ✅ clients 锁在这里释放
     }
-}
 
+    // ===== 4️⃣ 发送 ACK（此时无任何锁）=====
+    send_bytes(client_type, &Frame::to(ack_frame.clone())).await;
+
+    Some(ack_frame)
+}
 
 pub async fn send_online(
     client_type: &ClientType,
