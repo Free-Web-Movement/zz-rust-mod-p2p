@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     context::Context,
     protocols::{
-        client_type::{self, ClientType},
+        client_type::ClientType,
         frame::Frame,
     },
 };

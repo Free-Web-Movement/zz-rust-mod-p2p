@@ -315,6 +315,7 @@ impl Servers {
 
             let inner_bytes = inner_cmd.to_bytes();
 
+
             println!("inner bytes: {:?}", inner_bytes);
 
             self.notify_online_servers(address.clone(), Some(inner_bytes), &connections.inner)

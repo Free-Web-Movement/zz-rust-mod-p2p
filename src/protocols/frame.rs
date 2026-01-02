@@ -206,7 +206,7 @@ impl Frame {
         // 2️⃣ 只处理 Node Online / Offline
         match (cmd.entity as Entity, cmd.action as Action) {
             (Entity::Node, Action::OnLine) => {
-                on_node_online(frame, context, client_type).await;
+                on_node_online(&cmd, frame, context, client_type).await;
             }
 
             (Entity::Node, Action::OnLineAck) => {

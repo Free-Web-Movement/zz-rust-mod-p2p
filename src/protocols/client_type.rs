@@ -240,8 +240,6 @@ pub async fn on_tcp_data(
     context: &Arc<Context>,
     addr: SocketAddr,
 ) {
-    let mut len_buf = [0u8; 4];
-
     loop {
         tokio::select! {
             _ = context.token.cancelled() => {
