@@ -210,7 +210,7 @@ impl Frame {
             }
 
             (Entity::Node, Action::OnLineAck) => {
-                on_node_online_ack(frame, context, client_type).await;
+                on_node_online_ack(&cmd, frame, context, client_type).await;
             }
 
             (Entity::Message, Action::SendText) => {

@@ -2,15 +2,15 @@ use anyhow::Result;
 use anyhow::anyhow;
 use std::sync::Arc;
 
-use bincode::{ Decode, Encode };
-use serde::{ Deserialize, Serialize };
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
 use crate::nodes::servers::Servers;
-use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::Command;
-use crate::protocols::command::{ Action, Entity };
+use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::Frame;
 use crate::protocols::session_key::SessionKey;
@@ -28,8 +28,7 @@ impl OnlineCommand {
     }
 
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
-        let (cmd, _): (Self, _) = bincode
-            ::decode_from_slice(data, bincode::config::standard())
+        let (cmd, _): (Self, _) = bincode::decode_from_slice(data, bincode::config::standard())
             .map_err(|e| anyhow!("decode OnlineCommand failed: {e}"))?;
         Ok(cmd)
     }
@@ -39,9 +38,12 @@ pub async fn on_node_online(
     cmd: &Command,
     frame: &Frame,
     context: Arc<Context>,
-    client_type: &ClientType
+    client_type: &ClientType,
 ) -> Option<Frame> {
-    println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
+    println!(
+        "✅ Node Online: addr={}, nonce={}",
+        frame.body.address, frame.body.nonce
+    );
 
     // ===== 1️⃣ OnlineCommand 解码 =====
     let online_data = match &cmd.data {
@@ -60,6 +62,8 @@ pub async fn on_node_online(
         }
     };
 
+    println!("received session_id: {:?}", online.session_id);
+
     // ===== 2️⃣ 服务器生成 SessionKey（包含 ephemeral keypair）并派生对称密钥 =====
     let mut session_key = SessionKey::new();
     let ephemeral_public = session_key.ephemeral_public.clone();
@@ -68,26 +72,39 @@ pub async fn on_node_online(
     if let Err(e) = session_key.establish(&client_pub) {
         eprintln!("❌ Failed to establish session key: {e}");
         return None;
+    } else {
+        println!(
+            "🔐 Session established with {} (session_id={:?})",
+            frame.body.address, online.session_id
+        );
     }
     session_key.touch();
 
     // 保存 session_key 到 session_keys，key 为客户端 address
-    context.session_keys.lock().await.insert(frame.body.address.clone(), session_key);
+    context
+        .session_keys
+        .lock()
+        .await
+        .insert(frame.body.address.clone(), session_key);
 
     // ===== 3️⃣ 构造 OnlineAckCommand =====
     let ack = OnlineAckCommand {
         session_id: online.session_id,
         address: context.address.to_string(),
-        ephemeral_public_key: ephemeral_public.to_bytes()
+        ephemeral_public_key: ephemeral_public.to_bytes(),
     };
+
+    println!("send ack session_id : {:?}", ack.session_id);
+    println!("send ack: {:?}", ack.to_bytes());
 
     let ack_frame = Frame::build_node_command(
         &context.address,
         Entity::Node,
         Action::OnLineAck,
         frame.body.version,
-        Some(ack.to_bytes())
-    ).expect("build OnlineAck frame failed");
+        Some(ack.to_bytes()),
+    )
+    .expect("build OnlineAck frame failed");
 
     // ===== 4️⃣ clients 登记 =====
     let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
@@ -110,14 +127,14 @@ pub async fn on_node_online(
 pub async fn send_online(
     client_type: &ClientType,
     address: &FreeWebMovementAddress,
-    data: Option<Vec<u8>>
+    data: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
     let frame = Frame::build_node_command(
         &address, // 本节点地址
         Entity::Node,
         Action::OnLine, // 用 ResponseAddress 表示发送自身地址
         1,
-        data
+        data,
     )?;
     let bytes = Frame::to(frame);
 
