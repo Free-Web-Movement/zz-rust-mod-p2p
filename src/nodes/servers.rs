@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    context::Context,
+    context::{self, Context},
     nodes::{
         connected_servers::{ConnectedServer, ConnectedServers},
         net_info,
@@ -259,12 +259,13 @@ impl Servers {
     /// 🔹 通知一组服务器上线
     pub async fn notify_online_servers(
         &self,
-        address: FreeWebMovementAddress,
+        // address: FreeWebMovementAddress,
+        context: &Arc<Context>,
         data: Option<Vec<u8>>,
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            let _ = send_online(&server.client_type, &address, data.clone()).await;
+            let _ = send_online(context.clone(), &server.client_type, data.clone()).await;
             println!("notify send!");
         }
     }
@@ -272,12 +273,12 @@ impl Servers {
     /// 🔹 通知一组服务器下线
     pub async fn notify_offline_servers(
         &self,
-        address: FreeWebMovementAddress,
+        context: &Arc<Context>,
         data: &Option<Vec<u8>>,
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            let _ = send_offline(&server.client_type, &address, data.clone()).await;
+            let _ = send_offline(context.clone(), &server.client_type, data.clone()).await;
         }
     }
 
@@ -318,7 +319,7 @@ impl Servers {
 
             println!("inner bytes: {:?}", inner_bytes);
 
-            self.notify_online_servers(address.clone(), Some(inner_bytes), &connections.inner)
+            self.notify_online_servers(&context.clone(), Some(inner_bytes), &connections.inner)
                 .await;
 
             // ---------- external ----------
@@ -334,7 +335,7 @@ impl Servers {
             println!("external bytes: {:?}", external_bytes);
 
             self.notify_online_servers(
-                address.clone(),
+                &context.clone(),
                 Some(external_bytes),
                 &connections.external,
             )
@@ -346,17 +347,17 @@ impl Servers {
     }
 
     /// 🔹 通知所有已连接服务器当前节点的下线
-    pub async fn notify_offline(&self, address: FreeWebMovementAddress) -> anyhow::Result<()> {
+    pub async fn notify_offline(&self, context: &Arc<Context>) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
-            self.notify_offline_servers(address.clone(), &Some(inner_data), &connections.inner)
+            self.notify_offline_servers(context, &Some(inner_data), &connections.inner)
                 .await;
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record, 1);
             self.notify_offline_servers(
-                address.clone(),
+                context,
                 &Some(external_data),
                 &connections.external,
             )

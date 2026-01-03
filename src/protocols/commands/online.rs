@@ -12,6 +12,7 @@ use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::Command;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
+use crate::protocols::frame::CryptoState;
 use crate::protocols::frame::Frame;
 use crate::protocols::session_key::SessionKey;
 
@@ -97,14 +98,11 @@ pub async fn on_node_online(
     println!("send ack session_id : {:?}", ack.session_id);
     println!("send ack: {:?}", ack.to_bytes());
 
-    let ack_frame = Frame::build_node_command(
-        &context.address,
-        Entity::Node,
-        Action::OnLineAck,
-        frame.body.version,
-        Some(ack.to_bytes()),
-    )
-    .expect("build OnlineAck frame failed");
+    let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
+
+    let ack_frame = Frame::build(context.clone(), command, 1, CryptoState::Plain)
+        .await
+        .unwrap();
 
     // ===== 4️⃣ clients 登记 =====
     let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
@@ -125,17 +123,16 @@ pub async fn on_node_online(
 }
 
 pub async fn send_online(
+    context: Arc<Context>,
     client_type: &ClientType,
-    address: &FreeWebMovementAddress,
     data: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
-    let frame = Frame::build_node_command(
-        &address, // 本节点地址
-        Entity::Node,
-        Action::OnLine, // 用 ResponseAddress 表示发送自身地址
-        1,
-        data,
-    )?;
+    let command = Command::new(Entity::Node, Action::OnLine, data);
+
+    let frame = Frame::build(context, command, 1, CryptoState::Plain)
+        .await
+        .unwrap();
+
     let bytes = Frame::to(frame);
 
     send_bytes(client_type, &bytes).await;

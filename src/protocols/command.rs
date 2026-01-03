@@ -65,7 +65,7 @@ impl Command {
     ========================= */
 
     /// send = build + encode (protocol layer, no IO)
-    pub fn send(
+    pub fn to_bytes(
         entity: Entity,
         action: Action,
         data: Option<Vec<u8>>,
@@ -75,7 +75,7 @@ impl Command {
     }
 
     /// receive = decode from wire bytes
-    pub fn receive(bytes: &[u8]) -> Result<Command> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Command> {
         Command::deserialize(bytes)
     }
 }
@@ -96,9 +96,9 @@ mod tests {
     fn test_send_receive_roundtrip() {
         let payload = vec![10, 20, 30];
 
-        let bytes = Command::send(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
+        let bytes = Command::to_bytes(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
 
-        let cmd = Command::receive(&bytes).unwrap();
+        let cmd = Command::from_bytes(&bytes).unwrap();
 
         assert_eq!(cmd.entity, Entity::Node);
         assert_eq!(cmd.action, Action::OnLine);

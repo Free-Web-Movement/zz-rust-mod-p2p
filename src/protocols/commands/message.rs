@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::protocols::client_type::send_bytes;
-use crate::protocols::command::{Action, Entity};
+use crate::protocols::command::{Action, Command, Entity};
+use crate::protocols::frame::{CryptoState, Frame};
 use crate::util::time::timestamp;
 use crate::{context::Context, protocols::frame::forward_frame};
-use crate::protocols::frame::Frame;
 
 use bincode::{Decode, Encode, config};
 
@@ -22,7 +22,7 @@ pub struct MessageCommand {
 pub async fn send_text_message(
     receiver: String,
     context: Arc<Context>,
-    message: &str
+    message: &str,
 ) -> anyhow::Result<()> {
     // 构造消息
     let command = MessageCommand {
@@ -33,13 +33,12 @@ pub async fn send_text_message(
 
     // 编码成 payload
     let payload = bincode::encode_to_vec(command, config::standard())?;
-    let frame = Frame::build_node_command(
-        &context.address,
-        Entity::Message,
-        Action::SendText,
-        1,
-        Some(payload.clone())
-    )?;
+
+    let command = Command::new(Entity::Message, Action::SendText, Some(payload.clone()));
+
+    let frame = Frame::build(context.clone(), command, 1, CryptoState::Plain)
+        .await
+        .unwrap();
 
     let bytes = Frame::to(frame);
 
@@ -54,7 +53,11 @@ pub async fn send_text_message(
     let clients = context.clients.lock().await;
     let local_conns = clients.get_connections(&receiver, true);
 
-    println!("Found {} local connections for {}", local_conns.len(), receiver);
+    println!(
+        "Found {} local connections for {}",
+        local_conns.len(),
+        receiver
+    );
 
     if !local_conns.is_empty() {
         let bytes = bytes.clone();
@@ -84,7 +87,8 @@ pub async fn send_text_message(
         let servers = servers.lock().await;
         if let Some(connected_servers) = &servers.connected_servers {
             // 使用 iter().chain() 合并两个列表
-            let all_servers = connected_servers.inner
+            let all_servers = connected_servers
+                .inner
                 .iter()
                 .chain(connected_servers.external.iter());
 
@@ -102,33 +106,19 @@ pub async fn send_text_message(
     Ok(())
 }
 
-
-pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
+pub async fn on_text_message(cmd: &Command, frame: &Frame, context: Arc<Context>) {
     let from = &frame.body.address;
 
-    // 1️⃣ 先从 frame.body.data 解 Command
-    let command = match frame.body.command_from_data() {
-        Ok(c) => c,
+    let (msg, _) = match bincode::decode_from_slice::<MessageCommand, _>(
+        &cmd.data.as_ref().unwrap(),
+        bincode::config::standard(),
+    ) {
+        Ok(v) => v,
         Err(e) => {
-            eprintln!("❌ Command decode failed from {}: {:?}", from, e);
+            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
             return;
         }
     };
-
-    // 2️⃣ 再从 Command.data 解 MessageCommand
-    let Some(data) = command.data else {
-        eprintln!("❌ Empty command.data from {}", from);
-        return;
-    };
-
-    let (msg, _) =
-        match bincode::decode_from_slice::<MessageCommand, _>(&data, bincode::config::standard()) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
-                return;
-            }
-        };
 
     println!(
         "📨 {} → {} @ {}: {}",
@@ -151,7 +141,6 @@ pub async fn on_text_message(frame: &Frame, context: Arc<Context>) {
     // 要转发消息
 
     forward_frame(receiver, frame, context).await;
-
 }
 
 #[cfg(test)]
@@ -159,6 +148,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use tokio::net::TcpListener;
+    use tokio_tungstenite::tungstenite::protocol::frame;
 
     use crate::context::Context;
     use crate::nodes::net_info::NetInfo;
@@ -166,6 +156,7 @@ mod tests {
     use crate::nodes::storage::Storeage;
     use crate::protocols::client_type::{ClientType, to_client_type};
     use crate::protocols::command::{Action, Entity};
+    use crate::protocols::frame::CryptoState;
     use tokio::net::TcpStream;
 
     use bincode::config;
@@ -204,36 +195,5 @@ mod tests {
             bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
 
         assert_eq!(cmd, decoded);
-    }
-
-    #[tokio::test]
-    async fn test_on_text_message_normal_path() {
-        let address = Address::random();
-
-        let cmd = MessageCommand {
-            receiver: "receiver-addr".to_string(),
-            timestamp: 1,
-            message: "hello parser".to_string(),
-        };
-
-        let data = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-
-        let frame =
-            Frame::build_node_command(&address, Entity::Message, Action::SendText, 1, Some(data))
-                .unwrap();
-
-        let storage = Storeage::new(None, None, None, None);
-        let net_info = NetInfo::new(1010);
-        let server = Servers::new(address, storage, net_info);
-
-        let context = Arc::new(Context::new(
-            "127.0.0.1".to_string(),
-            18000,
-            Address::random(),
-            server,
-        ));
-
-        // 只要不 panic、不提前 return 即视为通过
-        on_text_message(&frame, context).await;
     }
 }

@@ -171,25 +171,44 @@ impl Frame {
         encode_to_vec(&frame, frame_config()).unwrap()
     }
 
-    pub fn build_node_command(
-        address: &FreeWebMovementAddress,
-        entity: Entity,
-        action: Action,
-        version: u8,
-        data: Option<Vec<u8>>,
-    ) -> anyhow::Result<Self> {
-        let cmd_bytes = Command::send(entity, action, data)?;
+    // pub fn build_node_command(
+    //     address: &FreeWebMovementAddress,
+    //     entity: Entity,
+    //     action: Action,
+    //     version: u8,
+    //     data: Option<Vec<u8>>,
+    // ) -> anyhow::Result<Self> {
+    //     let cmd_bytes = Command::to_bytes(entity, action, data)?;
 
+    //     let body = FrameBody {
+    //         address: address.to_string(),
+    //         public_key: address.public_key.to_bytes().to_vec(),
+    //         nonce: rand::thread_rng().r#gen(),
+    //         data_length: cmd_bytes.len() as u32,
+    //         version,
+    //         crypto: CryptoState::Plain,
+    //         data: cmd_bytes,
+    //     };
+    //     Ok(Frame::sign(body, address)?)
+    // }
+
+    pub async fn build(
+        context: Arc<Context>,
+        cmd: Command,
+        version: u8,
+        crypto: CryptoState,
+    ) -> anyhow::Result<Self> {
+        let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
-            address: address.to_string(),
-            public_key: address.public_key.to_bytes().to_vec(),
+            address: context.address.to_string(),
+            public_key: context.address.public_key.to_bytes().to_vec(),
             nonce: rand::thread_rng().r#gen(),
             data_length: cmd_bytes.len() as u32,
             version,
-            crypto: CryptoState::Plain,
+            crypto,
             data: cmd_bytes,
         };
-        Ok(Frame::sign(body, address)?)
+        Ok(Frame::sign(body, &context.address)?)
     }
 
     pub async fn on(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
@@ -214,7 +233,7 @@ impl Frame {
             }
 
             (Entity::Message, Action::SendText) => {
-                on_text_message(frame, context).await;
+                on_text_message(&cmd, frame, context).await;
             }
 
             (Entity::Node, Action::OffLine) => {
@@ -521,107 +540,4 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
-    #[test]
-    fn test_build_node_command_online() -> anyhow::Result<()> {
-        // 1️⃣ 构造测试地址
-        let address = FreeWebMovementAddress::random();
-
-        // 2️⃣ 构造业务数据
-        let payload = Some(b"hello node online".to_vec());
-
-        // 3️⃣ 构建 Frame
-        let frame =
-            Frame::build_node_command(&address, Entity::Node, Action::OnLine, 1, payload.clone())?;
-
-        // 4️⃣ 基本结构校验
-        assert_eq!(frame.body.version, 1);
-        assert_eq!(frame.body.address, address.to_string());
-        assert_eq!(
-            frame.body.public_key,
-            address.public_key.to_bytes().to_vec()
-        );
-
-        // nonce 应该存在（不为 0 不是强约束，但通常如此）
-        assert!(frame.body.nonce > 0);
-
-        // data 校验
-        let cmd_bytes = Command::send(Entity::Node, Action::OnLine, payload)?;
-
-        assert_eq!(frame.body.data_length, cmd_bytes.len() as u32);
-        assert_eq!(frame.body.data, cmd_bytes);
-
-        // 5️⃣ 签名存在
-        assert!(!frame.signature.is_empty());
-
-        // 6️⃣ 🔐 核心：签名校验（防 MITM）
-        Frame::verify(frame)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_build_node_command_without_data() -> anyhow::Result<()> {
-        let address = FreeWebMovementAddress::random();
-
-        let frame = Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
-
-        assert_eq!(frame.body.address, address.to_string());
-        assert_eq!(frame.body.version, 1);
-        assert!(frame.body.data_length > 0);
-        assert!(!frame.body.data.is_empty());
-
-        // 签名校验必须通过
-        Frame::verify(frame)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extract_node_command_online() -> anyhow::Result<()> {
-        let address = FreeWebMovementAddress::random();
-
-        let frame = Frame::build_node_command(
-            &address,
-            Entity::Node,
-            Action::OnLine,
-            1,
-            Some(b"online".to_vec()),
-        )?;
-
-        let bytes = Frame::to(frame);
-
-        // 不应 panic
-        // Frame::extract_node_command(&bytes);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extract_node_command_offline() -> anyhow::Result<()> {
-        let address = FreeWebMovementAddress::random();
-
-        let frame = Frame::build_node_command(&address, Entity::Node, Action::OffLine, 1, None)?;
-
-        let bytes = Frame::to(frame);
-
-        // 不应 panic
-        // Frame::extract_node_command(&bytes);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extract_node_command_with_tampered_frame_should_not_panic() {
-        let address = FreeWebMovementAddress::random();
-
-        let mut frame =
-            Frame::build_node_command(&address, Entity::Node, Action::OnLine, 1, None).unwrap();
-
-        // 🔥 篡改数据，制造非法 frame
-        frame.body.data = vec![0xff, 0xee, 0xdd];
-
-        let bytes = Frame::to(frame);
-
-        // 即使非法，也不能 panic
-        // Frame::extract_node_command(&bytes);
-    }
 }

@@ -1,9 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{ StreamExt, stream };
 use tokio::{ net::TcpStream, time::timeout };
 use zz_account::address::FreeWebMovementAddress;
 
+use crate::context::Context;
 use crate::nodes::record::NodeRecord;
 use crate::protocols::client_type::{ ClientType,to_client_type };
 use crate::protocols::commands::offline::send_offline;
@@ -66,17 +68,16 @@ impl ConnectedServers {
     /// 🔔 通知所有服务器上线
     pub async fn notify_online(
         &self,
-        address: &FreeWebMovementAddress,
+        context: &Arc<Context>,
         data: Option<Vec<u8>>,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
 
         let futures = all.map(|server| {
-            let addr = address.clone();
             let bytes = data.clone();
             async move {
-                let _ = send_online(&server.client_type, &addr, bytes).await;
+                let _ = send_online(context.clone(), &server.client_type, bytes).await;
             }
         });
 
@@ -86,16 +87,15 @@ impl ConnectedServers {
     /// 🔔 通知所有服务器下线
     pub async fn notify_offline(
         &self,
-        address: &FreeWebMovementAddress,
+        context: &Arc<Context>,
         data: Option<Vec<u8>>,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
         let futures = all.map(|server| {
-            let addr = address.clone();
             let payload = data.clone();
             async move {
-                let _ = send_offline(&server.client_type, &addr, payload).await;
+                let _ = send_offline(context.clone(), &server.client_type, payload).await;
             }
         });
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use tokio_tungstenite::tungstenite::protocol::frame;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
     protocols::{
         client_type::{ClientType, send_bytes},
         command::{Action, Command, Entity},
-        frame::Frame,
+        frame::{CryptoState, Frame},
     },
 };
 
@@ -96,18 +97,14 @@ pub async fn on_node_online_ack(
 }
 
 pub async fn send_online_ack(
+    context: Arc<Context>,
     client_type: &ClientType,
-    address: &FreeWebMovementAddress,
     ack: OnlineAckCommand, // 传入已经构造好的 OnlineAckCommand
 ) -> Result<()> {
-    // 1️⃣ 构造 Frame
-    let frame = Frame::build_node_command(
-        address,              // 本节点地址
-        Entity::Node,         // 节点命令
-        Action::OnLineAck,    // ACK 动作
-        1,                    // version
-        Some(ack.to_bytes()), // 序列化数据
-    )?;
+
+    let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
+
+    let frame = Frame::build(context, command, 1, CryptoState::Plain).await.unwrap();
 
     // 2️⃣ 转成字节发送
     let bytes = Frame::to(frame);

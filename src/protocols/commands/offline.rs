@@ -3,9 +3,8 @@ use std::sync::Arc;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
-use crate::protocols::command::{Action, Entity};
-use crate::protocols::frame::Frame;
-
+use crate::protocols::command::{Action, Command, Entity};
+use crate::protocols::frame::{CryptoState, Frame};
 
 pub async fn on_node_offline(
     frame: &Frame,
@@ -25,13 +24,15 @@ pub async fn on_node_offline(
 }
 
 pub async fn send_offline(
+    context: Arc<crate::context::Context>,
     client_type: &ClientType,
-    address: &FreeWebMovementAddress,
     data: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
-    // 1️⃣ 构建在线命令 Frame
-    let frame = Frame::build_node_command(address, Entity::Node, Action::OffLine, 1, data)?;
+    let command = Command::new(Entity::Node, Action::OffLine, data);
 
+    let frame = Frame::build(context, command, 1, CryptoState::Plain)
+        .await
+        .unwrap();
     // 2️⃣ 序列化 Frame
     let bytes = Frame::to(frame);
     send_bytes(&client_type, &bytes).await;
