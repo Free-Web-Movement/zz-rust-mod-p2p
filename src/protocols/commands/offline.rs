@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use zz_account::address::FreeWebMovementAddress;
-
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{Action, Command, Entity};
 use crate::protocols::frame::{CryptoState, Frame};
@@ -30,7 +28,7 @@ pub async fn send_offline(
 ) -> anyhow::Result<()> {
     let command = Command::new(Entity::Node, Action::OffLine, data);
 
-    let frame = Frame::build(context, command, 1, CryptoState::Plain)
+    let frame = Frame::build(context, command, 1)
         .await
         .unwrap();
     // 2️⃣ 序列化 Frame

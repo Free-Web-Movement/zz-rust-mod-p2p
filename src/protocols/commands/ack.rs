@@ -3,8 +3,6 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use tokio_tungstenite::tungstenite::protocol::frame;
-use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     context::Context,
@@ -104,7 +102,7 @@ pub async fn send_online_ack(
 
     let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
 
-    let frame = Frame::build(context, command, 1, CryptoState::Plain).await.unwrap();
+    let frame = Frame::build(context, command, 1).await.unwrap();
 
     // 2️⃣ 转成字节发送
     let bytes = Frame::to(frame);

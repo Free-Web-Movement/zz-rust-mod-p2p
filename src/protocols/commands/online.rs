@@ -100,7 +100,7 @@ pub async fn on_node_online(
 
     let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
 
-    let ack_frame = Frame::build(context.clone(), command, 1, CryptoState::Plain)
+    let ack_frame = Frame::build(context.clone(), command, 1)
         .await
         .unwrap();
 
@@ -129,7 +129,7 @@ pub async fn send_online(
 ) -> anyhow::Result<()> {
     let command = Command::new(Entity::Node, Action::OnLine, data);
 
-    let frame = Frame::build(context, command, 1, CryptoState::Plain)
+    let frame = Frame::build(context, command, 1)
         .await
         .unwrap();
 

@@ -22,7 +22,7 @@ pub struct MessageCommand {
 pub async fn send_text_message(
     receiver: String,
     context: Arc<Context>,
-    message: &str,
+    message: &str
 ) -> anyhow::Result<()> {
     // 构造消息
     let command = MessageCommand {
@@ -36,7 +36,7 @@ pub async fn send_text_message(
 
     let command = Command::new(Entity::Message, Action::SendText, Some(payload.clone()));
 
-    let frame = Frame::build(context.clone(), command, 1, CryptoState::Plain)
+    let frame = Frame::build(context.clone(), command, 1)
         .await
         .unwrap();
 
@@ -146,21 +146,11 @@ pub async fn on_text_message(cmd: &Command, frame: &Frame, context: Arc<Context>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use tokio::net::TcpListener;
-    use tokio_tungstenite::tungstenite::protocol::frame;
-
-    use crate::context::Context;
-    use crate::nodes::net_info::NetInfo;
-    use crate::nodes::servers::Servers;
-    use crate::nodes::storage::Storeage;
     use crate::protocols::client_type::{ClientType, to_client_type};
-    use crate::protocols::command::{Action, Entity};
-    use crate::protocols::frame::CryptoState;
     use tokio::net::TcpStream;
 
     use bincode::config;
-    use zz_account::address::FreeWebMovementAddress as Address;
 
     /// 创建 TCP client/server pair，用于捕获发送的数据
     async fn tcp_pair() -> (ClientType, tokio::sync::oneshot::Receiver<Vec<u8>>) {

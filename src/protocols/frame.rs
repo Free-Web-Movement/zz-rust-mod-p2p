@@ -52,8 +52,6 @@ pub struct FrameBody {
     /// 防重放随机数
     pub nonce: u64,
 
-    pub crypto: CryptoState, // ⭐ 新增
-
     /// 明文长度
     pub data_length: u32,
 
@@ -76,7 +74,6 @@ impl FrameBody {
             address,
             public_key,
             nonce,
-            crypto: CryptoState::Plain,
             data_length,
             data,
         }
@@ -196,7 +193,6 @@ impl Frame {
         context: Arc<Context>,
         cmd: Command,
         version: u8,
-        crypto: CryptoState,
     ) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
@@ -205,7 +201,6 @@ impl Frame {
             nonce: rand::thread_rng().r#gen(),
             data_length: cmd_bytes.len() as u32,
             version,
-            crypto,
             data: cmd_bytes,
         };
         Ok(Frame::sign(body, &context.address)?)
@@ -348,7 +343,6 @@ mod tests {
             address: identity.to_string(),
             public_key: identity.public_key.to_bytes(),
             nonce: 42,
-            crypto: CryptoState::Plain,
             data_length: 5,
             data: b"hello".to_vec(),
         };
