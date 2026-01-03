@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use anyhow::anyhow;
+
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::{Action, Command, Entity};
 use crate::protocols::frame::{CryptoState, Frame};
@@ -22,7 +24,7 @@ pub struct MessageCommand {
 pub async fn send_text_message(
     receiver: String,
     context: Arc<Context>,
-    message: &str
+    message: &str,
 ) -> anyhow::Result<()> {
     // 构造消息
     let command = MessageCommand {
@@ -31,14 +33,26 @@ pub async fn send_text_message(
         message: message.to_string(),
     };
 
-    // 编码成 payload
+    // 编码成 payload（明文）
     let payload = bincode::encode_to_vec(command, config::standard())?;
+    println!("created plaintext bytes: {:?}", payload);
 
-    let command = Command::new(Entity::Message, Action::SendText, Some(payload.clone()));
+    // 使用 session_key 加密
+    let encrypted: Vec<u8> = {
+        let sessions = context.session_keys.lock().await;
 
-    let frame = Frame::build(context.clone(), command, 1)
-        .await
-        .unwrap();
+        let session = sessions
+            .get(&receiver)
+            .ok_or_else(|| anyhow!("no session_key for receiver {}", receiver))?;
+
+        session.encrypt(&payload)?
+    };
+
+    println!("created encrypted bytes: {:?}", encrypted);
+
+    let command = Command::new(Entity::Message, Action::SendText, Some(encrypted.clone()));
+
+    let frame = Frame::build(context.clone(), command, 1).await.unwrap();
 
     let bytes = Frame::to(frame);
 
@@ -109,8 +123,42 @@ pub async fn send_text_message(
 pub async fn on_text_message(cmd: &Command, frame: &Frame, context: Arc<Context>) {
     let from = &frame.body.address;
 
+    let encrypted = match &cmd.data {
+        Some(v) => v,
+        None => {
+            eprintln!("❌ MessageCommand without data from {}", from);
+            return;
+        }
+    };
+
+    println!("get encrypted bytes: {:?}", encrypted);
+
+    // 1️⃣ 使用 session_key 解密
+    let plaintext = {
+        let sessions = context.session_keys.lock().await;
+
+        let session = match sessions.get(from) {
+            Some(s) => s,
+            None => {
+                eprintln!("❌ No session_key for sender {}", from);
+                return;
+            }
+        };
+
+        match session.decrypt(encrypted) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("❌ Decrypt message from {} failed: {:?}", from, e);
+                return;
+            }
+        }
+    };
+
+    println!("get plain text: {:?}", plaintext);
+
+    // 2️⃣ bincode 解码
     let (msg, _) = match bincode::decode_from_slice::<MessageCommand, _>(
-        &cmd.data.as_ref().unwrap(),
+        &plaintext,
         bincode::config::standard(),
     ) {
         Ok(v) => v,
@@ -146,8 +194,8 @@ pub async fn on_text_message(cmd: &Command, frame: &Frame, context: Arc<Context>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::net::TcpListener;
     use crate::protocols::client_type::{ClientType, to_client_type};
+    use tokio::net::TcpListener;
     use tokio::net::TcpStream;
 
     use bincode::config;
