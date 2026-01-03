@@ -34,16 +34,14 @@ pub enum Action {
 pub struct Command {
     pub entity: Entity,
     pub action: Action,
-    pub version: u8,
     pub data: Option<Vec<u8>>,
 }
 
 impl Command {
-    pub fn new(entity: Entity, action: Action, version: u8, data: Option<Vec<u8>>) -> Self {
+    pub fn new(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Self {
         Self {
             entity,
             action,
-            version,
             data,
         }
     }
@@ -70,10 +68,9 @@ impl Command {
     pub fn send(
         entity: Entity,
         action: Action,
-        version: u8,
         data: Option<Vec<u8>>,
     ) -> Result<Vec<u8>> {
-        let cmd = Command::new(entity, action, version, data);
+        let cmd = Command::new(entity, action, data);
         cmd.serialize()
     }
 
@@ -89,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_command_serialize_deserialize() {
-        let cmd = Command::new(Entity::Node, Action::OnLine, 1, Some(vec![1, 2, 3, 4]));
+        let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
         let bytes = cmd.serialize().unwrap();
         let cmd2 = Command::deserialize(&bytes).unwrap();
         assert_eq!(cmd, cmd2);
@@ -99,13 +96,12 @@ mod tests {
     fn test_send_receive_roundtrip() {
         let payload = vec![10, 20, 30];
 
-        let bytes = Command::send(Entity::Node, Action::OnLine, 1, Some(payload.clone())).unwrap();
+        let bytes = Command::send(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
 
         let cmd = Command::receive(&bytes).unwrap();
 
         assert_eq!(cmd.entity, Entity::Node);
         assert_eq!(cmd.action, Action::OnLine);
-        assert_eq!(cmd.version, 1);
         assert_eq!(cmd.data, Some(payload));
     }
 }

@@ -178,7 +178,7 @@ impl Frame {
         version: u8,
         data: Option<Vec<u8>>,
     ) -> anyhow::Result<Self> {
-        let cmd_bytes = Command::send(entity, action, version, data)?;
+        let cmd_bytes = Command::send(entity, action, data)?;
 
         let body = FrameBody {
             address: address.to_string(),
@@ -358,7 +358,7 @@ mod tests {
     }
 
     fn make_command() -> Command {
-        Command::new(Entity::Node, Action::OnLine, 1, Some(vec![1, 2, 3, 4]))
+        Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]))
     }
 
     #[test]
@@ -545,7 +545,7 @@ mod tests {
         assert!(frame.body.nonce > 0);
 
         // data 校验
-        let cmd_bytes = Command::send(Entity::Node, Action::OnLine, 1, payload)?;
+        let cmd_bytes = Command::send(Entity::Node, Action::OnLine, payload)?;
 
         assert_eq!(frame.body.data_length, cmd_bytes.len() as u32);
         assert_eq!(frame.body.data, cmd_bytes);
