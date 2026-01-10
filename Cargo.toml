@@ -43,3 +43,7 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+[[bin]]
+name = "zzp2p"
+path = "src/main.rs"
