@@ -36,3 +36,10 @@ uuid = "1.19.0"
 
 [dev-dependencies]
 tempfile = "3.23.0"
+
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
