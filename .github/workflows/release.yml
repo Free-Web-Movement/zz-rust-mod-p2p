@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  
+
 jobs:
   build:
     strategy:
@@ -33,22 +33,43 @@ jobs:
       # Linux musl 需要
       - name: Install musl tools
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      # 🚀 自动读取 [[bin]] 名称
+      - name: Detect binary name
+        id: bin
+        shell: bash
+        run: |
+          BIN_NAME=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[0].targets[] | select(.kind[]=="bin") | .name' \
+            | head -n 1)
+
+          if [ -z "$BIN_NAME" ]; then
+            echo "❌ No binary target found"
+            exit 1
+          fi
+
+          echo "Detected bin: $BIN_NAME"
+          echo "bin_name=$BIN_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename binary
+      - name: Package binary
         shell: bash
         run: |
-          mkdir dist
+          mkdir -p dist
+          BIN="${{ steps.bin.outputs.bin_name }}"
+
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp target/${{ matrix.target }}/release/yourcli.exe dist/yourcli-${{ matrix.name }}.exe
+            cp target/${{ matrix.target }}/release/$BIN.exe \
+               dist/$BIN-${{ matrix.name }}.exe
           else
-            cp target/${{ matrix.target }}/release/yourcli dist/yourcli-${{ matrix.name }}
+            cp target/${{ matrix.target }}/release/$BIN \
+               dist/$BIN-${{ matrix.name }}
           fi
 
-      - name: Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           files: dist/*
