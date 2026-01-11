@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
 use crate::nodes::servers::Servers;
@@ -12,7 +11,6 @@ use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::Command;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
-use crate::protocols::frame::CryptoState;
 use crate::protocols::frame::Frame;
 use crate::protocols::session_key::SessionKey;
 

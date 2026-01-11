@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    context::{self, Context},
+    context::Context,
     nodes::{
         connected_servers::{ConnectedServer, ConnectedServers},
         net_info,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{Action, Command, Entity};
-use crate::protocols::frame::{CryptoState, Frame};
+use crate::protocols::frame::Frame;
 
 pub async fn on_node_offline(
     frame: &Frame,

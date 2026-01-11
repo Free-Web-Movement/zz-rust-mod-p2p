@@ -4,7 +4,7 @@ use anyhow::anyhow;
 
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::{Action, Command, Entity};
-use crate::protocols::frame::{CryptoState, Frame};
+use crate::protocols::frame::Frame;
 use crate::util::time::timestamp;
 use crate::{context::Context, protocols::frame::forward_frame};
 

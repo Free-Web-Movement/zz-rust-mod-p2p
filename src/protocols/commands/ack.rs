@@ -9,7 +9,7 @@ use crate::{
     protocols::{
         client_type::{ClientType, send_bytes},
         command::{Action, Command, Entity},
-        frame::{CryptoState, Frame},
+        frame::Frame,
     },
 };
 

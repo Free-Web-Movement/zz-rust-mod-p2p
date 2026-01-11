@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use futures::{ StreamExt, stream };
 use tokio::{ net::TcpStream, time::timeout };
-use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
 use crate::nodes::record::NodeRecord;
