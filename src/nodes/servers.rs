@@ -46,7 +46,6 @@ pub struct Servers {
 impl Servers {
     pub fn new(
         address: FreeWebMovementAddress,
-        // context: Arc<Context>,
         storage: storage::Storeage,
         net_info: net_info::NetInfo,
     ) -> Self {

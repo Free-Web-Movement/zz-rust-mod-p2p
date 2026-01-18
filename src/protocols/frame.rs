@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use zz_account::address::FreeWebMovementAddress;
@@ -189,11 +190,54 @@ impl Frame {
     //     Ok(Frame::sign(body, address)?)
     // }
 
-    pub async fn build(
+    /// 通用 Frame 构建 + 发送框架
+    /// callback 返回一个 Future，生成 Frame
+    pub async fn executor<F, Fut>(
         context: Arc<Context>,
-        cmd: Command,
         version: u8,
-    ) -> anyhow::Result<Self> {
+        callback: F,
+        target: Option<Arc<ClientType>>, // 可选发送目标
+    ) -> Result<()>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = Result<Frame>> + Send,
+    {
+        // 1️⃣ 通过回调生成 Frame
+        let frame: Frame = callback().await?;
+
+        // 2️⃣ 如果指定 target，则直接发送
+        if let Some(client) = target {
+            send_bytes(&client, &Frame::to(frame.clone())).await;
+        } else {
+            // 否则在 Context 内查找所有可用 client 并发送
+            let clients = context.clients.lock().await;
+            for (_, conns) in clients.inner.iter() {
+                for ct in conns {
+                    send_bytes(&ct.0, &Frame::to(frame.clone())).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 生成 Frame 的辅助函数
+    pub async fn build_frame(context: Arc<Context>, cmd: Command, version: u8) -> Result<Frame> {
+        let cmd_bytes = cmd.serialize()?;
+        let body = crate::protocols::frame::FrameBody {
+            version,
+            address: context.address.to_string(),
+            public_key: context.address.public_key.to_bytes().to_vec(),
+            nonce: rand::random(),
+            data_length: cmd_bytes.len() as u32,
+            data: cmd_bytes,
+        };
+
+        let frame = crate::protocols::frame::Frame::sign(body, &context.address)?;
+        Ok(frame)
+    }
+
+    pub async fn build(context: Arc<Context>, cmd: Command, version: u8) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
             address: context.address.to_string(),
@@ -295,9 +339,11 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::command::{Action, Entity};
+    use crate::{
+        nodes::{net_info::NetInfo, servers::Servers, storage::Storeage},
+        protocols::command::{Action, Entity},
+    };
     use zz_account::address::FreeWebMovementAddress;
-
     #[test]
     fn test_encrypt_decrypt_ok() {
         let key = [7u8; 32];
@@ -534,4 +580,48 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
+
+        use std::sync::Arc;
+
+
+    use crate::context::Context;
+    use crate::protocols::command::{Command};
+    use crate::protocols::frame::Frame;
+
+    fn dummy_context() -> Context {
+        let address = FreeWebMovementAddress::random(); // 如果没有 default，换成你真实构造方式
+
+        // 1️⃣ 初始化 storage
+        let storage = Storeage::new(None, None, None, None);
+
+        // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
+        let servers = Servers::new(address.clone(), storage, NetInfo::new(8080));
+
+        Context::new("127.0.0.1".to_string(), 8080, address, servers)
+    }
+
+    #[tokio::test]
+    async fn test_frame_executor() -> Result<()> {
+        use crate::protocols::command::{Action, Command, Entity};
+
+        let context = dummy_context();
+
+        let context = Arc::new(context);
+        let version = 1;
+
+        // 调用 frame_executor 并传入回调
+        Frame::executor(
+            context.clone(),
+            version,
+            || async {
+                // 这里是业务回调，生成 Command
+                let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
+                Frame::build_frame(context.clone(), cmd, version).await
+            },
+            None,
+        )
+        .await?;
+
+        Ok(())
+    }
 }

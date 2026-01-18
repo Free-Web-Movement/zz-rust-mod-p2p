@@ -2,7 +2,7 @@ use anyhow::Result;
 use bincode::config;
 use bincode::{Decode, Encode};
 
-#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Entity {
     Node = 1,
     Message,
@@ -10,7 +10,7 @@ pub enum Entity {
     File,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Action {
     //Node Actions
     OnLine = 1,

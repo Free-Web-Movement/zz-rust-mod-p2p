@@ -1,6 +1,6 @@
-use rand::{ RngCore, rngs::OsRng };
+use anyhow::{Result, anyhow};
+use rand::{RngCore, rngs::OsRng};
 use serde_json::Value;
-use anyhow::{ Result, anyhow };
 use x25519_dalek::PublicKey;
 
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{
-    nodes::{ connected_clients::ConnectedClients, servers::Servers },
+    nodes::{connected_clients::ConnectedClients, servers::Servers},
     protocols::session_key::SessionKey,
 };
 
@@ -48,7 +48,10 @@ impl Context {
 
         let session_key = SessionKey::new();
 
-        self.temp_sessions.lock().await.insert(session_id, session_key);
+        self.temp_sessions
+            .lock()
+            .await
+            .insert(session_id, session_key);
 
         session_id
     }
@@ -56,7 +59,7 @@ impl Context {
     pub async fn move_temp_to_permanent(
         &self,
         session_id: [u8; 16],
-        address: String
+        address: String,
     ) -> Result<()> {
         let mut temp_sessions = self.temp_sessions.lock().await;
 
@@ -73,21 +76,29 @@ impl Context {
     }
 
     pub async fn cleanup_temp_sessions(&self, ttl_ms: u128) {
-        self.temp_sessions.lock().await.retain(|_, sk| !sk.is_expired(ttl_ms));
+        self.temp_sessions
+            .lock()
+            .await
+            .retain(|_, sk| !sk.is_expired(ttl_ms));
     }
 
     pub async fn cleanup_sessions(&self, ttl_ms: u128) {
-        self.session_keys.lock().await.retain(|_, sk| !sk.is_expired(ttl_ms));
+        self.session_keys
+            .lock()
+            .await
+            .retain(|_, sk| !sk.is_expired(ttl_ms));
     }
 
     pub async fn with_session<R>(
         &self,
         address: &str,
-        f: impl FnOnce(&mut SessionKey) -> Result<R>
+        f: impl FnOnce(&mut SessionKey) -> Result<R>,
     ) -> Result<R> {
         let mut sessions = self.session_keys.lock().await;
 
-        let sk = sessions.get_mut(address).ok_or_else(|| anyhow!("session not found for address"))?;
+        let sk = sessions
+            .get_mut(address)
+            .ok_or_else(|| anyhow!("session not found for address"))?;
 
         // 每次合法使用都 touch
         sk.touch();
@@ -99,7 +110,9 @@ impl Context {
     pub async fn session_establish(&self, address: &str, peer_public: &PublicKey) -> Result<()> {
         let mut sessions = self.session_keys.lock().await;
 
-        let sk = sessions.get_mut(address).ok_or_else(|| anyhow!("session not found for address"))?;
+        let sk = sessions
+            .get_mut(address)
+            .ok_or_else(|| anyhow!("session not found for address"))?;
 
         sk.establish(peer_public)?;
         sk.touch();
@@ -111,7 +124,9 @@ impl Context {
     pub async fn session_enc(&self, address: &str, plaintext: &[u8]) -> Result<Vec<u8>> {
         let mut sessions = self.session_keys.lock().await;
 
-        let sk = sessions.get_mut(address).ok_or_else(|| anyhow!("session not found for address"))?;
+        let sk = sessions
+            .get_mut(address)
+            .ok_or_else(|| anyhow!("session not found for address"))?;
 
         let ct = sk.encrypt(plaintext)?;
         sk.touch();
@@ -123,7 +138,9 @@ impl Context {
     pub async fn session_dec(&self, address: &str, data: &[u8]) -> Result<Vec<u8>> {
         let mut sessions = self.session_keys.lock().await;
 
-        let sk = sessions.get_mut(address).ok_or_else(|| anyhow!("session not found for address"))?;
+        let sk = sessions
+            .get_mut(address)
+            .ok_or_else(|| anyhow!("session not found for address"))?;
 
         let pt = sk.decrypt(data)?;
         sk.touch();
@@ -134,13 +151,13 @@ impl Context {
 
 #[cfg(test)]
 mod tests {
-    use crate::nodes::{ net_info::NetInfo, storage::Storeage };
+    use crate::nodes::{net_info::NetInfo, storage::Storeage};
 
     use super::*;
-    use x25519_dalek::{ EphemeralSecret, PublicKey };
-    use tokio::time::{ sleep, Duration };
+    use tokio::time::{Duration, sleep};
+    use x25519_dalek::{EphemeralSecret, PublicKey};
 
-    fn dummy_context() -> Context {
+    pub fn dummy_context() -> Context {
         let address = Address::random(); // 如果没有 default，换成你真实构造方式
 
         // 1️⃣ 初始化 storage
@@ -168,7 +185,9 @@ mod tests {
 
         let addr = "peer-1".to_string();
 
-        ctx.move_temp_to_permanent(session_id, addr.clone()).await.expect("move temp -> permanent");
+        ctx.move_temp_to_permanent(session_id, addr.clone())
+            .await
+            .expect("move temp -> permanent");
 
         let sessions = ctx.session_keys.lock().await;
         assert!(sessions.contains_key(&addr));
@@ -180,7 +199,10 @@ mod tests {
 
         let fake_id = [1u8; 16];
 
-        let err = ctx.move_temp_to_permanent(fake_id, "peer-x".to_string()).await.unwrap_err();
+        let err = ctx
+            .move_temp_to_permanent(fake_id, "peer-x".to_string())
+            .await
+            .unwrap_err();
 
         assert!(err.to_string().contains("temp session not found"));
     }
@@ -193,13 +215,17 @@ mod tests {
         let session_id = ctx.create_temp_session().await;
         let addr = "peer-crypto".to_string();
 
-        ctx.move_temp_to_permanent(session_id, addr.clone()).await.unwrap();
+        ctx.move_temp_to_permanent(session_id, addr.clone())
+            .await
+            .unwrap();
 
         // peer keypair
         let (_peer_secret, peer_public) = gen_keypair();
 
         // establish
-        ctx.session_establish(&addr, &peer_public).await.expect("establish");
+        ctx.session_establish(&addr, &peer_public)
+            .await
+            .expect("establish");
 
         // encrypt
         let plaintext = b"hello secure world";
@@ -273,7 +299,9 @@ mod tests {
             // 尚未 establish，key 应为空
             assert!(sk.key.is_none());
             Ok(())
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -300,48 +328,60 @@ mod tests {
 
         let a_public = {
             let map = ctx_a.temp_sessions.lock().await;
-            map.get(&session_id).expect("A temp session exists").ephemeral_public
+            map.get(&session_id)
+                .expect("A temp session exists")
+                .ephemeral_public
         };
 
         /* ---------------- S: receive ONLINE ---------------- */
         /*
-        关键点：
-        - S 不能直接 move 到 permanent
-        - S 必须也用 session_id 暂存
-    */
+            关键点：
+            - S 不能直接 move 到 permanent
+            - S 必须也用 session_id 暂存
+        */
         let sk_s = SessionKey::new();
         ctx_s.temp_sessions.lock().await.insert(session_id, sk_s);
 
         let s_public = {
             let map = ctx_s.temp_sessions.lock().await;
-            map.get(&session_id).expect("S temp session exists").ephemeral_public
+            map.get(&session_id)
+                .expect("S temp session exists")
+                .ephemeral_public
         };
 
         /* ---------------- S -> A : ONLINE_ACK ---------------- */
         /*
-        ACK 内容语义上等价于：
-        {
-            session_id,
-            address: S,
-            public_key: s_public
-        }
-    */
+            ACK 内容语义上等价于：
+            {
+                session_id,
+                address: S,
+                public_key: s_public
+            }
+        */
 
         /* ---------------- A: receive ACK ---------------- */
 
         ctx_a
-            .move_temp_to_permanent(session_id, addr_s.clone()).await
+            .move_temp_to_permanent(session_id, addr_s.clone())
+            .await
             .expect("A move temp -> permanent");
 
-        ctx_a.session_establish(&addr_s, &s_public).await.expect("A establish");
+        ctx_a
+            .session_establish(&addr_s, &s_public)
+            .await
+            .expect("A establish");
 
         /* ---------------- S: finalize after ACK ---------------- */
 
         ctx_s
-            .move_temp_to_permanent(session_id, addr_a.clone()).await
+            .move_temp_to_permanent(session_id, addr_a.clone())
+            .await
             .expect("S move temp -> permanent");
 
-        ctx_s.session_establish(&addr_a, &a_public).await.expect("S establish");
+        ctx_s
+            .session_establish(&addr_a, &a_public)
+            .await
+            .expect("S establish");
 
         /* ---------------- verify secure channel ---------------- */
 

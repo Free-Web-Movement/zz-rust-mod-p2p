@@ -105,11 +105,9 @@ impl ConnectedServers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::client_type::send_bytes;
     use crate::protocols::defines::ProtocolCapability;
     use chrono::Utc;
     use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
-    use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
     fn make_record(port: u16) -> NodeRecord {
