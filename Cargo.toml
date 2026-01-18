@@ -37,6 +37,8 @@ x25519-dalek = "2.0.1"
 hkdf = "0.12.4"
 uuid = "1.19.0"
 sha2 = "0.10.9"
+tracing-subscriber = { version = "0.3.22", features = ["fmt", "ansi", "env-filter"] }
+
 
 
 [dev-dependencies]

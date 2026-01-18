@@ -1,50 +1,74 @@
-use futures::future::BoxFuture;
 use std::sync::Arc;
 
-use crate::context::Context;
-use crate::protocols::codec::CommandCodec;
-use crate::protocols::frame::Frame;
+use bincode::Decode;
+use futures::{ FutureExt, future::BoxFuture };
 
-/// 🔹 泛型命令处理器
-pub struct CommandProcessor<C: Send + Sync + 'static, T: CommandCodec + Send + Sync + 'static> {
-    pub entity: crate::protocols::command::Entity,
-    pub action: crate::protocols::command::Action,
+use crate::{
+    context::Context,
+    protocols::{ codec::CommandCodec, command::{ Action, Entity }, frame::Frame },
+};
 
-    /// 接收处理函数（on_receive）
-    pub handler: fn(T, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
+pub struct CommandProcessor<C: Send + Sync + 'static> {
+    pub entity: Entity,
+    pub action: Action,
 
-    /// 发送函数（send_to）
-    pub sender: fn(T, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
+    pub handler: Arc<dyn (Fn(Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>) + Send + Sync>,
+
+    pub sender: Arc<
+        dyn (Fn(Vec<u8>, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>) + Send + Sync
+    >,
 }
 
-impl<C: Send + Sync + 'static, T: CommandCodec + Send + Sync + 'static> CommandProcessor<C, T> {
-    pub fn new(
-        entity: crate::protocols::command::Entity,
-        action: crate::protocols::command::Action,
+impl<C: Send + Sync + 'static> CommandProcessor<C> {
+    pub fn new<T>(
+        entity: Entity,
+        action: Action,
         handler: fn(T, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
-        sender: fn(T, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
-    ) -> Self {
+        sender: fn(T, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>
+    ) -> Self
+        where T: crate::protocols::codec::CommandCodec + bincode::Decode<()> + 'static
+    {
+        let handler = Arc::new(
+            move |frame: Frame, ctx: Arc<Context>, client: Arc<C>| -> BoxFuture<'static, ()> {
+                (
+                    async move {
+                        let cmd = match T::from_bytes(&frame.body.data) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                tracing::error!("decode failed: {:?}", e);
+                                return;
+                            }
+                        };
+
+                        handler(cmd, frame, ctx, client).await;
+                    }
+                ).boxed()
+            }
+        );
+
+        let sender = Arc::new(
+            move |data: Vec<u8>, ctx: Arc<Context>, client: Arc<C>| -> BoxFuture<'static, ()> {
+                (
+                    async move {
+                        let cmd = match T::from_bytes(&data) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                tracing::error!("decode failed: {:?}", e);
+                                return;
+                            }
+                        };
+
+                        sender(cmd, ctx, client).await;
+                    }
+                ).boxed()
+            }
+        );
+
         Self {
             entity,
             action,
             handler,
             sender,
         }
-    }
-
-    /// 调用接收处理函数
-    pub fn on(
-        &self,
-        cmd: T,
-        frame: Frame,
-        context: Arc<Context>,
-        client: Arc<C>,
-    ) -> BoxFuture<'static, ()> {
-        (self.handler)(cmd, frame, context, client)
-    }
-
-    /// 调用发送函数
-    pub fn to(&self, cmd: T, context: Arc<Context>, client: Arc<C>) -> BoxFuture<'static, ()> {
-        (self.sender)(cmd, context, client)
     }
 }
