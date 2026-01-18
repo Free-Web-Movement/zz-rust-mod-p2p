@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     context::Context,
     protocols::{
-        client_type::{ClientType, send_bytes},
-        command::{Action, Command, Entity},
-        frame::Frame,
+        client_type::{ClientType, send_bytes}, codec::Codec, command::{Action, Command, Entity}, frame::Frame
     },
 };
 
@@ -105,7 +103,7 @@ pub async fn send_online_ack(
     let frame = Frame::build(context, command, 1).await.unwrap();
 
     // 2️⃣ 转成字节发送
-    let bytes = Frame::to(frame);
+    let bytes = Frame::to_bytes(&frame);
 
     send_bytes(client_type, &bytes).await;
 

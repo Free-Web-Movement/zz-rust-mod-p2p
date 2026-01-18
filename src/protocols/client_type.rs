@@ -11,7 +11,7 @@ use anyhow::Context as AnContext;
 
 use crate::{
     consts::TCP_BUFFER_LENGTH, context::Context, handlers::ws::WebSocketHandler,
-    protocols::frame::Frame,
+    protocols::{codec::Codec, frame::Frame},
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -326,7 +326,7 @@ pub async fn read_one_tcp_frame(
     println!("{:?}", msg_buf);
 
     // ---------- 3. Frame 处理 ----------
-    let frame = Frame::from(&msg_buf);
+    let frame = Frame::from_bytes(&msg_buf).unwrap();
     Frame::on(&frame, context, client_type).await;
 
     Ok(())

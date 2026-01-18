@@ -2,30 +2,25 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
 
-use bincode::config;
-use bincode::serde::{decode_from_slice, encode_to_vec};
+use bincode::{ Decode, Encode, config };
+use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType, send_bytes};
-use crate::protocols::command::{Action, Command, Entity};
+use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::codec::Codec;
+use crate::protocols::command::{ Action, Command, Entity };
 use crate::protocols::commands::ack::on_node_online_ack;
 use crate::protocols::commands::message::on_text_message;
 use crate::protocols::commands::offline::on_node_offline;
 use crate::protocols::commands::online::on_node_online;
-use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce,
-    aead::{Aead, KeyInit},
-};
 
 /// ⚠️ 不要写返回类型！
 #[inline]
 pub fn frame_config() -> impl bincode::config::Config {
-    config::standard()
-        .with_fixed_int_encoding()
-        .with_big_endian()
+    config::standard().with_fixed_int_encoding().with_big_endian()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +34,7 @@ pub enum CryptoState {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct FrameBody {
     /// 协议版本
     pub version: u8,
@@ -68,7 +63,7 @@ impl FrameBody {
         public_key: Vec<u8>,
         nonce: u64,
         data_length: u32,
-        data: Vec<u8>,
+        data: Vec<u8>
     ) -> Self {
         FrameBody {
             version,
@@ -92,34 +87,9 @@ impl FrameBody {
     }
 }
 
-pub fn encrypt_data(key: &[u8; 32], plaintext: &[u8]) -> anyhow::Result<([u8; 12], Vec<u8>)> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
-
-    let nonce: [u8; 12] = rand::random();
-    let ciphertext = cipher
-        .encrypt(Nonce::from_slice(&nonce), plaintext)
-        .map_err(|_| anyhow::anyhow!("encrypt failed"))?;
-
-    Ok((nonce, ciphertext))
-}
-
-pub fn decrypt_data(
-    key: &[u8; 32],
-    nonce: &[u8; 12],
-    ciphertext: &[u8],
-) -> anyhow::Result<Vec<u8>> {
-    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
-
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(nonce), ciphertext)
-        .map_err(|_| anyhow::anyhow!("decrypt failed"))?;
-
-    Ok(plaintext)
-}
-
 /// 端到端安全帧（只做加密与校验）
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct Frame {
     pub body: FrameBody,
 
@@ -160,34 +130,13 @@ impl Frame {
         Ok(frame)
     }
 
-    pub fn from(bytes: &Vec<u8>) -> Frame {
-        let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config()).unwrap();
-        frame
-    }
+    // pub fn from(bytes: &Vec<u8>) -> Frame {
+    //     let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config()).unwrap();
+    //     frame
+    // }
 
-    pub fn to(frame: Frame) -> Vec<u8> {
-        encode_to_vec(&frame, frame_config()).unwrap()
-    }
-
-    // pub fn build_node_command(
-    //     address: &FreeWebMovementAddress,
-    //     entity: Entity,
-    //     action: Action,
-    //     version: u8,
-    //     data: Option<Vec<u8>>,
-    // ) -> anyhow::Result<Self> {
-    //     let cmd_bytes = Command::to_bytes(entity, action, data)?;
-
-    //     let body = FrameBody {
-    //         address: address.to_string(),
-    //         public_key: address.public_key.to_bytes().to_vec(),
-    //         nonce: rand::thread_rng().r#gen(),
-    //         data_length: cmd_bytes.len() as u32,
-    //         version,
-    //         crypto: CryptoState::Plain,
-    //         data: cmd_bytes,
-    //     };
-    //     Ok(Frame::sign(body, address)?)
+    // pub fn to(frame: Frame) -> Vec<u8> {
+    //     encode_to_vec(&frame, frame_config()).unwrap()
     // }
 
     /// 通用 Frame 构建 + 发送框架
@@ -196,24 +145,23 @@ impl Frame {
         context: Arc<Context>,
         version: u8,
         callback: F,
-        target: Option<Arc<ClientType>>, // 可选发送目标
-    ) -> Result<()>
-    where
-        F: FnOnce() -> Fut + Send,
-        Fut: std::future::Future<Output = Result<Frame>> + Send,
+        target: Option<Arc<ClientType>> // 可选发送目标
+    )
+        -> Result<()>
+        where F: FnOnce() -> Fut + Send, Fut: std::future::Future<Output = Result<Frame>> + Send
     {
         // 1️⃣ 通过回调生成 Frame
         let frame: Frame = callback().await?;
 
         // 2️⃣ 如果指定 target，则直接发送
         if let Some(client) = target {
-            send_bytes(&client, &Frame::to(frame.clone())).await;
+            send_bytes(&client, &Frame::to_bytes(&frame.clone())).await;
         } else {
             // 否则在 Context 内查找所有可用 client 并发送
             let clients = context.clients.lock().await;
             for (_, conns) in clients.inner.iter() {
                 for ct in conns {
-                    send_bytes(&ct.0, &Frame::to(frame.clone())).await;
+                    send_bytes(&ct.0, &Frame::to_bytes(&frame.clone())).await;
                 }
             }
         }
@@ -278,7 +226,8 @@ impl Frame {
             (Entity::Node, Action::OffLine) => {
                 println!(
                     "⚠️ Node Offline: addr={}, nonce={}",
-                    frame.body.address, frame.body.nonce
+                    frame.body.address,
+                    frame.body.nonce
                 );
                 on_node_offline(frame, context, client_type).await;
                 // 这里你以后可以做 remove
@@ -287,12 +236,15 @@ impl Frame {
             _ => {
                 println!(
                     "ℹ️ Unsupported command: entity={:?}, action={:?}",
-                    cmd.entity, cmd.action
+                    cmd.entity,
+                    cmd.action
                 );
             }
         }
     }
 }
+
+impl Codec for Frame {}
 
 pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context>) {
     // ⚠️ 重要安全原则：
@@ -309,7 +261,7 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
         let conns = clients.get_connections(&receiver, true);
 
         if !conns.is_empty() {
-            let bytes = Frame::to(frame.clone());
+            let bytes = Frame::to_bytes(&frame.clone());
 
             for ct in conns {
                 // ⚠️ 只发 bytes，不传 Frame
@@ -324,7 +276,7 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 
     // ===== 2️⃣ 查 servers，向其它服务器转发 =====
     let servers_guard = context.servers.lock().await;
-    let bytes = Frame::to(frame.clone());
+    let bytes = Frame::to_bytes(&frame.clone());
 
     if let Some(servers) = &servers_guard.connected_servers {
         let all = servers.inner.iter().chain(servers.external.iter());
@@ -340,43 +292,10 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 mod tests {
     use super::*;
     use crate::{
-        nodes::{net_info::NetInfo, servers::Servers, storage::Storeage},
-        protocols::command::{Action, Entity},
+        nodes::{ net_info::NetInfo, servers::Servers, storage::Storeage },
+        protocols::command::{ Action, Entity },
     };
     use zz_account::address::FreeWebMovementAddress;
-    #[test]
-    fn test_encrypt_decrypt_ok() {
-        let key = [7u8; 32];
-        let plaintext = b"hello freewebmovement";
-
-        let (nonce, cipher) = encrypt_data(&key, plaintext).unwrap();
-        let decrypted = decrypt_data(&key, &nonce, &cipher).unwrap();
-
-        assert_eq!(plaintext.to_vec(), decrypted);
-    }
-
-    #[test]
-    fn test_decrypt_with_wrong_key_fail() {
-        let key1 = [1u8; 32];
-        let key2 = [2u8; 32];
-        let plaintext = b"secret message";
-
-        let (nonce, cipher) = encrypt_data(&key1, plaintext).unwrap();
-        let result = decrypt_data(&key2, &nonce, &cipher);
-
-        assert!(result.is_err());
-    }
-
-    fn test_decrypt_with_wrong_nonce_fail() {
-        let key = [9u8; 32];
-        let plaintext = b"attack at dawn";
-
-        let (mut nonce, cipher) = encrypt_data(&key, plaintext).unwrap();
-        nonce[0] ^= 0xff;
-
-        let result = decrypt_data(&key, &nonce, &cipher);
-        assert!(result.is_err());
-    }
 
     #[tokio::test]
     async fn test_frame_sign_and_verify() -> anyhow::Result<()> {
@@ -407,8 +326,8 @@ mod tests {
 
         println!("Frame verified successfully!");
 
-        let bytes = Frame::to(frame);
-        let frame2 = Frame::from(&bytes);
+        let bytes = Frame::to_bytes(&frame);
+        let frame2 = Frame::from_bytes(&bytes).unwrap();
 
         assert_eq!(frame1.signature.to_vec(), frame2.signature.to_vec());
         assert_eq!(frame1.body.data.to_vec(), frame2.body.data.to_vec());
@@ -430,7 +349,7 @@ mod tests {
             addr.public_key.to_bytes(),
             100,
             4,
-            vec![9, 8, 7, 6],
+            vec![9, 8, 7, 6]
         );
 
         assert_eq!(body.version, 1);
@@ -449,7 +368,7 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             0,
-            vec![],
+            vec![]
         );
 
         let cmd = make_command();
@@ -473,7 +392,7 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             1,
-            vec![0xaa],
+            vec![0xaa]
         );
 
         let frame = Frame::new(body.clone(), vec![0xbb]);
@@ -492,7 +411,7 @@ mod tests {
             identity.public_key.to_bytes(),
             42,
             5,
-            b"hello".to_vec(),
+            b"hello".to_vec()
         );
 
         let frame = Frame::sign(body.clone(), &identity)?;
@@ -502,10 +421,7 @@ mod tests {
         let verified = Frame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
-        assert_eq!(
-            frame.body.address.to_string(),
-            verified.body.address.to_string()
-        );
+        assert_eq!(frame.body.address.to_string(), verified.body.address.to_string());
 
         Ok(())
     }
@@ -520,13 +436,13 @@ mod tests {
             identity.public_key.to_bytes(),
             7,
             3,
-            vec![1, 2, 3],
+            vec![1, 2, 3]
         );
 
         let frame = Frame::sign(body, &identity).unwrap();
 
-        let bytes = Frame::to(frame.clone());
-        let decoded = Frame::from(&bytes);
+        let bytes = Frame::to_bytes(&frame.clone());
+        let decoded = Frame::from_bytes(&bytes).unwrap();
 
         assert_eq!(frame.signature, decoded.signature);
         assert_eq!(frame.body.nonce, decoded.body.nonce);
@@ -542,7 +458,7 @@ mod tests {
             identity.public_key.to_bytes(),
             9,
             3,
-            vec![1, 2, 3],
+            vec![1, 2, 3]
         );
 
         let mut frame = Frame::sign(body.clone(), &identity).unwrap();
@@ -565,14 +481,7 @@ mod tests {
         // 只要能成功编码解码即视为一致
         let addr = FreeWebMovementAddress::random();
 
-        let body = FrameBody::new(
-            1,
-            addr.to_string(),
-            addr.public_key.to_bytes(),
-            0,
-            0,
-            vec![],
-        );
+        let body = FrameBody::new(1, addr.to_string(), addr.public_key.to_bytes(), 0, 0, vec![]);
 
         let bytes = encode_to_vec(&body, cfg1).unwrap();
         let (decoded, _): (FrameBody, usize) = decode_from_slice(&bytes, cfg2).unwrap();
@@ -580,12 +489,10 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
-
-        use std::sync::Arc;
-
+    use std::sync::Arc;
 
     use crate::context::Context;
-    use crate::protocols::command::{Command};
+    use crate::protocols::command::{ Command };
     use crate::protocols::frame::Frame;
 
     fn dummy_context() -> Context {
@@ -602,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_frame_executor() -> Result<()> {
-        use crate::protocols::command::{Action, Command, Entity};
+        use crate::protocols::command::{ Action, Command, Entity };
 
         let context = dummy_context();
 
@@ -618,9 +525,8 @@ mod tests {
                 let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
                 Frame::build_frame(context.clone(), cmd, version).await
             },
-            None,
-        )
-        .await?;
+            None
+        ).await?;
 
         Ok(())
     }

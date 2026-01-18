@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::codec::Codec;
 use crate::protocols::command::{Action, Command, Entity};
 use crate::protocols::frame::Frame;
 
@@ -32,7 +33,7 @@ pub async fn send_offline(
         .await
         .unwrap();
     // 2️⃣ 序列化 Frame
-    let bytes = Frame::to(frame);
+    let bytes = Frame::to_bytes(&frame);
     send_bytes(&client_type, &bytes).await;
     // self.send(&bytes).await?;
     Ok(())

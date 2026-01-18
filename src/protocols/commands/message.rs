@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 
 use crate::protocols::client_type::send_bytes;
+use crate::protocols::codec::Codec;
 use crate::protocols::command::{Action, Command, Entity};
 use crate::protocols::frame::Frame;
 use crate::util::time::timestamp;
@@ -54,7 +55,7 @@ pub async fn send_text_message(
 
     let frame = Frame::build(context.clone(), command, 1).await.unwrap();
 
-    let bytes = Frame::to(frame);
+    let bytes = Frame::to_bytes(&frame);
 
     println!(
         "Node is sending text message from {} to {}: {}",

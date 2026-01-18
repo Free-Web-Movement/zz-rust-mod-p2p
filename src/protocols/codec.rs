@@ -3,7 +3,7 @@ use bincode::{Decode, Encode, config, decode_from_slice};
 use serde::{Deserialize, Serialize};
 
 /// ⚡ 命令序列化 trait
-pub trait CommandCodec: Serialize + for<'de> Deserialize<'de> + Sized {
+pub trait Codec : Serialize + for<'de> Deserialize<'de> + Sized {
     /// 转为字节
     fn to_bytes(&self) -> Vec<u8>
     where

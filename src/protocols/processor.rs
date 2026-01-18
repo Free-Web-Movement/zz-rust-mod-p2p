@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use bincode::Decode;
 use futures::{ FutureExt, future::BoxFuture };
 
 use crate::{
     context::Context,
-    protocols::{ codec::CommandCodec, command::{ Action, Entity }, frame::Frame },
+    protocols::{ codec::Codec, command::{ Action, Entity }, frame::Frame },
 };
 
 pub struct CommandProcessor<C: Send + Sync + 'static> {
@@ -26,7 +25,7 @@ impl<C: Send + Sync + 'static> CommandProcessor<C> {
         handler: fn(T, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
         sender: fn(T, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>
     ) -> Self
-        where T: crate::protocols::codec::CommandCodec + bincode::Decode<()> + 'static
+        where T: Codec + bincode::Decode<()> + 'static
     {
         let handler = Arc::new(
             move |frame: Frame, ctx: Arc<Context>, client: Arc<C>| -> BoxFuture<'static, ()> {

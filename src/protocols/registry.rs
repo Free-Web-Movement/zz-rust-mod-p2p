@@ -62,7 +62,7 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
 mod tests {
     use super::*;
     use crate::context::Context;
-    use crate::protocols::codec::CommandCodec;
+    use crate::protocols::codec::Codec;
     use crate::protocols::command::{Action, Command, Entity};
     use crate::protocols::frame::Frame;
     use anyhow::Result;
@@ -107,7 +107,7 @@ mod tests {
         pub id: u8,
     }
 
-    impl CommandCodec for TempCommand {}
+    impl Codec for TempCommand {}
 
     #[tokio::test]
     async fn test_registry_with_mock_client() -> Result<()> {
@@ -126,7 +126,7 @@ mod tests {
                     // 发送 ack
                     let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![cmd.id]));
                     let ack_frame = Frame::build_frame(ctx.clone(), ack, 1).await.unwrap();
-                    mock_send_bytes(&client, &Frame::to(ack_frame)).await;
+                    mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
                 })
             },
             |cmd: TempCommand, ctx: Arc<crate::context::Context>, client: Arc<MockClientType>| {
@@ -175,8 +175,8 @@ async fn test_registry_with_multiple_commands() -> anyhow::Result<()> {
     #[derive(Clone, Encode, Decode, Serialize, Deserialize)]
     struct CmdB { pub value: u16 }
 
-    impl CommandCodec for CmdA {}
-    impl CommandCodec for CmdB {}
+    impl Codec for CmdA {}
+    impl Codec for CmdB {}
 
     // 构造 CommandProcessor
     let processor_a = CommandProcessor::new(
@@ -187,7 +187,7 @@ async fn test_registry_with_multiple_commands() -> anyhow::Result<()> {
                 println!("✅ CmdA triggered: {}", cmd.value);
                 let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![cmd.value]));
                 let ack_frame = Frame::build_frame(ctx.clone(), ack, 1).await.unwrap();
-                mock_send_bytes(&client, &Frame::to(ack_frame)).await;
+                mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
             })
         },
         |cmd: CmdA, ctx: Arc<Context>, client: Arc<MockClientType>| {
@@ -206,7 +206,7 @@ async fn test_registry_with_multiple_commands() -> anyhow::Result<()> {
                 println!("✅ CmdB triggered: {}", cmd.value);
                 let ack = Command::new(Entity::Node, Action::OnLineAck, Some(cmd.value.to_le_bytes().to_vec()));
                 let ack_frame = Frame::build_frame(ctx.clone(), ack, 2).await.unwrap();
-                mock_send_bytes(&client, &Frame::to(ack_frame)).await;
+                mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
             })
         },
         |cmd: CmdB, ctx: Arc<Context>, client: Arc<MockClientType>| {

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::context::Context;
 use crate::nodes::servers::Servers;
 use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::codec::Codec;
 use crate::protocols::command::Command;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
@@ -115,7 +116,7 @@ pub async fn on_node_online(
     }
 
     // ===== 5️⃣ 发送 ACK =====
-    send_bytes(client_type, &Frame::to(ack_frame.clone())).await;
+    send_bytes(client_type, &Frame::to_bytes(&ack_frame.clone())).await;
 
     Some(ack_frame)
 }
@@ -131,7 +132,7 @@ pub async fn send_online(
         .await
         .unwrap();
 
-    let bytes = Frame::to(frame);
+    let bytes = Frame::to_bytes(&frame);
 
     send_bytes(client_type, &bytes).await;
 
