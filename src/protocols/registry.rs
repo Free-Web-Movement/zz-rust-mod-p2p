@@ -5,7 +5,6 @@ use tokio::sync::Mutex;
 
 use crate::context::Context;
 use crate::protocols::command::{Action, Command, Entity};
-use crate::protocols::processor::CommandProcessor;
 
 /// 泛型 ClientType 支持
 #[derive(Default)]
@@ -88,6 +87,16 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
     }
 }
 
+/// 命令注册描述
+pub struct CommandProcessor<C: Send + Sync + 'static> {
+    pub entity: Entity,
+    pub action: Action,
+    pub handler:
+        fn(Command, crate::protocols::frame::Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
+    pub sender:
+        fn(Command, crate::protocols::frame::Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +148,7 @@ mod tests {
 
         // 注册 Node OnLine 回调
         registry
-            .register(Entity::Node, Action::OnLine, |_cmd, frame, ctx, client| {
+            .register(Entity::Node, Action::OnLine, |cmd, frame, ctx, client| {
                 Box::pin(async move {
                     println!("✅ Node OnLine triggered for {}", frame.body.address);
 
