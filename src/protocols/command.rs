@@ -6,6 +6,7 @@ use bincode::{Decode, Encode};
 pub enum Entity {
     Node = 1,
     Message,
+    Witness,
     Telephone,
     File,
 }
@@ -22,6 +23,10 @@ pub enum Action {
     //Message Actions
     SendText,
     SendBinary,
+
+    //Witness Actions
+    Tick,
+    Check,
 
     //Telephone Actions
     Call,

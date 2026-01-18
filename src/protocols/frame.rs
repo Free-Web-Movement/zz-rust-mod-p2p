@@ -12,10 +12,9 @@ use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
 use crate::protocols::codec::Codec;
 use crate::protocols::command::{ Action, Command, Entity };
-use crate::protocols::commands::ack::on_node_online_ack;
 use crate::protocols::commands::message::on_text_message;
 use crate::protocols::commands::offline::on_node_offline;
-use crate::protocols::registry::{FrameHandlerRegistry, frame_handler_registry};
+use crate::protocols::registry::frame_handler_registry;
 
 /// ⚠️ 不要写返回类型！
 #[inline]
@@ -129,37 +128,7 @@ impl Frame {
         }
         Ok(frame)
     }
-
-    /// 通用 Frame 构建 + 发送框架
-    /// callback 返回一个 Future，生成 Frame
-    pub async fn executor<F, Fut>(
-        context: Arc<Context>,
-        version: u8,
-        callback: F,
-        target: Option<Arc<ClientType>> // 可选发送目标
-    )
-        -> Result<()>
-        where F: FnOnce() -> Fut + Send, Fut: std::future::Future<Output = Result<Frame>> + Send
-    {
-        // 1️⃣ 通过回调生成 Frame
-        let frame: Frame = callback().await?;
-
-        // 2️⃣ 如果指定 target，则直接发送
-        if let Some(client) = target {
-            send_bytes(&client, &Frame::to_bytes(&frame.clone())).await;
-        } else {
-            // 否则在 Context 内查找所有可用 client 并发送
-            let clients = context.clients.lock().await;
-            for (_, conns) in clients.inner.iter() {
-                for ct in conns {
-                    send_bytes(&ct.0, &Frame::to_bytes(&frame.clone())).await;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
+    
     pub async fn build(context: Arc<Context>, cmd: Command, version: u8) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
@@ -190,9 +159,9 @@ impl Frame {
             //     on_node_online(&cmd, frame, context, client_type).await;
             // }
 
-            (Entity::Node, Action::OnLineAck) => {
-                on_node_online_ack(&cmd, frame, context, client_type).await;
-            }
+            // (Entity::Node, Action::OnLineAck) => {
+            //     on_node_online_ack(&cmd, frame, context, client_type).await;
+            // }
 
             (Entity::Message, Action::SendText) => {
                 on_text_message(&cmd, frame, context).await;

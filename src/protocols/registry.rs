@@ -9,7 +9,7 @@ use crate::{
     protocols::{
         client_type::ClientType,
         command::{ Action, Entity },
-        commands::online::online_processor,
+        commands::{ ack::ack_processor, online::online_processor },
         frame::Frame,
         processor::CommandProcessor,
     },
@@ -71,7 +71,7 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
     }
 
     pub async fn init_registry() {
-        let processors = [online_processor()];
+        let processors = [online_processor(), ack_processor()];
         Self::register_processor(&processors).await;
     }
 }
@@ -233,11 +233,7 @@ mod tests {
             |cmd: Command, frame: Frame, ctx: Arc<Context>, client: Arc<MockClientType>| {
                 Box::pin(async move {
                     println!("✅ CmdB triggered: {:?}", cmd.entity);
-                    let ack = Command::new(
-                        Entity::Node,
-                        Action::OnLineAck,
-                        Some(vec![0])
-                    );
+                    let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![0]));
                     let ack_frame = Frame::build(ctx.clone(), ack, 2).await.unwrap();
                     mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
                 })

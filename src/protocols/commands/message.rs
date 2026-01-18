@@ -9,7 +9,7 @@ use crate::protocols::frame::Frame;
 use crate::util::time::timestamp;
 use crate::{context::Context, protocols::frame::forward_frame};
 
-use bincode::{Decode, Encode, config};
+use bincode::{Decode, Encode};
 
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,8 @@ pub struct MessageCommand {
     pub timestamp: u128,
     pub message: String,
 }
+
+impl Codec for MessageCommand {}
 
 // 本地Node向外发送
 pub async fn send_text_message(
@@ -35,7 +37,7 @@ pub async fn send_text_message(
     };
 
     // 编码成 payload（明文）
-    let payload = bincode::encode_to_vec(command, config::standard())?;
+    let payload = command.to_bytes();
     println!("created plaintext bytes: {:?}", payload);
 
     // 使用 session_key 加密
