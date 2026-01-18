@@ -6,8 +6,13 @@ use tokio::sync::Mutex;
 
 use crate::{
     context::Context,
-    protocols::{ command::{ Action, Entity }, frame::Frame },
-    protocols::processor::CommandProcessor,
+    protocols::{
+        client_type::ClientType,
+        command::{ Action, Entity },
+        commands::online::online_processor,
+        frame::Frame,
+        processor::CommandProcessor,
+    },
 };
 
 /// 🔹 命令处理注册中心
@@ -44,18 +49,37 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
 
     /// 处理 Frame
     pub async fn handle(&self, frame: Frame, ctx: Arc<Context>, client: Arc<C>) {
+        println!("inside registry handling!");
         let cmd = frame.body.command_from_data().unwrap();
         let entity = cmd.entity;
         let action = cmd.action;
 
+        println!("inside command {:?}!", cmd);
+
         let map = self.handlers.lock().await;
         if let Some(handler) = map.get(&(entity, action)) {
             // 调用 handler
+            println!("inside hanlder!");
             handler(frame, ctx, client).await;
         } else {
             tracing::info!("⚠️ Unsupported command: entity={:?}, action={:?}", entity, action);
         }
     }
+
+    pub async fn register_processor(processor: &[CommandProcessor<ClientType>]) {
+        frame_handler_registry.register_all(processor).await;
+    }
+
+    pub async fn init_registry() {
+        let processors = [online_processor()];
+        Self::register_processor(&processors).await;
+    }
+}
+
+// 假设这里有全局 registry
+lazy_static::lazy_static! {
+    pub static ref frame_handler_registry: FrameHandlerRegistry<ClientType> =
+        FrameHandlerRegistry::new();
 }
 
 #[cfg(test)]
@@ -63,11 +87,11 @@ mod tests {
     use super::*;
     use crate::context::Context;
     use crate::protocols::codec::Codec;
-    use crate::protocols::command::{Action, Command, Entity};
+    use crate::protocols::command::{ Action, Command, Entity };
     use crate::protocols::frame::Frame;
     use anyhow::Result;
-    use bincode::{Decode, Encode};
-    use serde::{Deserialize, Serialize};
+    use bincode::{ Decode, Encode };
+    use serde::{ Deserialize, Serialize };
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use zz_account::address::FreeWebMovementAddress;
@@ -78,7 +102,7 @@ mod tests {
         let servers = crate::nodes::servers::Servers::new(
             address.clone(),
             storage,
-            crate::nodes::net_info::NetInfo::new(8080),
+            crate::nodes::net_info::NetInfo::new(8080)
         );
         Context::new("127.0.0.1".to_string(), 8080, address, servers)
     }
@@ -114,45 +138,46 @@ mod tests {
         let context = Arc::new(dummy_context());
         let client = Arc::new(MockClientType::new());
 
-                // 构造命令处理器
+        // 构造命令处理器
         let processor = CommandProcessor::new(
             Entity::Node,
             Action::OnLine,
-            |cmd: TempCommand, frame: Frame, ctx: Arc<crate::context::Context>, client: Arc<MockClientType>| {
+            |
+                cmd: Command,
+                _frame: Frame,
+                ctx: Arc<crate::context::Context>,
+                client: Arc<MockClientType>
+            | {
                 Box::pin(async move {
                     // 简单记录收到命令
-                    println!("✅ Node OnLine triggered with id={}", cmd.id);
+                    println!("✅ Node OnLine triggered with id={:?}", cmd.action);
 
                     // 发送 ack
-                    let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![cmd.id]));
-                    let ack_frame = Frame::build_frame(ctx.clone(), ack, 1).await.unwrap();
+                    let ack: Command = Command::new(Entity::Node, Action::OnLineAck, Some(vec![0]));
+                    let ack_frame = Frame::build(ctx.clone(), ack, 1).await.unwrap();
                     mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
                 })
             },
-            |cmd: TempCommand, ctx: Arc<crate::context::Context>, client: Arc<MockClientType>| {
+            |cmd: TempCommand, _ctx: Arc<crate::context::Context>, client: Arc<MockClientType>| {
                 Box::pin(async move {
                     println!("📤 Sending command id={}", cmd.id);
                     let data = cmd.to_bytes();
                     mock_send_bytes(&client, &data).await;
                 })
-            },
+            }
         );
 
         let registry = FrameHandlerRegistry::<MockClientType>::new();
 
         // 注册 Node OnLine 回调
-        registry
-            .register(&processor)
-            .await;
+        registry.register(&processor).await;
 
         // 构造测试 Frame
         let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3]));
-        let frame = Frame::build_frame(context.clone(), cmd, 1).await?;
+        let frame = Frame::build(context.clone(), cmd, 1).await?;
 
         // 调用处理
-        registry
-            .handle(frame, context.clone(), client.clone())
-            .await;
+        registry.handle(frame, context.clone(), client.clone()).await;
 
         // 验证 mock client 收到数据
         let sent = client.sent.lock().await;
@@ -162,87 +187,94 @@ mod tests {
     }
 
     #[tokio::test]
-async fn test_registry_with_multiple_commands() -> anyhow::Result<()> {
-    use bincode::{Encode, Decode};
-    use serde::{Serialize, Deserialize};
+    async fn test_registry_with_multiple_commands() -> anyhow::Result<()> {
+        use bincode::{ Encode, Decode };
+        use serde::{ Serialize, Deserialize };
 
-    let context = Arc::new(dummy_context());
-    let client = Arc::new(MockClientType::new());
+        let context = Arc::new(dummy_context());
+        let client = Arc::new(MockClientType::new());
 
-    // 定义两个命令类型
-    #[derive(Clone, Encode, Decode, Serialize, Deserialize)]
-    struct CmdA { pub value: u8 }
-    #[derive(Clone, Encode, Decode, Serialize, Deserialize)]
-    struct CmdB { pub value: u16 }
+        // 定义两个命令类型
+        #[derive(Clone, Encode, Decode, Serialize, Deserialize)]
+        struct CmdA {
+            pub value: u8,
+        }
+        #[derive(Clone, Encode, Decode, Serialize, Deserialize)]
+        struct CmdB {
+            pub value: u16,
+        }
 
-    impl Codec for CmdA {}
-    impl Codec for CmdB {}
+        impl Codec for CmdA {}
+        impl Codec for CmdB {}
 
-    // 构造 CommandProcessor
-    let processor_a = CommandProcessor::new(
-        Entity::Node,
-        Action::OnLine,
-        |cmd: CmdA, frame: Frame, ctx: Arc<Context>, client: Arc<MockClientType>| {
-            Box::pin(async move {
-                println!("✅ CmdA triggered: {}", cmd.value);
-                let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![cmd.value]));
-                let ack_frame = Frame::build_frame(ctx.clone(), ack, 1).await.unwrap();
-                mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
-            })
-        },
-        |cmd: CmdA, ctx: Arc<Context>, client: Arc<MockClientType>| {
-            Box::pin(async move {
-                println!("📤 Sending CmdA: {}", cmd.value);
-                mock_send_bytes(&client, &cmd.to_bytes()).await;
-            })
-        },
-    );
+        // 构造 CommandProcessor
+        let processor_a = CommandProcessor::new(
+            Entity::Node,
+            Action::OnLine,
+            |cmd: Command, frame: Frame, ctx: Arc<Context>, client: Arc<MockClientType>| {
+                Box::pin(async move {
+                    println!("✅ CmdA triggered: {:?}", cmd.entity);
+                    let ack = Command::new(Entity::Node, Action::OnLineAck, Some(vec![]));
+                    let ack_frame = Frame::build(ctx.clone(), ack, 1).await.unwrap();
+                    mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
+                })
+            },
+            |cmd: CmdA, ctx: Arc<Context>, client: Arc<MockClientType>| {
+                Box::pin(async move {
+                    println!("📤 Sending CmdA: {}", cmd.value);
+                    mock_send_bytes(&client, &cmd.to_bytes()).await;
+                })
+            }
+        );
 
-    let processor_b = CommandProcessor::new(
-        Entity::Node,
-        Action::OffLine,
-        |cmd: CmdB, frame: Frame, ctx: Arc<Context>, client: Arc<MockClientType>| {
-            Box::pin(async move {
-                println!("✅ CmdB triggered: {}", cmd.value);
-                let ack = Command::new(Entity::Node, Action::OnLineAck, Some(cmd.value.to_le_bytes().to_vec()));
-                let ack_frame = Frame::build_frame(ctx.clone(), ack, 2).await.unwrap();
-                mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
-            })
-        },
-        |cmd: CmdB, ctx: Arc<Context>, client: Arc<MockClientType>| {
-            Box::pin(async move {
-                println!("📤 Sending CmdB: {}", cmd.value);
-                mock_send_bytes(&client, &cmd.to_bytes()).await;
-            })
-        },
-    );
+        let processor_b = CommandProcessor::new(
+            Entity::Node,
+            Action::OffLine,
+            |cmd: Command, frame: Frame, ctx: Arc<Context>, client: Arc<MockClientType>| {
+                Box::pin(async move {
+                    println!("✅ CmdB triggered: {:?}", cmd.entity);
+                    let ack = Command::new(
+                        Entity::Node,
+                        Action::OnLineAck,
+                        Some(vec![0])
+                    );
+                    let ack_frame = Frame::build(ctx.clone(), ack, 2).await.unwrap();
+                    mock_send_bytes(&client, &Frame::to_bytes(&ack_frame)).await;
+                })
+            },
+            |cmd: CmdB, ctx: Arc<Context>, client: Arc<MockClientType>| {
+                Box::pin(async move {
+                    println!("📤 Sending CmdB: {}", cmd.value);
+                    mock_send_bytes(&client, &cmd.to_bytes()).await;
+                })
+            }
+        );
 
-    let registry = FrameHandlerRegistry::<MockClientType>::new();
+        let registry = FrameHandlerRegistry::<MockClientType>::new();
 
-    // 批量注册
-    registry.register_all(&[processor_a, processor_b]).await;
+        // 批量注册
+        registry.register_all(&[processor_a, processor_b]).await;
 
-    // 构造 Frame 并触发 CmdA
-    let frame_a = Frame::build_frame(
-        context.clone(),
-        Command::new(Entity::Node, Action::OnLine, Some(vec![7])),
-        1
-    ).await?;
-    registry.handle(frame_a, context.clone(), client.clone()).await;
+        // 构造 Frame 并触发 CmdA
+        let frame_a = Frame::build(
+            context.clone(),
+            Command::new(Entity::Node, Action::OnLine, Some(vec![7])),
+            1
+        ).await?;
+        registry.handle(frame_a, context.clone(), client.clone()).await;
 
-    // 构造 Frame 并触发 CmdB
-    let frame_b = Frame::build_frame(
-        context.clone(),
-        Command::new(Entity::Node, Action::OffLine, Some(vec![0x12, 0x34])),
-        2
-    ).await?;
-    registry.handle(frame_b, context.clone(), client.clone()).await;
+        // 构造 Frame 并触发 CmdB
+        let frame_b = Frame::build(
+            context.clone(),
+            Command::new(Entity::Node, Action::OffLine, Some(vec![0x12, 0x34])),
+            2
+        ).await?;
+        registry.handle(frame_b, context.clone(), client.clone()).await;
 
-    // 验证 mock client 收到两条数据
-    let sent = client.sent.lock().await;
-    assert_eq!(sent.len(), 2, "应该发送了两条数据");
+        // 验证 mock client 收到两条数据
+        let sent = client.sent.lock().await;
+        assert_eq!(sent.len(), 2, "应该发送了两条数据");
 
-    Ok(())
-}
-
+        Ok(())
+    }
 }

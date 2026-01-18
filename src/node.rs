@@ -2,13 +2,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
+use crate::protocols::client_type::ClientType;
 use crate::protocols::defines::Listener;
-use crate::{context::Context, nodes::servers::Servers};
-use crate::{
-    handlers::{tcp::TCPHandler, udp::UDPHandler},
-    nodes::storage::Storeage,
-};
-use crate::{nodes::net_info::NetInfo, util::time::timestamp};
+use crate::protocols::registry::FrameHandlerRegistry;
+use crate::{ context::Context, nodes::servers::Servers };
+use crate::{ handlers::{ tcp::TCPHandler, udp::UDPHandler }, nodes::storage::Storeage };
+use crate::{ nodes::net_info::NetInfo, util::time::timestamp };
 
 /* =========================
    NODE
@@ -19,14 +18,14 @@ pub struct Node {
     pub net_info: Option<NetInfo>,
     pub storage: Option<Storeage>,
     // pub servers: Option<Servers>,
-    pub name: String,     // User defined name for the node, no need to be unique
+    pub name: String, // User defined name for the node, no need to be unique
     pub address: Address, // Unique network address of the node
-    pub ip: String,       // Bound IP address of the node
-    pub port: u16,        // Bound port of the node
-    pub stun_port: u16,   // STUN service port
-    pub trun_port: u16,   // TURN service port
+    pub ip: String, // Bound IP address of the node
+    pub port: u16, // Bound port of the node
+    pub stun_port: u16, // STUN service port
+    pub trun_port: u16, // TURN service port
     pub start_time: u128, // Timestamp when the node was started
-    pub stop_time: u128,  // Timestamp when the node was started
+    pub stop_time: u128, // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -38,7 +37,7 @@ impl Node {
         address: Address,
         ip: String,
         port: u16,
-        storage: Option<Storeage>,
+        storage: Option<Storeage>
     ) -> Self {
         Self {
             name,
@@ -74,6 +73,7 @@ impl Node {
         self.start_time = timestamp();
         let ip = self.ip.clone();
         let port = self.port;
+        FrameHandlerRegistry::<ClientType>::init_registry().await;
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 
@@ -81,29 +81,15 @@ impl Node {
         let mut servers = self.init_storage_and_servers(port);
         servers.connect().await;
 
-        let context = Arc::new(Context::new(
-            ip.clone(),
-            port,
-            self.address.clone(),
-            servers.clone(),
-        ));
+        let context = Arc::new(
+            Context::new(ip.clone(), port, self.address.clone(), servers.clone())
+        );
         self.context = Some(context.clone());
 
-        servers
-            .notify_online(self.address.clone(), &context.clone())
-            .await
-            .unwrap();
+        servers.notify_online(self.address.clone(), &context.clone()).await.unwrap();
 
-        let tcp = TCPHandler::bind(context.clone())
-            .await
-            .unwrap()
-            .as_ref()
-            .clone();
-        let udp = UDPHandler::bind(context.clone())
-            .await
-            .unwrap()
-            .as_ref()
-            .clone();
+        let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
         self.udp_handler = Some(self.listen(udp).await);
@@ -137,7 +123,7 @@ impl Node {
         let servers = Servers::new(
             self.address.clone(),
             storage.clone(),
-            self.net_info.as_ref().expect("net_info missing").clone(),
+            self.net_info.as_ref().expect("net_info missing").clone()
         );
 
         // 3️⃣ 保存当前节点 address
@@ -167,13 +153,9 @@ mod tests {
     use zz_account::address::FreeWebMovementAddress as Address;
     #[tokio::test]
     async fn test_node_start_and_stop() {
-        let node1 = Arc::new(Mutex::new(Node::new(
-            "node".into(),
-            Address::random(),
-            "127.0.0.1".into(),
-            7001,
-            None,
-        )));
+        let node1 = Arc::new(
+            Mutex::new(Node::new("node".into(), Address::random(), "127.0.0.1".into(), 7001, None))
+        );
 
         let node_clone = node1.clone();
 

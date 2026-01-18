@@ -4,7 +4,7 @@ use futures::{ FutureExt, future::BoxFuture };
 
 use crate::{
     context::Context,
-    protocols::{ codec::Codec, command::{ Action, Entity }, frame::Frame },
+    protocols::{ codec::Codec, command::{ Action, Command, Entity }, frame::Frame },
 };
 
 pub struct CommandProcessor<C: Send + Sync + 'static> {
@@ -22,7 +22,7 @@ impl<C: Send + Sync + 'static> CommandProcessor<C> {
     pub fn new<T>(
         entity: Entity,
         action: Action,
-        handler: fn(T, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
+        handler: fn(Command, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>,
         sender: fn(T, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>
     ) -> Self
         where T: Codec + bincode::Decode<()> + 'static
@@ -31,14 +31,17 @@ impl<C: Send + Sync + 'static> CommandProcessor<C> {
             move |frame: Frame, ctx: Arc<Context>, client: Arc<C>| -> BoxFuture<'static, ()> {
                 (
                     async move {
-                        let cmd = match T::from_bytes(&frame.body.data) {
+                        println!("inside processor!");
+
+                        // 1️⃣ 解 Command
+                        let cmd = match frame.body.command_from_data() {
                             Ok(c) => c,
                             Err(e) => {
-                                tracing::error!("decode failed: {:?}", e);
+                                eprintln!("❌ Command decode failed: {:?}", e);
                                 return;
                             }
                         };
-
+                        println!("processor found!");
                         handler(cmd, frame, ctx, client).await;
                     }
                 ).boxed()

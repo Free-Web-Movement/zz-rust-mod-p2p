@@ -15,7 +15,7 @@ use crate::protocols::command::{ Action, Command, Entity };
 use crate::protocols::commands::ack::on_node_online_ack;
 use crate::protocols::commands::message::on_text_message;
 use crate::protocols::commands::offline::on_node_offline;
-use crate::protocols::commands::online::on_node_online;
+use crate::protocols::registry::{FrameHandlerRegistry, frame_handler_registry};
 
 /// ⚠️ 不要写返回类型！
 #[inline]
@@ -130,15 +130,6 @@ impl Frame {
         Ok(frame)
     }
 
-    // pub fn from(bytes: &Vec<u8>) -> Frame {
-    //     let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config()).unwrap();
-    //     frame
-    // }
-
-    // pub fn to(frame: Frame) -> Vec<u8> {
-    //     encode_to_vec(&frame, frame_config()).unwrap()
-    // }
-
     /// 通用 Frame 构建 + 发送框架
     /// callback 返回一个 Future，生成 Frame
     pub async fn executor<F, Fut>(
@@ -169,22 +160,6 @@ impl Frame {
         Ok(())
     }
 
-    /// 生成 Frame 的辅助函数
-    pub async fn build_frame(context: Arc<Context>, cmd: Command, version: u8) -> Result<Frame> {
-        let cmd_bytes = cmd.serialize()?;
-        let body = crate::protocols::frame::FrameBody {
-            version,
-            address: context.address.to_string(),
-            public_key: context.address.public_key.to_bytes().to_vec(),
-            nonce: rand::random(),
-            data_length: cmd_bytes.len() as u32,
-            data: cmd_bytes,
-        };
-
-        let frame = crate::protocols::frame::Frame::sign(body, &context.address)?;
-        Ok(frame)
-    }
-
     pub async fn build(context: Arc<Context>, cmd: Command, version: u8) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
@@ -211,9 +186,9 @@ impl Frame {
 
         // 2️⃣ 只处理 Node Online / Offline
         match (cmd.entity as Entity, cmd.action as Action) {
-            (Entity::Node, Action::OnLine) => {
-                on_node_online(&cmd, frame, context, client_type).await;
-            }
+            // (Entity::Node, Action::OnLine) => {
+            //     on_node_online(&cmd, frame, context, client_type).await;
+            // }
 
             (Entity::Node, Action::OnLineAck) => {
                 on_node_online_ack(&cmd, frame, context, client_type).await;
@@ -239,6 +214,8 @@ impl Frame {
                     cmd.entity,
                     cmd.action
                 );
+
+                frame_handler_registry.handle(frame.clone(), context, Arc::new(client_type.clone())).await;
             }
         }
     }
@@ -523,7 +500,7 @@ mod tests {
             || async {
                 // 这里是业务回调，生成 Command
                 let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
-                Frame::build_frame(context.clone(), cmd, version).await
+                Frame::build(context.clone(), cmd, version).await
             },
             None
         ).await?;
