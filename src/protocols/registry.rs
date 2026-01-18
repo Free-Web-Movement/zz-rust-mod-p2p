@@ -5,17 +5,21 @@ use tokio::sync::Mutex;
 
 use crate::context::Context;
 use crate::protocols::command::{Action, Command, Entity};
-use crate::protocols::frame::Frame;
+use crate::protocols::processor::CommandProcessor;
 
-/// Frame 处理器管理器，客户端类型泛型化
+/// 泛型 ClientType 支持
 #[derive(Default)]
-pub struct FrameHandlerRegistry<C = ()> {
-    /// key = (Entity, Action)
+pub struct FrameHandlerRegistry<C: Send + Sync + 'static> {
     handlers: Mutex<
         HashMap<
             (Entity, Action),
             Arc<
-                dyn Fn(Command, Frame, Arc<Context>, Arc<C>) -> BoxFuture<'static, ()>
+                dyn Fn(
+                        Command,
+                        crate::protocols::frame::Frame,
+                        Arc<Context>,
+                        Arc<C>,
+                    ) -> BoxFuture<'static, ()>
                     + Send
                     + Sync,
             >,
@@ -30,10 +34,13 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
         }
     }
 
-    /// 注册回调
+    /// 注册单个命令
     pub async fn register<F, Fut>(&self, entity: Entity, action: Action, handler: F)
     where
-        F: Fn(Command, Frame, Arc<Context>, Arc<C>) -> Fut + Send + Sync + 'static,
+        F: Fn(Command, crate::protocols::frame::Frame, Arc<Context>, Arc<C>) -> Fut
+            + Send
+            + Sync
+            + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
         let mut map = self.handlers.lock().await;
@@ -43,8 +50,24 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
         );
     }
 
-    /// 调用处理
-    pub async fn handle(&self, frame: Frame, context: Arc<Context>, client_type: Arc<C>) {
+    /// 批量注册命令
+    pub async fn register_all(&self, commands: &[CommandProcessor<C>]) {
+        for cmd in commands {
+            self.register(cmd.entity, cmd.action, cmd.handler).await;
+        }
+    }
+
+    pub async fn register_one(&self, cmd: CommandProcessor<C>) {
+        self.register(cmd.entity, cmd.action, cmd.handler).await;
+    }
+
+    /// 处理 Frame
+    pub async fn handle(
+        &self,
+        frame: crate::protocols::frame::Frame,
+        context: Arc<Context>,
+        client: Arc<C>,
+    ) {
         let cmd = match frame.body.command_from_data() {
             Ok(c) => c,
             Err(e) => {
@@ -55,7 +78,7 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
 
         let map = self.handlers.lock().await;
         if let Some(handler) = map.get(&(cmd.entity, cmd.action)) {
-            handler(cmd, frame, context.clone(), client_type.clone()).await;
+            handler(cmd, frame, context.clone(), client.clone()).await;
         } else {
             println!(
                 "ℹ️ Unsupported command: entity={:?}, action={:?}",
@@ -68,10 +91,10 @@ impl<C: Send + Sync + 'static> FrameHandlerRegistry<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
     use crate::context::Context;
     use crate::protocols::command::{Action, Command, Entity};
     use crate::protocols::frame::Frame;
+    use anyhow::Result;
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use zz_account::address::FreeWebMovementAddress;
@@ -116,7 +139,7 @@ mod tests {
 
         // 注册 Node OnLine 回调
         registry
-            .register(Entity::Node, Action::OnLine, |cmd, frame, ctx, client| {
+            .register(Entity::Node, Action::OnLine, |_cmd, frame, ctx, client| {
                 Box::pin(async move {
                     println!("✅ Node OnLine triggered for {}", frame.body.address);
 
