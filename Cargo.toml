@@ -1,6 +1,6 @@
 [package]
 name = "zz-p2p"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "A Rust library for managing cryptocurrency p2p network."
 license = "GPL-3.0-or-later"
