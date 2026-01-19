@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bincode::{ Decode, Encode };
+use futures::future::BoxFuture;
 use serde::{ Deserialize, Serialize };
 
 use crate::context::Context;
@@ -11,7 +12,6 @@ use crate::protocols::command::Command;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::Frame;
-use crate::protocols::processor::CommandProcessor;
 use crate::protocols::session_key::SessionKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
@@ -29,7 +29,7 @@ pub async fn send_online(
     client_type: &ClientType,
     data: Option<Vec<u8>>
 ) -> anyhow::Result<()> {
-    let command = Command::new(Entity::Node, Action::OnLine, data);
+    let command = Command::new(Entity::Node as u8, Action::OnLine as u8, data);
 
     let frame = Frame::build(context, command, 1).await.unwrap();
 
@@ -40,93 +40,86 @@ pub async fn send_online(
     Ok(())
 }
 
-/// 封装为 CommandProcessor
-pub fn online_processor() -> CommandProcessor<ClientType> {
-    CommandProcessor::new(
-        Entity::Node,
-        Action::OnLine,
-        // handler: on receive
-        |cmd: Command, frame: Frame, context: Arc<Context>, client_type: Arc<ClientType>| {
-            Box::pin(async move {
-                println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
+pub fn on_online(
+    cmd: Command,
+    frame: Frame,
+    context: Arc<Context>,
+    client_type: Arc<ClientType>
+) -> BoxFuture<'static, ()> 
+ {
+    Box::pin(async move {
+        println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
 
-                // ===== 1️⃣ OnlineCommand 解码 =====
-                let online_data = match &cmd.data {
-                    Some(d) => d,
-                    None => {
-                        eprintln!("❌ OnlineCommand missing data");
-                        return;
-                    }
-                };
+        // ===== 1️⃣ OnlineCommand 解码 =====
+        let online_data = match &cmd.data {
+            Some(d) => d,
+            None => {
+                eprintln!("❌ OnlineCommand missing data");
+                return;
+            }
+        };
 
-                let online = match OnlineCommand::from_bytes(&online_data.to_vec()) {
-                    Ok(cmd) => cmd,
-                    Err(e) => {
-                        eprintln!("❌ decode OnlineCommand failed: {e}");
-                        return;
-                    }
-                };
+        let online = match OnlineCommand::from_bytes(&online_data.to_vec()) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                eprintln!("❌ decode OnlineCommand failed: {e}");
+                return;
+            }
+        };
 
-                println!("received session_id: {:?}", online.session_id);
+        println!("received session_id: {:?}", online.session_id);
 
-                // ===== 2️⃣ 服务器生成 SessionKey（包含 ephemeral keypair）并派生对称密钥 =====
-                let mut session_key = SessionKey::new();
-                let ephemeral_public = session_key.ephemeral_public.clone();
-                let client_pub = x25519_dalek::PublicKey::from(online.ephemeral_public_key);
+        // ===== 2️⃣ 服务器生成 SessionKey（包含 ephemeral keypair）并派生对称密钥 =====
+        let mut session_key = SessionKey::new();
+        let ephemeral_public = session_key.ephemeral_public.clone();
+        let client_pub = x25519_dalek::PublicKey::from(online.ephemeral_public_key);
 
-                if let Err(e) = session_key.establish(&client_pub) {
-                    eprintln!("❌ Failed to establish session key: {e}");
-                    return;
-                } else {
-                    println!(
-                        "🔐 Session established with {} (session_id={:?})",
-                        frame.body.address,
-                        online.session_id
-                    );
-                }
-                session_key.touch();
-
-                // 保存 session_key 到 session_keys，key 为客户端 address
-                context.session_keys.lock().await.insert(frame.body.address.clone(), session_key);
-
-                // ===== 3️⃣ 构造 OnlineAckCommand =====
-                let ack = OnlineAckCommand {
-                    session_id: online.session_id,
-                    address: context.address.to_string(),
-                    ephemeral_public_key: ephemeral_public.to_bytes(),
-                };
-
-                println!("send ack session_id : {:?}", ack.session_id);
-                println!("send ack: {:?}", ack.to_bytes());
-
-                let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
-
-                let ack_frame = Frame::build(context.clone(), command, 1).await.unwrap();
-
-                // ===== 4️⃣ clients 登记 =====
-                let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
-                    (eps, flag) => (eps, flag == 0),
-                };
-                let addr = frame.body.address.clone();
-                let mut clients = context.clients.lock().await;
-                if is_inner {
-                    clients.add_inner(&addr, (*client_type).clone(), endpoints);
-                } else {
-                    clients.add_external(&addr, (*client_type).clone(), endpoints);
-                }
-
-                // ===== 5️⃣ 发送 ACK =====
-                send_bytes(&client_type, &Frame::to_bytes(&ack_frame.clone())).await;
-            })
-        },
-        // sender: send_online
-        |cmd: OnlineCommand, context: Arc<Context>, client_type: Arc<ClientType>| {
-            Box::pin(async move {
-                let command = Command::new(Entity::Node, Action::OnLine, Some(cmd.to_bytes()));
-                let frame = Frame::build(context, command, 1).await.unwrap();
-                let bytes = Frame::to_bytes(&frame);
-                send_bytes(&client_type, &bytes).await;
-            })
+        if let Err(e) = session_key.establish(&client_pub) {
+            eprintln!("❌ Failed to establish session key: {e}");
+            return;
+        } else {
+            println!(
+                "🔐 Session established with {} (session_id={:?})",
+                frame.body.address,
+                online.session_id
+            );
         }
-    )
+        session_key.touch();
+
+        // 保存 session_key 到 session_keys，key 为客户端 address
+        context.session_keys.lock().await.insert(frame.body.address.clone(), session_key);
+
+        // ===== 3️⃣ 构造 OnlineAckCommand =====
+        let ack = OnlineAckCommand {
+            session_id: online.session_id,
+            address: context.address.to_string(),
+            ephemeral_public_key: ephemeral_public.to_bytes(),
+        };
+
+        println!("send ack session_id : {:?}", ack.session_id);
+        println!("send ack: {:?}", ack.to_bytes());
+
+        let command = Command::new(
+            Entity::Node as u8,
+            Action::OnLineAck as u8,
+            Some(ack.to_bytes())
+        );
+
+        let ack_frame = Frame::build(context.clone(), command, 1).await.unwrap();
+
+        // ===== 4️⃣ clients 登记 =====
+        let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
+            (eps, flag) => (eps, flag == 0),
+        };
+        let addr = frame.body.address.clone();
+        let mut clients = context.clients.lock().await;
+        if is_inner {
+            clients.add_inner(&addr, (*client_type).clone(), endpoints);
+        } else {
+            clients.add_external(&addr, (*client_type).clone(), endpoints);
+        }
+
+        // ===== 5️⃣ 发送 ACK =====
+        send_bytes(&client_type, &Frame::to_bytes(&ack_frame.clone())).await;
+    })
 }

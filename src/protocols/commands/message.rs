@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 
-use crate::protocols::client_type::send_bytes;
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::codec::Codec;
-use crate::protocols::command::{Action, Command, Entity};
+use crate::protocols::command::{ Action, Command, Entity };
 use crate::protocols::frame::Frame;
 use crate::util::time::timestamp;
-use crate::{context::Context, protocols::frame::forward_frame};
+use crate::{ context::Context, protocols::frame::forward_frame };
 
-use bincode::{Decode, Encode};
+use bincode::{ Decode, Encode };
 
-use futures::future::join_all;
-use serde::{Deserialize, Serialize};
+use futures::future::{ BoxFuture, join_all };
+use serde::{ Deserialize, Serialize };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageCommand {
@@ -27,7 +27,7 @@ impl Codec for MessageCommand {}
 pub async fn send_text_message(
     receiver: String,
     context: Arc<Context>,
-    message: &str,
+    message: &str
 ) -> anyhow::Result<()> {
     // 构造消息
     let command = MessageCommand {
@@ -53,7 +53,11 @@ pub async fn send_text_message(
 
     println!("created encrypted bytes: {:?}", encrypted);
 
-    let command = Command::new(Entity::Message, Action::SendText, Some(encrypted.clone()));
+    let command = Command::new(
+        Entity::Message as u8,
+        Action::SendText as u8,
+        Some(encrypted.clone())
+    );
 
     let frame = Frame::build(context.clone(), command, 1).await.unwrap();
 
@@ -70,11 +74,7 @@ pub async fn send_text_message(
     let clients = context.clients.lock().await;
     let local_conns = clients.get_connections(&receiver, true);
 
-    println!(
-        "Found {} local connections for {}",
-        local_conns.len(),
-        receiver
-    );
+    println!("Found {} local connections for {}", local_conns.len(), receiver);
 
     if !local_conns.is_empty() {
         let bytes = bytes.clone();
@@ -104,8 +104,7 @@ pub async fn send_text_message(
         let servers = servers.lock().await;
         if let Some(connected_servers) = &servers.connected_servers {
             // 使用 iter().chain() 合并两个列表
-            let all_servers = connected_servers
-                .inner
+            let all_servers = connected_servers.inner
                 .iter()
                 .chain(connected_servers.external.iter());
 
@@ -123,81 +122,85 @@ pub async fn send_text_message(
     Ok(())
 }
 
-pub async fn on_text_message(cmd: &Command, frame: &Frame, context: Arc<Context>) {
-    let from = &frame.body.address;
+pub fn on_text_message(
+    cmd: Command,
+    frame: Frame,
+    context: Arc<Context>,
+    client_type: Arc<ClientType>
+) -> BoxFuture<'static, ()> 
+ {
+    Box::pin(async move {
+        let from = &frame.body.address;
 
-    let encrypted = match &cmd.data {
-        Some(v) => v,
-        None => {
-            eprintln!("❌ MessageCommand without data from {}", from);
-            return;
-        }
-    };
-
-    println!("get encrypted bytes: {:?}", encrypted);
-
-    // 1️⃣ 使用 session_key 解密
-    let plaintext = {
-        let sessions = context.session_keys.lock().await;
-
-        let session = match sessions.get(from) {
-            Some(s) => s,
+        let encrypted = match &cmd.data {
+            Some(v) => v,
             None => {
-                eprintln!("❌ No session_key for sender {}", from);
+                eprintln!("❌ MessageCommand without data from {}", from);
                 return;
             }
         };
 
-        match session.decrypt(encrypted) {
-            Ok(p) => p,
+        println!("get encrypted bytes: {:?}", encrypted);
+
+        // 1️⃣ 使用 session_key 解密
+        let plaintext = {
+            let sessions = context.session_keys.lock().await;
+
+            let session = match sessions.get(from) {
+                Some(s) => s,
+                None => {
+                    eprintln!("❌ No session_key for sender {}", from);
+                    return;
+                }
+            };
+
+            match session.decrypt(encrypted) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("❌ Decrypt message from {} failed: {:?}", from, e);
+                    return;
+                }
+            }
+        };
+
+        println!("get plain text: {:?}", plaintext);
+
+        // 2️⃣ bincode 解码
+        let (msg, _) = match
+            bincode::decode_from_slice::<MessageCommand, _>(&plaintext, bincode::config::standard())
+        {
+            Ok(v) => v,
             Err(e) => {
-                eprintln!("❌ Decrypt message from {} failed: {:?}", from, e);
+                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
                 return;
             }
-        }
-    };
+        };
 
-    println!("get plain text: {:?}", plaintext);
+        println!("📨 {} → {} @ {}: {}", from, msg.receiver, msg.timestamp, msg.message);
 
-    // 2️⃣ bincode 解码
-    let (msg, _) = match bincode::decode_from_slice::<MessageCommand, _>(
-        &plaintext,
-        bincode::config::standard(),
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
+        let receiver = msg.receiver.clone();
+
+        // ===== 1️⃣ 如果 receiver 是自己 =====
+        if receiver == context.address.to_string() {
+            // ✔️ 消费消息
+            // on_text_message(frame, context, client_type).await;
+
+            // on_receive_message();
+            println!("Message received!");
             return;
         }
-    };
 
-    println!(
-        "📨 {} → {} @ {}: {}",
-        from, msg.receiver, msg.timestamp, msg.message
-    );
+        // 如果是作为服务器接收的消息，即地址不是节点地址时，
+        // 要转发消息
 
-    let receiver = msg.receiver.clone();
-
-    // ===== 1️⃣ 如果 receiver 是自己 =====
-    if receiver == context.address.to_string() {
-        // ✔️ 消费消息
-        // on_text_message(frame, context, client_type).await;
-
-        // on_receive_message();
-        println!("Message received!");
-        return;
-    }
-
-    // 如果是作为服务器接收的消息，即地址不是节点地址时，
-    // 要转发消息
-
-    forward_frame(receiver, frame, context).await;
+        forward_frame(receiver, &frame, context).await;
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::client_type::{ClientType, to_client_type};
+    use crate::protocols::client_type::{ ClientType, to_client_type };
     use tokio::net::TcpListener;
     use tokio::net::TcpStream;
 
@@ -232,8 +235,9 @@ mod tests {
         };
 
         let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-        let (decoded, _) =
-            bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
+        let (decoded, _) = bincode
+            ::decode_from_slice::<MessageCommand, _>(&encoded, config::standard())
+            .unwrap();
 
         assert_eq!(cmd, decoded);
     }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bincode::{ Decode, Encode };
+use futures::future::BoxFuture;
 use serde::{ Deserialize, Serialize };
 
 use crate::{
@@ -11,7 +12,6 @@ use crate::{
         codec::Codec,
         command::{ Action, Command, Entity },
         frame::Frame,
-        processor::CommandProcessor,
     },
 };
 
@@ -29,7 +29,7 @@ pub async fn send_online_ack(
     client_type: &ClientType,
     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
 ) -> Result<()> {
-    let command = Command::new(Entity::Node, Action::OnLineAck, Some(ack.to_bytes()));
+    let command = Command::new(Entity::Node as u8, Action::OnLineAck as u8, Some(ack.to_bytes()));
 
     let frame = Frame::build(context, command, 1).await.unwrap();
 
@@ -41,77 +41,61 @@ pub async fn send_online_ack(
     Ok(())
 }
 
-pub fn ack_processor() -> CommandProcessor<ClientType> {
-    CommandProcessor::new::<OnlineAckCommand>(
-        Entity::Node,
-        Action::OnLineAck,
-        |cmd: Command, frame: Frame, context: Arc<Context>, client_type: Arc<ClientType>| {
-            Box::pin(async move {
-                println!(
-                    "✅ Node OnlineAck received from {} nonce={}",
-                    frame.body.address,
-                    frame.body.nonce
-                );
+pub fn on_online_ack(
+    cmd: Command,
+    frame: Frame,
+    context: Arc<Context>,
+    client_type: Arc<ClientType>
+) -> BoxFuture<'static, ()> 
+ {
+    Box::pin(async move {
+        println!(
+            "✅ Node OnlineAck received from {} nonce={}",
+            frame.body.address,
+            frame.body.nonce
+        );
 
-                println!("received ack: {:?}", cmd.data.as_ref().unwrap());
-                // ===== 1️⃣ 解码 OnlineAckCommand =====
-                let ack = match OnlineAckCommand::from_bytes(&cmd.data.as_ref().unwrap()) {
-                    Ok(cmd) => cmd,
-                    Err(e) => {
-                        eprintln!("❌ decode OnlineAckCommand failed: {e}");
-                        return;
-                    }
-                };
+        println!("received ack: {:?}", cmd.data.as_ref().unwrap());
+        // ===== 1️⃣ 解码 OnlineAckCommand =====
+        let ack = match OnlineAckCommand::from_bytes(&cmd.data.as_ref().unwrap()) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                eprintln!("❌ decode OnlineAckCommand failed: {e}");
+                return;
+            }
+        };
 
-                println!("session:id: {:?}", ack.session_id);
+        println!("session:id: {:?}", ack.session_id);
 
-                // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
-                let session = {
-                    let mut temp_sessions = context.temp_sessions.lock().await;
+        // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
+        let session = {
+            let mut temp_sessions = context.temp_sessions.lock().await;
 
-                    let mut session = match temp_sessions.remove(&ack.session_id) {
-                        Some(s) => s,
-                        None => {
-                            eprintln!(
-                                "❌ temp session not found for session_id={:?}",
-                                ack.session_id
-                            );
-                            return;
-                        }
-                    };
-
-                    let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
-                    if let Err(e) = session.establish(&peer_pub) {
-                        eprintln!("❌ session establish failed: {e}");
-                        return;
-                    }
-
-                    session.touch();
-                    session
-                    // ✅ temp_sessions 锁在这里释放
-                };
-
-                // ===== 3️⃣ 写入永久 session_keys（address → session）=====
-                {
-                    let mut sessions = context.session_keys.lock().await;
-                    sessions.insert(ack.address.clone(), session);
+            let mut session = match temp_sessions.remove(&ack.session_id) {
+                Some(s) => s,
+                None => {
+                    eprintln!("❌ temp session not found for session_id={:?}", ack.session_id);
+                    return;
                 }
+            };
 
-                println!(
-                    "🔐 Session established with {} (session_id={:?})",
-                    ack.address,
-                    ack.session_id
-                );
-            })
-        },
+            let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
+            if let Err(e) = session.establish(&peer_pub) {
+                eprintln!("❌ session establish failed: {e}");
+                return;
+            }
 
-        // =========================
-        // sender（OnLineAck 不需要主动发送）
-        // =========================
-        |cmd: OnlineAckCommand, context: Arc<Context>, client_type: Arc<ClientType>| {
-            Box::pin(async move {
-                // OnLineAck 不需要 sender
-            })
+            session.touch();
+            session
+            // ✅ temp_sessions 锁在这里释放
+        };
+
+        // ===== 3️⃣ 写入永久 session_keys（address → session）=====
+        {
+            let mut sessions = context.session_keys.lock().await;
+            sessions.insert(ack.address.clone(), session);
         }
-    )
+
+        println!("🔐 Session established with {} (session_id={:?})", ack.address, ack.session_id);
+    })
 }

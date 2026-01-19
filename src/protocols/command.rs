@@ -1,6 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::Result;
-use bincode::config;
-use bincode::{Decode, Encode};
+use bincode::{ Decode, Encode, config };
+use futures::future::BoxFuture;
+
+use crate::context::Context;
+use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::codec::Codec;
+use crate::protocols::frame::Frame;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Entity {
@@ -35,15 +42,18 @@ pub enum Action {
     Reject,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+
+pub type CommandCallback = fn(Command, Frame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
+
+#[derive(Clone, PartialEq, Encode, Decode, Debug)]
 pub struct Command {
-    pub entity: Entity,
-    pub action: Action,
-    pub data: Option<Vec<u8>>,
+    pub entity: u8,
+    pub action: u8,
+    pub data: Option<Vec<u8>>
 }
 
 impl Command {
-    pub fn new(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Self {
+    pub fn new(entity: u8, action: u8, data: Option<Vec<u8>>) -> Self {
         Self {
             entity,
             action,
@@ -52,9 +62,7 @@ impl Command {
     }
 
     fn config() -> impl bincode::config::Config {
-        config::standard()
-            .with_fixed_int_encoding()
-            .with_big_endian()
+        config::standard().with_fixed_int_encoding().with_big_endian()
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>> {
@@ -70,18 +78,26 @@ impl Command {
     ========================= */
 
     /// send = build + encode (protocol layer, no IO)
-    pub fn to_bytes(
-        entity: Entity,
-        action: Action,
-        data: Option<Vec<u8>>,
-    ) -> Result<Vec<u8>> {
-        let cmd = Command::new(entity, action, data);
+    pub fn to_bytes(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
+        let cmd = Command::new(entity as u8, action as u8, data);
         cmd.serialize()
     }
 
     /// receive = decode from wire bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Command> {
         Command::deserialize(bytes)
+    }
+
+    pub async fn send(
+        &self,
+        context: Arc<Context>,
+        client_type: &ClientType,
+        version: u8
+    ) -> Result<()> {
+        let frame = Frame::build(context, self.clone(), version).await?;
+        let bytes = Frame::to_bytes(&frame);
+        send_bytes(client_type, &bytes).await;
+        Ok(())
     }
 }
 
@@ -91,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_command_serialize_deserialize() {
-        let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
+        let cmd = Command::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]));
         let bytes = cmd.serialize().unwrap();
         let cmd2 = Command::deserialize(&bytes).unwrap();
         assert_eq!(cmd, cmd2);
@@ -105,8 +121,8 @@ mod tests {
 
         let cmd = Command::from_bytes(&bytes).unwrap();
 
-        assert_eq!(cmd.entity, Entity::Node);
-        assert_eq!(cmd.action, Action::OnLine);
+        assert_eq!(cmd.entity, Entity::Node as u8);
+        assert_eq!(cmd.action, Action::OnLine as u8);
         assert_eq!(cmd.data, Some(payload));
     }
 }

@@ -1,10 +1,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
-
-use crate::protocols::client_type::ClientType;
 use crate::protocols::defines::Listener;
-use crate::protocols::registry::FrameHandlerRegistry;
+use crate::protocols::registry::CommandHandlerRegistry;
 use crate::{ context::Context, nodes::servers::Servers };
 use crate::{ handlers::{ tcp::TCPHandler, udp::UDPHandler }, nodes::storage::Storeage };
 use crate::{ nodes::net_info::NetInfo, util::time::timestamp };
@@ -73,7 +71,7 @@ impl Node {
         self.start_time = timestamp();
         let ip = self.ip.clone();
         let port = self.port;
-        FrameHandlerRegistry::<ClientType>::init_registry().await;
+        CommandHandlerRegistry::init_registry().await;
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 

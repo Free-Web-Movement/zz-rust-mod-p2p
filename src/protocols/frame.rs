@@ -1,6 +1,4 @@
 use std::sync::Arc;
-
-use anyhow::Result;
 use rand::Rng;
 use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
@@ -9,12 +7,9 @@ use bincode::{ Decode, Encode, config };
 use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
-use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::client_type:: send_bytes ;
 use crate::protocols::codec::Codec;
-use crate::protocols::command::{ Action, Command, Entity };
-use crate::protocols::commands::message::on_text_message;
-use crate::protocols::commands::offline::on_node_offline;
-use crate::protocols::registry::frame_handler_registry;
+use crate::protocols::command::Command;
 
 /// ⚠️ 不要写返回类型！
 #[inline]
@@ -128,7 +123,7 @@ impl Frame {
         }
         Ok(frame)
     }
-    
+
     pub async fn build(context: Arc<Context>, cmd: Command, version: u8) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
@@ -140,53 +135,6 @@ impl Frame {
             data: cmd_bytes,
         };
         Ok(Frame::sign(body, &context.address)?)
-    }
-
-    pub async fn on(frame: &Frame, context: Arc<Context>, client_type: &ClientType) {
-        println!("inside on data!");
-        // 1️⃣ 解 Command
-        let cmd = match frame.body.command_from_data() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("❌ Command decode failed: {:?}", e);
-                return;
-            }
-        };
-
-        // 2️⃣ 只处理 Node Online / Offline
-        match (cmd.entity as Entity, cmd.action as Action) {
-            // (Entity::Node, Action::OnLine) => {
-            //     on_node_online(&cmd, frame, context, client_type).await;
-            // }
-
-            // (Entity::Node, Action::OnLineAck) => {
-            //     on_node_online_ack(&cmd, frame, context, client_type).await;
-            // }
-
-            (Entity::Message, Action::SendText) => {
-                on_text_message(&cmd, frame, context).await;
-            }
-
-            (Entity::Node, Action::OffLine) => {
-                println!(
-                    "⚠️ Node Offline: addr={}, nonce={}",
-                    frame.body.address,
-                    frame.body.nonce
-                );
-                on_node_offline(frame, context, client_type).await;
-                // 这里你以后可以做 remove
-            }
-
-            _ => {
-                println!(
-                    "ℹ️ Unsupported command: entity={:?}, action={:?}",
-                    cmd.entity,
-                    cmd.action
-                );
-
-                frame_handler_registry.handle(frame.clone(), context, Arc::new(client_type.clone())).await;
-            }
-        }
     }
 }
 
@@ -282,7 +230,7 @@ mod tests {
     }
 
     fn make_command() -> Command {
-        Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]))
+        Command::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]))
     }
 
     #[test]
@@ -435,8 +383,6 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
-    use std::sync::Arc;
-
     use crate::context::Context;
     use crate::protocols::command::{ Command };
     use crate::protocols::frame::Frame;
@@ -451,29 +397,5 @@ mod tests {
         let servers = Servers::new(address.clone(), storage, NetInfo::new(8080));
 
         Context::new("127.0.0.1".to_string(), 8080, address, servers)
-    }
-
-    #[tokio::test]
-    async fn test_frame_executor() -> Result<()> {
-        use crate::protocols::command::{ Action, Command, Entity };
-
-        let context = dummy_context();
-
-        let context = Arc::new(context);
-        let version = 1;
-
-        // 调用 frame_executor 并传入回调
-        Frame::executor(
-            context.clone(),
-            version,
-            || async {
-                // 这里是业务回调，生成 Command
-                let cmd = Command::new(Entity::Node, Action::OnLine, Some(vec![1, 2, 3, 4]));
-                Frame::build(context.clone(), cmd, version).await
-            },
-            None
-        ).await?;
-
-        Ok(())
     }
 }
