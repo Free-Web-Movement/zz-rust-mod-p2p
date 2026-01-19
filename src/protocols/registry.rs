@@ -8,7 +8,12 @@ use crate::{
     protocols::{
         client_type::ClientType,
         command::{ Action, CommandCallback, Entity },
-        commands::{ ack::on_online_ack, message::on_text_message, offline::on_offline, online::on_online },
+        commands::{
+            ack::on_online_ack,
+            message::on_text_message,
+            offline::on_offline,
+            online::on_online,
+        },
         frame::Frame,
     },
 };
@@ -59,12 +64,29 @@ impl CommandHandlerRegistry {
         }
     }
 
-    pub async fn on(frame: Frame, ctx: Arc<Context>, client: Arc<ClientType>) { 
+    pub async fn register(&self, entity: u8, action: u8, handler: CommandCallback) {
+        let mut map = self.handlers.lock().await;
+        map.insert((entity, action), Arc::new(handler));
+    }
+
+    pub async fn on(frame: Frame, ctx: Arc<Context>, client: Arc<ClientType>) {
         command_handler_registry.handle(frame, ctx, client).await;
+    }
+    pub async fn clear(&self) {
+        let mut map = self.handlers.lock().await;
+        map.clear();
+    }
+    pub async fn unregister(&self, entity: u8, action: u8) {
+        let mut map = self.handlers.lock().await;
+        map.remove(&(entity, action));
+    }
+
+    pub fn get_instance() -> &'static CommandHandlerRegistry {
+        &command_handler_registry
     }
 }
 
 // 假设这里有全局 registry
 lazy_static::lazy_static! {
-    pub static ref command_handler_registry: CommandHandlerRegistry = CommandHandlerRegistry::new();
+    static ref command_handler_registry: CommandHandlerRegistry = CommandHandlerRegistry::new();
 }
