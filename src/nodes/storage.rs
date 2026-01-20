@@ -13,10 +13,10 @@ use zz_account::address::FreeWebMovementAddress;
 
 #[derive(Debug, Clone)]
 pub struct Storeage {
-    app_dir: PathBuf,
-    address_file: PathBuf,
-    external_server_list_file: PathBuf,
-    inner_server_list_file: PathBuf,
+    pub app_dir: PathBuf,
+    pub address_file: PathBuf,
+    pub external_server_list_file: PathBuf,
+    pub inner_server_list_file: PathBuf,
 }
 
 impl Storeage {
@@ -119,6 +119,11 @@ impl Storeage {
     pub fn save_inner_server_list(&self, servers: &Vec<NodeRecord>) -> anyhow::Result<()> {
         self.save_server_list_to(&servers, &self.inner_server_list_file)
     }
+
+    pub fn dir(&self) -> &str {
+      let str = self.app_dir.as_os_str().to_str().unwrap();
+      str
+    }
 }
 
 #[cfg(test)]
@@ -192,7 +197,8 @@ mod tests {
     #[test]
     fn test_read_empty_server_list() {
         let dir = tempdir().unwrap();
-        let storage = Storeage::new(Some(dir.path().to_str().unwrap()), None, None, None);
+        let str = dir.path().to_str().unwrap();
+        let storage = Storeage::new(Some(&str.to_string().clone()), None, None, None);
 
         assert!(storage.read_inner_server_list().unwrap().is_empty());
         assert!(storage.read_external_server_list().unwrap().is_empty());
