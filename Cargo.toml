@@ -14,7 +14,6 @@ clap = { version = "4.2", features = ["derive"] }
 anyhow = "1.0"
 sha1 = "0.10.6"
 base64 = "0.22.1"
-zz-account = "0.1.6"
 serde_json = "1.0.145"
 tokio-tungstenite = "0.28.0"
 futures = "0.3.31"
@@ -40,6 +39,7 @@ sha2 = "0.10.9"
 tracing-subscriber = { version = "0.3.22", features = ["fmt", "ansi", "env-filter"] }
 lazy_static = "1.5.0"
 
+zz-account = { path = "../zz-rust-mod-account" }
 
 
 [dev-dependencies]
