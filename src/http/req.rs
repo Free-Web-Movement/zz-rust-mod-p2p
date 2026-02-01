@@ -1,133 +1,174 @@
-use futures::executor::block_on;
-use tokio::io::{ AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter };
+use tokio::io::{ AsyncBufReadExt, AsyncReadExt, BufReader };
 use tokio::net::{ TcpStream };
 
 use std::net::SocketAddr;
 use std::collections::HashMap;
 
-enum RequestHeadKeys {
-    CONTENT_TYPE = 0,
-    CONTENT_LENGTH = 1,
-}
-
-const REQUEST_HEAD_KEYS: [&'static str; 2] = ["Content-Type", "Content-Length"];
+use crate::http::params::Params;
+use crate::http::protocol::content_type::ContentType;
+use crate::http::protocol::header::HeaderKey;
+use crate::http::protocol::method::HttpMethod;
+use crate::http::protocol::status::StatusCode;
+use crate::http::protocol::media_type::MediaType;
 
 pub struct Request {
-    pub method: String,
+    pub method: HttpMethod,
     pub path: String,
-    pub headers: HashMap<String, String>,
+    pub is_chunked: bool, // 是否使用 Transfer-Encoding: chunked
+    pub transfer_encoding: Option<String>, // 保存 Transfer-Encoding header 原始值
+    pub multipart_boundary: Option<String>, // multipart/form-data 的 boundary
+    pub version: String,
+    pub params: Params, // 动态 path params
+    pub headers: HashMap<HeaderKey, String>,
+    pub content_type: ContentType,
     pub body: Vec<u8>,
+    pub cookies: HashMap<String, String>,
     pub reader: BufReader<tokio::io::ReadHalf<TcpStream>>,
-    peer_addr: SocketAddr,
-}
-
-pub struct Response {
-    // pub status: String,
-    // pub headers: HashMap<String, String>,
-    // pub body: Vec<u8>,
-    pub writer: BufWriter<tokio::io::WriteHalf<TcpStream>>,
-    peer_addr: SocketAddr,
-}
-
-impl Response {
-    pub fn new(writer: BufWriter<tokio::io::WriteHalf<TcpStream>>, peer_addr: SocketAddr) -> Self {
-        Response {
-            // status,
-            // headers,
-            // body,
-            writer,
-            peer_addr,
-        }
-    }
-
-    pub async fn send(&mut self, status: usize, headers: HashMap<String, String>, body: Vec<u8>) {
-        let mut response = format!("HTTP/1.1 {}\r\n", status);
-        for (key, value) in &headers {
-            response.push_str(&format!("{}: {}\r\n", key, value));
-        }
-        response.push_str("\r\n");
-        response.push_str(&String::from_utf8_lossy(&body));
-
-        self.writer.write_all(response.as_bytes()).await.unwrap();
-        self.writer.flush().await.unwrap()
-    }
-
-    pub async fn write(&mut self, text: &'static str) {
-        // println!("inside response write: {}!", text);
-        self.writer.write_all(text.as_bytes()).await.unwrap();
-        self.writer.flush().await.unwrap()
-    }
-
-    pub fn send_bytes(&mut self, bytes: &[u8]) {
-        let future = self.writer.write_all(bytes);
-        let _ = block_on(future);
-    }
-
-    pub fn send_string(&mut self, str: &String) {
-        let future = self.writer.write_all(str.as_bytes());
-        let _ = block_on(future);
-    }
+    pub peer_addr: SocketAddr,
 }
 
 impl Request {
     pub async fn new(
         mut reader: BufReader<tokio::io::ReadHalf<TcpStream>>,
-        peer_addr: SocketAddr
+        peer_addr: SocketAddr,
+        route_pattern: &str // 用于解析动态 path params
     ) -> Self {
-        let mut status = String::new();
-        reader.read_line(&mut status).await.unwrap();
-        let parts = status.split_whitespace().collect::<Vec<&str>>();
-        assert!(parts.len() >= 2, "Invalid HTTP request line");
+        // 1️⃣ 解析请求行
+        let mut request_line = String::new();
+        reader.read_line(&mut request_line).await.unwrap();
+        let parts = request_line.split_whitespace().collect::<Vec<&str>>();
+        assert!(parts.len() >= 3, "Invalid HTTP request line");
 
-        let method = parts[0];
+        let method_str = parts[0];
         let path = parts[1];
-        println!("Received HTTP request from {}: {} {}", peer_addr, method, path);
-        let headers = Request::read_headers(&mut reader).await;
-        let length = Request::get_length(&headers);
-        println!("Length: {}", length);
+        let version = parts[2].to_string();
+
+        // 解析 HttpMethod
+        let method = HttpMethod::from_str(method_str).expect(
+            &format!("Unsupported HTTP method: {}", method_str)
+        );
+
+        println!("Received HTTP request from {}: {} {} {}", peer_addr, method_str, path, version);
+
+        // 2️⃣ 读取 headers
+        let headers = Self::read_headers(&mut reader).await;
+
+        // 解析 Cookie
+        let cookies = headers
+            .get(&HeaderKey::Cookie)
+            .map(|s| Self::parse_cookies(s))
+            .unwrap_or_default();
+
+        // 判断 Transfer-Encoding
+        let (is_chunked, transfer_encoding) = if
+            let Some(te) = headers.get(&HeaderKey::TransferEncoding)
+        {
+            (te.to_ascii_lowercase().contains("chunked"), Some(te.clone()))
+        } else {
+            (false, None)
+        };
+
+        // 3️⃣ 获取 Content-Length
+        let length = headers
+            .get(&HeaderKey::ContentLength)
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+
+        // 4️⃣ 读取 body
         let mut body = vec![0u8; length];
         reader.read_exact(&mut body).await.unwrap();
+
+        // 5️⃣ 解析 Content-Type
+        let content_type = headers
+            .get(&HeaderKey::ContentType)
+            .map(|s| ContentType::parse(s))
+            .unwrap_or_else(|| ContentType::parse(""));
+
+        // 如果是 multipart/form-data，提取 boundary
+        let multipart_boundary = if
+            content_type.top_level == MediaType::Multipart &&
+            content_type.sub_type.to_ascii_lowercase() == "form-data"
+        {
+            content_type.parameters
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("boundary"))
+                .map(|(_, v)| v.clone())
+        } else {
+            None
+        };
+
+        // 6️⃣ 解析动态 path params
+        let params = Params::new(path.to_string(), route_pattern.to_string());
+
+        // 7️⃣ 构造 Request
         Request {
-            method: method.to_string(),
+            method,
             path: path.to_string(),
+            version,
             headers,
             body,
             reader,
             peer_addr,
+            params,
+            content_type,
+            is_chunked,
+            transfer_encoding,
+            multipart_boundary,
+            cookies,
         }
     }
 
-    pub fn get_length(headers: &HashMap<String, String>) -> usize {
+
+        /// 将 Cookie header 转换为 HashMap
+    fn parse_cookies(header_value: &str) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for pair in header_value.split(';') {
+            let pair = pair.trim();
+            if pair.is_empty() {
+                continue;
+            }
+            let mut kv = pair.splitn(2, '=');
+            if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
+                map.insert(k.trim().to_string(), v.trim().to_string());
+            }
+        }
+        map
+    }
+
+    
+    pub fn get_length(headers: &HashMap<HeaderKey, String>) -> usize {
         headers
-            .get(REQUEST_HEAD_KEYS[RequestHeadKeys::CONTENT_TYPE as usize])
+            .get(&HeaderKey::ContentLength)
             .and_then(|s| s.trim().parse::<usize>().ok())
             .unwrap_or(0)
     }
 
-    pub fn get_method(&self) -> &str {
-        &self.method
-    }
-
+    /// 读取请求头并更新到 Request.headers 和 content_type
     pub async fn read_headers(
         reader: &mut BufReader<tokio::io::ReadHalf<TcpStream>>
-    ) -> HashMap<String, String> {
-        let mut mapped_headers = HashMap::new();
-        let mut headers = vec![String::new()];
+    ) -> HashMap<HeaderKey, String> {
+        let mut headers_map: HashMap<HeaderKey, String> = HashMap::new();
         let mut buf = String::new();
 
         loop {
+            buf.clear();
             reader.read_line(&mut buf).await.unwrap();
-            if buf != "\r\n" && !buf.is_empty() {
-                let map = buf.splitn(2, ": ").collect::<Vec<&str>>();
-                if map.len() == 2 {
-                    mapped_headers.insert(map[0].to_string(), map[1].to_string());
+            if buf == "\r\n" || buf.is_empty() {
+                break; // 头结束
+            }
+
+            // key: value
+            if let Some(pos) = buf.find(":") {
+                let key = buf[..pos].trim();
+                let value = buf[pos + 1..].trim();
+
+                // 转 HeaderKey 枚举
+                if let Some(header_key) = HeaderKey::from_str(key) {
+                    headers_map.insert(header_key, value.to_string());
                 }
-                headers.push(buf.clone());
-                buf.clear();
-            } else {
-                break;
             }
         }
-        mapped_headers
+
+        headers_map
     }
 }

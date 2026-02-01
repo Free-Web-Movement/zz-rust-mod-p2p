@@ -41,6 +41,7 @@ lazy_static = "1.5.0"
 
 zz-account = { path = "../zz-rust-mod-account" }
 regex = "1.12.2"
+form_urlencoded = "1.2.2"
 
 
 [dev-dependencies]

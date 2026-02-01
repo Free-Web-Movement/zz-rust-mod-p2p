@@ -10,16 +10,17 @@ pub struct Params {
     /// 原始请求 URL，包括 query
     pub url: String,
     /// Path 参数，例如 /user/:id -> {"id": "123"}
-    pub path: HashMap<String, String>,
+    pub path: Option<HashMap<String, String>>,
     /// Query 参数，例如 ?active=true -> {"active": "true"}
     pub query: HashMap<String, String>,
+    pub pattern: String,
 }
 
 impl Params {
-    pub fn new(url: String) -> Self {
-        let path = HashMap::new();
+    pub fn new(url: String, pattern: String) -> Self {
+        let path = Self::extract_path_params(&url, &pattern);
         let query = Self::parse_query(&url);
-        Self { url, path, query }
+        Self { url, path, query, pattern }
     }
 
     /// 根据 URL 提取 query params
@@ -27,11 +28,8 @@ impl Params {
         let mut map = HashMap::new();
         if let Some(pos) = url.find('?') {
             let query_str = &url[pos + 1..];
-            for pair in query_str.split('&') {
-                let mut kv = pair.splitn(2, '=');
-                if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
-                    map.insert(k.to_string(), v.to_string());
-                }
+            for (k, v) in form_urlencoded::parse(query_str.as_bytes()) {
+                map.insert(k.to_string(), v.to_string());
             }
         }
         map
@@ -60,12 +58,10 @@ impl Params {
                 param_names.push("*".to_string());
             } else if let Some(name) = caps.get(1) {
                 let name_str = name.as_str();
-                print!("name_str = {}, whole = {}\n", name_str, whole.as_str());
                 if whole.as_str().ends_with('?') {
                     // 可选参数
                     // ⚠️ 修改点：捕获组外层加非捕获组包裹 /? 保证索引安全
                     regex_str += "(?:/([^/]+))?";
-                    println!("regex_str = {}", regex_str);
                 } else {
                     regex_str += "([^/]+)";
                 }
@@ -81,8 +77,6 @@ impl Params {
         // ⚠️ 全匹配
         regex_str = format!("^{}$", regex_str);
 
-        println!("regext_str = {}", regex_str);
-        println!("param_names = {}", param_names.join(","));
         (regex_str, param_names)
     }
 
@@ -90,18 +84,12 @@ impl Params {
     pub fn extract_path_params(url: &str, pattern: &str) -> Option<HashMap<String, String>> {
         let (regex_str, param_names) = Self::parse_path_regex(pattern);
 
-        println!("url = {}", url);
-        println!("param_names = {}", param_names.join(","));
-
         let re = Regex::new(&regex_str).ok()?;
         let mut map = HashMap::new();
         let caps = re.captures(url)?;
         for (i, name) in param_names.iter().enumerate() {
-            println!("name = {}", name);
-            println!("i = {}", name);
             let mut v = "";
             if let Some(m) = caps.get(i + 1) {
-                println!("m = {}", m.as_str());
                 v = m.as_str();
             }
             map.insert(name.clone(), v.to_string());
