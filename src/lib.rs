@@ -8,3 +8,4 @@ pub mod protocols;
 pub mod nodes;
 pub mod util;
 pub mod cli;
+pub mod http;
