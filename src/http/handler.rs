@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
-use futures::{future::BoxFuture};
+use std::{ collections::HashMap, sync::Arc };
+use futures::{ future::BoxFuture };
 use tokio::sync::Mutex;
 
-use crate::http::{protocol::method::HttpMethod, req::Request, res::Response};
+use crate::http::{ protocol::method::HttpMethod, req::Request, res::Response };
 
 // HTTP 上下文
 pub struct HTTPContext {
@@ -13,7 +13,9 @@ pub struct HTTPContext {
 }
 
 // Executor 类型，使用 Arc 包装 trait object
-pub type Executor = Arc<dyn Fn(Arc<Mutex<HTTPContext>>) -> BoxFuture<'static, bool> + Send + Sync>;
+pub type Executor = Arc<
+    dyn (Fn(Arc<Mutex<HTTPContext>>) -> BoxFuture<'static, bool>) + Send + Sync
+>;
 
 // 保存参数名和 executor 的结构
 #[derive(Clone)]
@@ -35,7 +37,7 @@ impl HandlerMapValue {
 #[derive(Clone)]
 pub struct Handler {
     pub methods: HashMap<HttpMethod, HandlerMapValue>, // method -> executor 集合
-    pub fallback: HandlerMapValue,                     // 无 method 指定时
+    pub fallback: HandlerMapValue, // 无 method 指定时
 }
 
 impl Handler {
@@ -51,7 +53,7 @@ impl Handler {
         &mut self,
         params: &mut Vec<String>,
         method: Option<HttpMethod>,
-        executor: Executor,
+        executor: Executor
     ) -> &mut Self {
         match method {
             Some(m) => {
@@ -72,7 +74,7 @@ impl Handler {
         &mut self,
         params: &mut Vec<String>,
         method: Option<HttpMethod>,
-        executors: Vec<Executor>,
+        executors: Vec<Executor>
     ) -> &mut Self {
         match method {
             Some(m) => {
@@ -89,15 +91,15 @@ impl Handler {
     }
 
     /// 获取指定 method 的 executor，如果没有则返回 fallback
-    pub fn get_executors(&mut self, method: Option<&HttpMethod>) -> &mut Vec<Executor> {
+    pub fn get_executors(&self, method: Option<&HttpMethod>) -> &Vec<Executor> {
         match method {
             Some(m) => {
                 self.methods
-                    .get_mut(m)
-                    .map(|v| &mut v.executors)
-                    .unwrap_or(&mut self.fallback.executors)
+                    .get(m)
+                    .map(|v| &v.executors)
+                    .unwrap_or(&self.fallback.executors)
             }
-            None => &mut self.fallback.executors,
+            None => &self.fallback.executors,
         }
     }
 }

@@ -27,6 +27,7 @@ macro_rules! http_methods {
 }
 
 /// 路由条目
+#[derive(Clone)]
 pub struct RouteEntry {
     pub regex: Regex, // 匹配正则
     pub raw_path: String, // 原始路径
@@ -35,6 +36,7 @@ pub struct RouteEntry {
 }
 
 /// Router
+#[derive(Clone)]
 pub struct Router {
     pub routes: Vec<RouteEntry>,
     pub executors: Vec<Executor>,
@@ -91,15 +93,16 @@ impl Router {
         self
     }
 
-    pub async fn process(&mut self, ctx: Arc<Mutex<HTTPContext>>) {
+    pub async fn process(&self, ctx: Arc<Mutex<HTTPContext>>) {
         // 先读取 path / method（只读，不跨 await）
         let (req_path, req_method) = {
             let ctx_guard = ctx.lock().await;
             let req = ctx_guard.req.lock().await;
             (req.path.clone(), req.method.clone())
         };
+        let routes = self.routes.clone();
 
-        for route in &mut self.routes {
+        for route in &routes {
             if let Some(caps) = route.regex.captures(&req_path) {
                 // ---------- 填充 path 参数 ----------
                 let mut path_params = HashMap::new();
@@ -116,6 +119,7 @@ impl Router {
                 }
 
                 // ---------- 取 executors（必须 clone，不能跨 await 持 borrow） ----------
+
                 let executors: Vec<Executor> = route.handler
                     .get_executors(Some(&req_method))
                     .clone();
@@ -133,7 +137,7 @@ impl Router {
         }
     }
 
-    pub async fn on_request(&mut self, stream: TcpStream, peer_addr: SocketAddr) {
+    pub async fn on_request(&self, stream: TcpStream, peer_addr: SocketAddr) {
         let (reader, writer) = stream.into_split();
         // let reader = Arc::new(Mutex::new(reader));
         // let writer: Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>> = Arc::new(Mutex::new(writer));
@@ -153,8 +157,9 @@ impl Router {
         };
 
         // 2️⃣ 匹配路由
-        let mut matched_route: Option<&mut RouteEntry> = None;
-        for route in &mut self.routes {
+        let mut matched_route: Option<&RouteEntry> = None;
+        let routes = self.routes.clone();
+        for route in &routes {
             if route.regex.is_match(&url.clone().unwrap().to_string()) {
                 matched_route = Some(route);
                 break;
@@ -167,7 +172,7 @@ impl Router {
             return;
         }
 
-        let route = matched_route.unwrap();
+        let route: &RouteEntry = matched_route.unwrap();
 
         // 4️⃣ 生成 Request 对象
         let req = Arc::new(Mutex::new(Request::new(reader, peer_addr, &route.raw_path).await));
