@@ -3,34 +3,35 @@ use tokio::{ fs::File, io::{ AsyncReadExt, AsyncWriteExt, BufWriter }, net::TcpS
 use crate::http::protocol::{ header::HeaderKey, media_type::MediaType };
 use crate::http::protocol::status::StatusCode;
 use serde::Serialize;
+use tokio::net::tcp::OwnedWriteHalf;
 
 const HTTP_WRITE_BUFFER: usize = 8 * 1024 * 1024;
 
 /// HTTP 响应结构
 pub struct Response {
-    pub writer: BufWriter<tokio::io::WriteHalf<TcpStream>>,
+    pub writer: BufWriter<OwnedWriteHalf>,
     peer_addr: SocketAddr,
 }
 
 impl Response {
-    pub fn new(writer: BufWriter<tokio::io::WriteHalf<TcpStream>>, peer_addr: SocketAddr) -> Self {
+    pub fn new(writer: BufWriter<OwnedWriteHalf>, peer_addr: SocketAddr) -> Self {
         Response { writer, peer_addr }
     }
     /// 直接写入字符串（不封装 HTTP 响应）
-    pub async fn write_str<S: AsRef<str>>(&mut self, s: S) -> std::io::Result<()> {
-        self.writer.write_all(s.as_ref().as_bytes()).await?;
-        self.writer.flush().await
+    pub async fn write_str<S: AsRef<str>>(mut writer: BufWriter<OwnedWriteHalf>, s: S) -> std::io::Result<()> {
+        writer.write_all(s.as_ref().as_bytes()).await?;
+        writer.flush().await
     }
 
     /// 直接写入字节（不封装 HTTP 响应）
-    pub async fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
-        self.writer.write_all(bytes).await?;
-        self.writer.flush().await
+    pub async fn write_bytes(mut writer: BufWriter<OwnedWriteHalf>, bytes: &[u8]) -> std::io::Result<()> {
+        writer.write_all(bytes).await?;
+        writer.flush().await
     }
 
     /// 核心发送方法，内部统一处理 header 拼接、Content-Length 和 flush
     async fn send_inner(
-        &mut self,
+        mut writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
         mut headers: HashMap<String, String>,
         body: &[u8]
@@ -48,34 +49,34 @@ impl Response {
         response.push_str("\r\n");
 
         // 写入 header + body
-        self.writer.write_all(response.as_bytes()).await?;
-        self.writer.write_all(body).await?;
-        self.writer.flush().await
+        writer.write_all(response.as_bytes()).await?;
+        writer.write_all(body).await?;
+        writer.flush().await
     }
 
     /// 发送任意字节 body
     pub async fn send_bytes(
-        &mut self,
+        writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
         headers: HashMap<String, String>,
         body: &[u8]
     ) -> std::io::Result<()> {
-        self.send_inner(status, headers, body).await
+        Self::send_inner(writer, status, headers, body).await
     }
 
     /// 发送字符串 body
     pub async fn send_str<S: AsRef<str>>(
-        &mut self,
+        writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
         headers: HashMap<String, String>,
         body: S
     ) -> std::io::Result<()> {
-        self.send_inner(status, headers, body.as_ref().as_bytes()).await
+        Self::send_inner(writer, status, headers, body.as_ref().as_bytes()).await
     }
 
     /// 发送 JSON 数据（自动设置 Content-Type: application/json）
     pub async fn send_json<T: Serialize>(
-        &mut self,
+        writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
         mut headers: HashMap<String, String>,
         value: &T
@@ -95,23 +96,23 @@ impl Response {
             .entry(HeaderKey::ContentType.to_str().to_string())
             .or_insert("application/json".to_string());
 
-        self.send_inner(status, headers, &json_body).await
+        Self::send_inner(writer, status, headers, &json_body).await
     }
 
     /// 只发送状态码，body 为空（Content-Length: 0）
-    pub async fn send_status_only(
-        &mut self,
+    pub async fn send_status(
+        writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
-        mut headers: HashMap<String, String>
+        mut headers: Option<HashMap<String, String>>
     ) -> std::io::Result<()> {
+        let mut headers = headers.take().unwrap_or_default();
         headers.entry(HeaderKey::ContentLength.to_str().to_string()).or_insert("0".to_string());
-
-        self.send_inner(status, headers, &[]).await
+        Self::send_inner(writer, status, headers, &[]).await
     }
 
     /// 发送本地文件
     pub async fn send_file<P: AsRef<Path>>(
-        &mut self,
+        mut writer: BufWriter<OwnedWriteHalf>,
         status: StatusCode,
         mut headers: HashMap<String, String>,
         file_path: P
@@ -138,7 +139,7 @@ impl Response {
             head.push_str(&format!("{}: {}\r\n", k, v));
         }
         head.push_str("\r\n");
-        self.writer.write_all(head.as_bytes()).await?;
+        writer.write_all(head.as_bytes()).await?;
 
         // 分块读取文件并写入
         let mut buffer = [0u8; HTTP_WRITE_BUFFER]; // 8KB 缓冲
@@ -147,9 +148,9 @@ impl Response {
             if n == 0 {
                 break; // EOF
             }
-            self.writer.write_all(&buffer[..n]).await?;
+            writer.write_all(&buffer[..n]).await?;
         }
 
-        self.writer.flush().await
+        writer.flush().await
     }
 }

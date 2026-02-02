@@ -12,7 +12,8 @@ pub struct Params {
     /// Path 参数，例如 /user/:id -> {"id": "123"}
     pub path: Option<HashMap<String, String>>,
     /// Query 参数，例如 ?active=true -> {"active": "true"}
-    pub query: HashMap<String, String>,
+    pub query: HashMap<String, Vec<String>>,
+    pub form: Option<HashMap<String, Vec<String>>>,
     pub pattern: String,
 }
 
@@ -20,18 +21,36 @@ impl Params {
     pub fn new(url: String, pattern: String) -> Self {
         let path = Self::extract_path_params(&url, &pattern);
         let query = Self::parse_query(&url);
-        Self { url, path, query, pattern }
+        Self { url, path, query, pattern, form: None }
     }
 
     /// 根据 URL 提取 query params
-    fn parse_query(url: &str) -> HashMap<String, String> {
-        let mut map = HashMap::new();
+    /// 支持数组参数
+    fn parse_query(url: &str) -> HashMap<String, Vec<String>> {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
         if let Some(pos) = url.find('?') {
             let query_str = &url[pos + 1..];
             for (k, v) in form_urlencoded::parse(query_str.as_bytes()) {
-                map.insert(k.to_string(), v.to_string());
+                map.entry(k.to_string()).or_default().push(v.to_string());
             }
         }
+
+        map
+    }
+
+    fn set_form(&mut self, form: &str) {
+        self.form = Some(Self::parse_form(form));
+    }
+
+    /// 解析 form body，支持数组参数
+    fn parse_form(form: &str) -> HashMap<String, Vec<String>> {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+        for (k, v) in form_urlencoded::parse(form.as_bytes()) {
+            map.entry(k.to_string()).or_default().push(v.to_string());
+        }
+
         map
     }
 

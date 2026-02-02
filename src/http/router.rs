@@ -1,12 +1,30 @@
-use std::{ collections::HashMap, sync::Arc };
+use std::{ collections::HashMap, net::SocketAddr, sync::Arc };
 use regex::Regex;
-use tokio::sync::Mutex;
+use serde_json::Map;
+use tokio::{ io::{ BufReader, BufWriter }, net::TcpStream, sync::Mutex };
 
 use crate::http::{
     handler::{ Executor, HTTPContext, Handler },
     params::Params,
-    protocol::method::HttpMethod,
+    protocol::{ method::HttpMethod, status::StatusCode },
+    req::Request,
+    res::Response,
 };
+
+macro_rules! http_methods {
+    ($($fn_name:ident => $method:expr),+ $(,)?) => {
+        $(
+            #[inline]
+            pub fn $fn_name(
+                &mut self,
+                paths: Vec<&str>,
+                executors: Vec<Executor>,
+            ) -> &mut Self {
+                self.add(paths, vec![$method], executors)
+            }
+        )+
+    };
+}
 
 /// 路由条目
 pub struct RouteEntry {
@@ -19,12 +37,25 @@ pub struct RouteEntry {
 /// Router
 pub struct Router {
     pub routes: Vec<RouteEntry>,
+    pub executors: Vec<Executor>,
 }
 
 impl Router {
+    http_methods! {
+        get     => "GET",
+        post    => "POST",
+        put     => "PUT",
+        delete  => "DELETE",
+        patch   => "PATCH",
+        options => "OPTIONS",
+        head    => "HEAD",
+        trace   => "TRACE",
+        connect => "CONNECT",
+    }
+
     /// 创建 Router
     pub fn new() -> Self {
-        Self { routes: vec![] }
+        Self { routes: vec![], executors: vec![] }
     }
 
     /// 注册路由
@@ -60,39 +91,7 @@ impl Router {
         self
     }
 
-    /// 快捷注册方法
-    pub fn get(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["GET"], executors)
-    }
-    pub fn post(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["POST"], executors)
-    }
-    pub fn put(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["PUT"], executors)
-    }
-    pub fn delete(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["DELETE"], executors)
-    }
-    pub fn patch(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["PATCH"], executors)
-    }
-    pub fn options(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["OPTIONS"], executors)
-    }
-    pub fn head(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["HEAD"], executors)
-    }
-    pub fn trace(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["TRACE"], executors)
-    }
-    pub fn connect(&mut self, paths: Vec<&str>, executors: Vec<Executor>) -> &mut Self {
-        self.add(paths, vec!["CONNECT"], executors)
-    }
-
-    pub async fn process(&mut self, context: HTTPContext) {
-        // 包一层 Arc<Mutex<_>>，整个请求生命周期只用这一份
-        let ctx = Arc::new(Mutex::new(context));
-
+    pub async fn process(&mut self, ctx: Arc<Mutex<HTTPContext>>) {
         // 先读取 path / method（只读，不跨 await）
         let (req_path, req_method) = {
             let ctx_guard = ctx.lock().await;
@@ -130,6 +129,86 @@ impl Router {
                 }
 
                 return;
+            }
+        }
+    }
+
+    pub async fn on_request(&mut self, stream: TcpStream, peer_addr: SocketAddr) {
+        let (reader, writer) = stream.into_split();
+        // let reader = Arc::new(Mutex::new(reader));
+        // let writer: Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>> = Arc::new(Mutex::new(writer));
+        let mut reader = BufReader::new(reader);
+
+        let writer = BufWriter::new(writer);
+
+        // 1️⃣ 先读取请求行 / URL
+        // ⚠️ 这里假设 Request::parse_url 只解析 URL，不生成完整 Request
+        let url = match Request::peek_url(&mut reader).await {
+            Ok(u) => u,
+            Err(_) => {
+                // 无法读取 URL，直接返回 400
+                let _ = Response::send_status(writer, StatusCode::BadRequest, None).await;
+                return;
+            }
+        };
+
+        // 2️⃣ 匹配路由
+        let mut matched_route: Option<&mut RouteEntry> = None;
+        for route in &mut self.routes {
+            if route.regex.is_match(&url.clone().unwrap().to_string()) {
+                matched_route = Some(route);
+                break;
+            }
+        }
+
+        if matched_route.is_none() {
+            // 3️⃣ 未匹配到路由 → 返回 404
+            let _ = Response::send_status(writer, StatusCode::NotFound, None).await;
+            return;
+        }
+
+        let route = matched_route.unwrap();
+
+        // 4️⃣ 生成 Request 对象
+        let req = Arc::new(Mutex::new(Request::new(reader, peer_addr, &route.raw_path).await));
+        let res = Arc::new(Mutex::new(Response::new(writer, peer_addr)));
+
+        let ctx = Arc::new(
+            Mutex::new(HTTPContext {
+                req,
+                res,
+                global: Map::new(),
+                local: Map::new(),
+            })
+        );
+
+        // 5️⃣ 执行全局 middleware
+        for exec in &self.executors {
+            if !exec(ctx.clone()).await {
+                return;
+            }
+        }
+
+        // 6️⃣ 填充 path 参数
+
+        let method;
+        {
+            let ctx_guard = ctx.lock().await;
+            let mut req = ctx_guard.req.lock().await;
+            let path_params = Params::extract_path_params(
+                &url.unwrap().to_string(),
+                &route.raw_path
+            ).unwrap_or_default();
+
+            method = req.method.clone();
+            req.params.path = Some(path_params);
+        }
+
+        // 7️⃣ 执行路径相关 middleware
+        let executors = route.handler.get_executors(Some(&method)).clone();
+        for exec in executors {
+            if !exec(ctx.clone()).await {
+                break;
             }
         }
     }

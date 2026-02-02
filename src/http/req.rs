@@ -1,14 +1,18 @@
 use tokio::io::{ AsyncBufReadExt, AsyncReadExt, BufReader };
-use tokio::net::{ TcpStream };
+use tokio::net::tcp::OwnedReadHalf;
+use tokio::sync::Mutex;
 
 use std::net::SocketAddr;
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use anyhow::Result;
+
+use crate::consts::HTTP_BUFFER_LENGTH;
 use crate::http::params::Params;
 use crate::http::protocol::content_type::ContentType;
 use crate::http::protocol::header::HeaderKey;
 use crate::http::protocol::method::HttpMethod;
-use crate::http::protocol::status::StatusCode;
 use crate::http::protocol::media_type::MediaType;
 
 pub struct Request {
@@ -23,13 +27,13 @@ pub struct Request {
     pub content_type: ContentType,
     pub body: Vec<u8>,
     pub cookies: HashMap<String, String>,
-    pub reader: BufReader<tokio::io::ReadHalf<TcpStream>>,
+    pub reader: BufReader<OwnedReadHalf>,
     pub peer_addr: SocketAddr,
 }
 
 impl Request {
     pub async fn new(
-        mut reader: BufReader<tokio::io::ReadHalf<TcpStream>>,
+        mut reader: BufReader<OwnedReadHalf>,
         peer_addr: SocketAddr,
         route_pattern: &str // 用于解析动态 path params
     ) -> Self {
@@ -118,8 +122,40 @@ impl Request {
         }
     }
 
+    /// 从 BufReader 中 peek 出 HTTP 请求行的 URL（path + query）
+    /// ⚠️ 不消费流，后续 Request::new 可以正常读取
+    pub async fn peek_url(reader: &mut BufReader<OwnedReadHalf>) -> Result<Option<String>> {
+        let mut buf = [0u8; HTTP_BUFFER_LENGTH]; // peek 缓冲大小，可根据需要调整
 
-        /// 将 Cookie header 转换为 HashMap
+        // 获取 TcpStream 参考，直接 peek
+        let stream = reader.get_mut();
+        let n = stream.peek(&mut buf).await?;
+
+        if n == 0 {
+            return Ok(None); // 连接关闭
+        }
+
+        // 转成 UTF-8
+        let s = match str::from_utf8(&buf[..n]) {
+            Ok(s) => s,
+            Err(_) => {
+                return Ok(None);
+            }
+        };
+
+        // HTTP 请求行通常形如 "GET /path?query HTTP/1.1\r\n"
+        if let Some(end) = s.find("\r\n") {
+            let request_line = &s[..end];
+            let parts: Vec<&str> = request_line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let path = parts[1];
+                return Ok(Some(path.to_string()));
+            }
+        }
+
+        Ok(None)
+    }
+    /// 将 Cookie header 转换为 HashMap
     fn parse_cookies(header_value: &str) -> HashMap<String, String> {
         let mut map = HashMap::new();
         for pair in header_value.split(';') {
@@ -135,7 +171,6 @@ impl Request {
         map
     }
 
-    
     pub fn get_length(headers: &HashMap<HeaderKey, String>) -> usize {
         headers
             .get(&HeaderKey::ContentLength)
@@ -145,7 +180,7 @@ impl Request {
 
     /// 读取请求头并更新到 Request.headers 和 content_type
     pub async fn read_headers(
-        reader: &mut BufReader<tokio::io::ReadHalf<TcpStream>>
+        reader: &mut BufReader<OwnedReadHalf>
     ) -> HashMap<HeaderKey, String> {
         let mut headers_map: HashMap<HeaderKey, String> = HashMap::new();
         let mut buf = String::new();
