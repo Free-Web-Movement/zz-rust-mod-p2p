@@ -1,17 +1,15 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{ net::SocketAddr, sync::Arc };
 
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, UdpSocket},
-    sync::Mutex,
-};
+use aex::req::Request;
+use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
 
 use anyhow::Result;
 use anyhow::Context as AnContext;
 
 use crate::{
-    consts::TCP_BUFFER_LENGTH, context::Context, handlers::ws::WebSocketHandler,
-    protocols::{codec::Codec, frame::Frame, registry::CommandHandlerRegistry},
+    context::Context,
+    handlers::ws::WebSocketHandler,
+    protocols::{ codec::Codec, frame::Frame, registry::CommandHandlerRegistry },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -56,7 +54,7 @@ impl StreamPair {
         &self,
         client_type: &ClientType,
         context: &Arc<Context>,
-        addr: SocketAddr,
+        addr: SocketAddr
     ) {
         println!("inside tcp loop reading");
 
@@ -67,9 +65,13 @@ impl StreamPair {
 
         tokio::spawn(async move {
             loop {
-                if let Err(e) =
-                    read_one_tcp_frame(&stream_pair, context.clone(), &client_type.clone(), addr)
-                        .await
+                if
+                    let Err(e) = read_one_tcp_frame(
+                        &stream_pair,
+                        context.clone(),
+                        &client_type.clone(),
+                        addr
+                    ).await
                 {
                     eprintln!("TCP read loop exit {:?} - {:?}", addr, e);
                     break;
@@ -80,30 +82,27 @@ impl StreamPair {
         });
     }
 
-    pub async fn is_http_connection(&self) -> anyhow::Result<bool> {
-        let mut buf = [0u8; TCP_BUFFER_LENGTH];
+    // pub async fn is_http_connection(&self) -> anyhow::Result<bool> {
+    //     let mut buf = [0u8; TCP_BUFFER_LENGTH];
 
-        let mut reader = self.reader.lock().await;
+    //     let mut reader = self.reader.lock().await;
 
-        let n = reader.peek(&mut buf).await?;
+    //     let n = reader.peek(&mut buf).await?;
 
-        if n == 0 {
-            return Ok(false);
-        }
+    //     if n == 0 {
+    //         return Ok(false);
+    //     }
 
-        let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
-        Ok(matches!(
-            s,
-            "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"
-        ))
-    }
+    //     let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
+    //     Ok(HttpMethod::is_prefixed(s))
+    // }
 }
 
 pub async fn loop_reading(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     println!("inside loop read!");
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => todo!(),
-        ClientType::TCP(stream_pair)
+        | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
             stream_pair.loop_read(client_type, context, addr).await;
@@ -139,7 +138,7 @@ pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
                 eprintln!("Failed to send UDP bytes: {:?}", e);
             }
         }
-        crate::protocols::client_type::ClientType::TCP(stream_pair)
+        | crate::protocols::client_type::ClientType::TCP(stream_pair)
         | crate::protocols::client_type::ClientType::HTTP(stream_pair)
         | crate::protocols::client_type::ClientType::WS(stream_pair) => {
             let mut writer = stream_pair.writer.lock().await;
@@ -159,7 +158,7 @@ pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
 pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => todo!(),
-        ClientType::TCP(stream_pair)
+        | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
             on_tcp_data(client_type, stream_pair, context, addr).await;
@@ -170,7 +169,7 @@ pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: Soc
 pub async fn read_http(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => todo!(),
-        ClientType::TCP(stream_pair)
+        | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
             on_http_data(client_type, stream_pair, context, addr).await;
@@ -182,7 +181,7 @@ pub async fn on_http_data(
     client_type: &ClientType,
     stream_pair: &StreamPair,
     context: &Arc<Context>,
-    addr: SocketAddr,
+    addr: SocketAddr
 ) {
     let mut buf = vec![0u8; 64 * 1024];
     let token = context.clone().token.clone();
@@ -220,6 +219,8 @@ pub async fn on_http_data(
                         // ⚠️ 升级阶段不要持锁
                         let _ = ws.respond_websocket_handshake(data).await;
                         break;
+                    } else {
+                      
                     }
                     }
                     Err(e) => {
@@ -238,7 +239,7 @@ pub async fn on_tcp_data(
     client_type: &ClientType,
     stream_pair: &StreamPair,
     context: &Arc<Context>,
-    addr: SocketAddr,
+    addr: SocketAddr
 ) {
     loop {
         tokio::select! {
@@ -267,9 +268,13 @@ pub async fn on_tcp_data(
 pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => Ok(false),
-        ClientType::TCP(stream_pair)
+        | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
-        | ClientType::WS(stream_pair) => stream_pair.is_http_connection().await,
+        | ClientType::WS(stream_pair) => {
+          let reader = stream_pair.reader.clone();
+          let mut reader = reader.lock().await;
+          Request::is_http_connection(&mut reader).await
+        }
     }
 }
 
@@ -277,7 +282,7 @@ pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::R
     context.token.cancel();
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => {}
-        ClientType::TCP(_stream_pair)
+        | ClientType::TCP(_stream_pair)
         | ClientType::HTTP(_stream_pair)
         | ClientType::WS(_stream_pair) => {
             let _ = TcpStream::connect(format!("{}:{}", context.ip, context.port)).await;
@@ -290,7 +295,7 @@ pub async fn read_one_tcp_frame(
     stream_pair: &StreamPair,
     context: Arc<Context>,
     client_type: &ClientType,
-    addr: SocketAddr,
+    addr: SocketAddr
 ) -> Result<()> {
     let mut len_buf = [0u8; 4];
 
@@ -298,8 +303,7 @@ pub async fn read_one_tcp_frame(
     {
         let mut reader = stream_pair.reader.lock().await;
         reader
-            .read_exact(&mut len_buf)
-            .await
+            .read_exact(&mut len_buf).await
             .with_context(|| format!("TCP read length error from {:?}", addr))?;
     }
 
@@ -317,8 +321,7 @@ pub async fn read_one_tcp_frame(
     {
         let mut reader = stream_pair.reader.lock().await;
         reader
-            .read_exact(&mut msg_buf)
-            .await
+            .read_exact(&mut msg_buf).await
             .with_context(|| format!("TCP read body error from {:?}", addr))?;
     }
 

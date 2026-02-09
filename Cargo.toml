@@ -40,6 +40,8 @@ tracing-subscriber = { version = "0.3.22", features = ["fmt", "ansi", "env-filte
 lazy_static = "1.5.0"
 
 zz-account = { path = "../zz-rust-mod-account" }
+aex =  { path = "../aex" }
+
 regex = "1.12.2"
 form_urlencoded = "1.2.2"
 
