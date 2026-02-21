@@ -1,6 +1,6 @@
 use std::{ net::SocketAddr, sync::Arc };
 
-use aex::req::Request;
+use aex::http::req::Request;
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
 
 use anyhow::Result;
