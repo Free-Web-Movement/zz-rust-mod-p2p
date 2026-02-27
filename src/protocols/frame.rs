@@ -5,8 +5,6 @@ use std::sync::Arc;
 use zz_account::address::FreeWebMovementAddress;
 
 use bincode::{Decode, Encode};
-// use bincode::serde::{ decode_from_slice, encode_to_vec };
-
 use crate::context::Context;
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::P2PCommand;

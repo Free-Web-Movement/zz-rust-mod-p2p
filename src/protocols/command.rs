@@ -65,23 +65,7 @@ impl P2PCommand {
             data,
         }
     }
-
-    /* =========================
-       Protocol helpers
-    ========================= */
-
-    /// send = build + encode (protocol layer, no IO)
-    pub fn to_bytes(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
-        let cmd = P2PCommand::new(entity as u8, action as u8, data);
-        Ok(Codec::encode(&cmd))
-    }
-
-    /// receive = decode from wire bytes
-    pub fn from_bytes(bytes: &[u8]) -> Result<P2PCommand> {
-        let cmd: P2PCommand = Codec::decode(&bytes)?;
-        Ok(cmd)
-    }
-
+    
     pub async fn send(
         &self,
         context: Arc<Context>,
@@ -103,9 +87,10 @@ mod tests {
     fn test_send_receive_roundtrip() {
         let payload = vec![10, 20, 30];
 
-        let bytes = P2PCommand::to_bytes(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
+        let cmd = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, Some(payload.clone()));
 
-        let cmd = P2PCommand::from_bytes(&bytes).unwrap();
+        let bytes = Codec::encode(&cmd);
+        let cmd : P2PCommand = Codec::decode(&bytes).unwrap();
 
         assert_eq!(cmd.entity, Entity::Node as u8);
         assert_eq!(cmd.action, Action::OnLine as u8);
