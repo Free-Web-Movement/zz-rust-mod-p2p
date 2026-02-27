@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use aex::tcp::types::Codec;
-use anyhow::Result;
-use bincode::{ Decode, Encode, config };
+use anyhow::{Ok, Result};
+use bincode::{ Decode, Encode };
 use futures::future::BoxFuture;
+use serde::{Deserialize, Serialize};
 
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
@@ -45,11 +46,15 @@ pub enum Action {
 
 pub type CommandCallback = fn(P2PCommand, P2PFrame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
 
-#[derive(Clone, PartialEq, Encode, Decode, Debug)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Encode, Decode, Debug)]
 pub struct P2PCommand {
     pub entity: u8,
     pub action: u8,
     pub data: Option<Vec<u8>>
+}
+
+impl Codec for P2PCommand {
+    
 }
 
 impl P2PCommand {
@@ -61,18 +66,6 @@ impl P2PCommand {
         }
     }
 
-    fn config() -> impl bincode::config::Config {
-        config::standard().with_fixed_int_encoding().with_big_endian()
-    }
-
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        Ok(bincode::encode_to_vec(self, Self::config())?)
-    }
-
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        let (cmd, _len): (Self, usize) = bincode::decode_from_slice(bytes, Self::config())?;
-        Ok(cmd)
-    }
     /* =========================
        Protocol helpers
     ========================= */
@@ -80,12 +73,13 @@ impl P2PCommand {
     /// send = build + encode (protocol layer, no IO)
     pub fn to_bytes(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
         let cmd = P2PCommand::new(entity as u8, action as u8, data);
-        cmd.serialize()
+        Ok(Codec::encode(&cmd))
     }
 
     /// receive = decode from wire bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<P2PCommand> {
-        P2PCommand::deserialize(bytes)
+        let cmd: P2PCommand = Codec::decode(&bytes)?;
+        Ok(cmd)
     }
 
     pub async fn send(
@@ -104,14 +98,6 @@ impl P2PCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_command_serialize_deserialize() {
-        let cmd = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]));
-        let bytes = cmd.serialize().unwrap();
-        let cmd2 = P2PCommand::deserialize(&bytes).unwrap();
-        assert_eq!(cmd, cmd2);
-    }
 
     #[test]
     fn test_send_receive_roundtrip() {
