@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use aex::tcp::types::{Codec, frame_config};
+use aex::tcp::types::{ Codec, frame_config };
 use rand::Rng;
 use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
@@ -8,7 +8,7 @@ use bincode::{ Decode, Encode };
 use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
-use crate::protocols::client_type:: send_bytes ;
+use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ impl FrameBody {
 /// 端到端安全帧（只做加密与校验）
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
-pub struct Frame {
+pub struct P2PFrame {
     pub body: FrameBody,
 
     /// 对 body 的签名
@@ -86,9 +86,9 @@ pub struct Frame {
     pub signature: Vec<u8>,
 }
 
-impl Frame {
+impl P2PFrame {
     pub fn new(body: FrameBody, signature: Vec<u8>) -> Self {
-        Frame { body, signature }
+        P2PFrame { body, signature }
     }
 
     pub fn sign(body: FrameBody, signer: &FreeWebMovementAddress) -> anyhow::Result<Self> {
@@ -96,15 +96,15 @@ impl Frame {
         let signature = FreeWebMovementAddress::sign_message(&signer.private_key, &bytes)
             .serialize_compact()
             .to_vec();
-        Ok(Frame { body, signature })
+        Ok(P2PFrame { body, signature })
     }
 
-    pub fn verify_bytes(bytes: &Vec<u8>) -> anyhow::Result<Frame> {
-        let (frame, _): (Frame, usize) = decode_from_slice(&bytes, frame_config())?;
-        Frame::verify(frame)
+    pub fn verify_bytes(bytes: &Vec<u8>) -> anyhow::Result<P2PFrame> {
+        let (frame, _): (P2PFrame, usize) = decode_from_slice(&bytes, frame_config())?;
+        P2PFrame::verify(frame)
     }
 
-    pub fn verify(frame: Frame) -> anyhow::Result<Frame> {
+    pub fn verify(frame: P2PFrame) -> anyhow::Result<P2PFrame> {
         let config = frame_config();
         let vecs = encode_to_vec(&frame.body, config)?;
         let bytes = vecs.as_slice();
@@ -128,13 +128,13 @@ impl Frame {
             version,
             data: cmd_bytes,
         };
-        Ok(Frame::sign(body, &context.address)?)
+        Ok(P2PFrame::sign(body, &context.address)?)
     }
 }
 
-impl Codec for Frame {}
+impl Codec for P2PFrame {}
 
-pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context>) {
+pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Context>) {
     // ⚠️ 重要安全原则：
     // - 不解密
     // - 不反序列化 Command
@@ -179,9 +179,7 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        protocols::command::{ Action, Entity },
-    };
+    use crate::{ protocols::command::{ Action, Entity } };
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
@@ -200,21 +198,21 @@ mod tests {
         };
 
         // 3️⃣ 使用身份签名生成 Frame
-        let frame = Frame::sign(body.clone(), &identity)?;
+        let frame = P2PFrame::sign(body.clone(), &identity)?;
         assert!(!frame.signature.is_empty(), "签名不应该为空");
 
         // 4️⃣ 序列化 Frame
         let serialized = bincode::serde::encode_to_vec(&frame, frame_config())?;
 
         // 5️⃣ 验证签名
-        let frame1 = Frame::verify_bytes(&serialized)?;
+        let frame1 = P2PFrame::verify_bytes(&serialized)?;
 
         assert_eq!(frame.signature.to_vec(), frame1.signature.to_vec());
 
         println!("Frame verified successfully!");
 
         let bytes = Codec::encode(&frame);
-        let frame2: Frame = Codec::decode(&bytes).unwrap();
+        let frame2: P2PFrame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame1.signature.to_vec(), frame2.signature.to_vec());
         assert_eq!(frame1.body.data.to_vec(), frame2.body.data.to_vec());
@@ -282,7 +280,7 @@ mod tests {
             vec![0xaa]
         );
 
-        let frame = Frame::new(body.clone(), vec![0xbb]);
+        let frame = P2PFrame::new(body.clone(), vec![0xbb]);
 
         assert_eq!(frame.body.version, body.version);
         assert_eq!(frame.signature, vec![0xbb]);
@@ -301,11 +299,11 @@ mod tests {
             b"hello".to_vec()
         );
 
-        let frame = Frame::sign(body.clone(), &identity)?;
+        let frame = P2PFrame::sign(body.clone(), &identity)?;
         assert!(!frame.signature.is_empty());
 
-        let encoded = bincode::serde::encode_to_vec(&frame, frame_config())?;
-        let verified = Frame::verify_bytes(&encoded)?;
+        let encoded = Codec::encode(&frame);
+        let verified = P2PFrame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
         assert_eq!(frame.body.address.to_string(), verified.body.address.to_string());
@@ -326,10 +324,10 @@ mod tests {
             vec![1, 2, 3]
         );
 
-        let frame = Frame::sign(body, &identity).unwrap();
+        let frame = P2PFrame::sign(body, &identity).unwrap();
 
         let bytes = Codec::encode(&frame.clone());
-        let decoded : Frame = Codec::decode(&bytes).unwrap();
+        let decoded: P2PFrame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame.signature, decoded.signature);
         assert_eq!(frame.body.nonce, decoded.body.nonce);
@@ -348,7 +346,7 @@ mod tests {
             vec![1, 2, 3]
         );
 
-        let mut frame = Frame::sign(body.clone(), &identity).unwrap();
+        let mut frame = P2PFrame::sign(body.clone(), &identity).unwrap();
 
         // 🔥 篡改数据
         body.data = vec![9, 9, 9];
@@ -356,7 +354,7 @@ mod tests {
 
         let encoded = bincode::serde::encode_to_vec(&frame, frame_config()).unwrap();
 
-        let res = Frame::verify_bytes(&encoded);
+        let res = P2PFrame::verify_bytes(&encoded);
         assert!(res.is_err(), "篡改后的签名应验证失败");
     }
 
@@ -375,7 +373,4 @@ mod tests {
 
         assert_eq!(decoded.version, 1);
     }
-
-    use crate::protocols::command::{ Command };
-    use crate::protocols::frame::Frame;
 }

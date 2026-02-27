@@ -7,7 +7,7 @@ use futures::future::BoxFuture;
 
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
-use crate::protocols::frame::Frame;
+use crate::protocols::frame::P2PFrame;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Entity {
@@ -43,7 +43,7 @@ pub enum Action {
 }
 
 
-pub type CommandCallback = fn(Command, Frame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
+pub type CommandCallback = fn(Command, P2PFrame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
 
 #[derive(Clone, PartialEq, Encode, Decode, Debug)]
 pub struct Command {
@@ -94,7 +94,7 @@ impl Command {
         client_type: &ClientType,
         version: u8
     ) -> Result<()> {
-        let frame = Frame::build(context, self.clone(), version).await?;
+        let frame = P2PFrame::build(context, self.clone(), version).await?;
         let bytes = Codec::encode(&frame);
         send_bytes(client_type, &bytes).await;
         Ok(())

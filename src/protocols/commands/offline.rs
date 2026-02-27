@@ -6,11 +6,11 @@ use futures::future::BoxFuture;
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
 use crate::protocols::command::{ Action, Command, Entity };
-use crate::protocols::frame::Frame;
+use crate::protocols::frame::P2PFrame;
 
 pub fn on_offline(
     cmd: Command,
-    frame: Frame,
+    frame: P2PFrame,
     context: Arc<Context>,
     client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> {
@@ -35,7 +35,7 @@ pub async fn send_offline(
 ) -> anyhow::Result<()> {
     let command = Command::new(Entity::Node as u8, Action::OffLine as u8, data);
 
-    let frame = Frame::build(context, command, 1).await.unwrap();
+    let frame = P2PFrame::build(context, command, 1).await.unwrap();
     // 2️⃣ 序列化 Frame
     let bytes = Codec::encode(&frame);
     send_bytes(&client_type, &bytes).await;

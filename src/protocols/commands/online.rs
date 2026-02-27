@@ -11,7 +11,7 @@ use crate::protocols::client_type::{ ClientType, send_bytes };
 use crate::protocols::command::Command;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::ack::OnlineAckCommand;
-use crate::protocols::frame::Frame;
+use crate::protocols::frame::P2PFrame;
 use crate::protocols::session_key::SessionKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
@@ -31,7 +31,7 @@ pub async fn send_online(
 ) -> anyhow::Result<()> {
     let command = Command::new(Entity::Node as u8, Action::OnLine as u8, data);
 
-    let frame = Frame::build(context, command, 1).await.unwrap();
+    let frame = P2PFrame::build(context, command, 1).await.unwrap();
 
     let bytes = Codec::encode(&frame);
 
@@ -42,7 +42,7 @@ pub async fn send_online(
 
 pub fn on_online(
     cmd: Command,
-    frame: Frame,
+    frame: P2PFrame,
     context: Arc<Context>,
     client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> {
@@ -104,7 +104,7 @@ pub fn on_online(
             Some(Codec::encode(&ack))
         );
 
-        let ack_frame = Frame::build(context.clone(), command, 1).await.unwrap();
+        let ack_frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();
 
         // ===== 4️⃣ clients 登记 =====
         let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {

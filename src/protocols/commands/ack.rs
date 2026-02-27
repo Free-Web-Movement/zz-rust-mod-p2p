@@ -10,8 +10,7 @@ use crate::{
     context::Context,
     protocols::{
         client_type::{ ClientType, send_bytes },
-        command::{ Action, Command, Entity },
-        frame::Frame,
+        command::{ Action, Command, Entity }, frame::P2PFrame,
     },
 };
 
@@ -31,7 +30,7 @@ pub async fn send_online_ack(
 ) -> Result<()> {
     let command = Command::new(Entity::Node as u8, Action::OnLineAck as u8, Some(Codec::encode(&ack)));
 
-    let frame = Frame::build(context, command, 1).await.unwrap();
+    let frame = P2PFrame::build(context, command, 1).await.unwrap();
 
     // 2️⃣ 转成字节发送
     let bytes = Codec::encode(&frame);
@@ -43,7 +42,7 @@ pub async fn send_online_ack(
 
 pub fn on_online_ack(
     cmd: Command,
-    frame: Frame,
+    frame: P2PFrame,
     context: Arc<Context>,
     _client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> 

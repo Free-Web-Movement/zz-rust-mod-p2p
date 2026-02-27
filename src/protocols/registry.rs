@@ -14,7 +14,7 @@ use crate::{
             offline::on_offline,
             online::on_online,
         },
-        frame::Frame,
+        frame::P2PFrame,
     },
 };
 /// 🔹 命令处理注册中心
@@ -32,7 +32,7 @@ impl CommandHandlerRegistry {
     }
 
     /// 处理 Frame
-    pub async fn handle(&self, frame: Frame, ctx: Arc<Context>, client: Arc<ClientType>) {
+    pub async fn handle(&self, frame: P2PFrame, ctx: Arc<Context>, client: Arc<ClientType>) {
         println!("inside registry handling!");
         let cmd = frame.body.command_from_data().unwrap();
         let entity = cmd.entity;
@@ -69,7 +69,7 @@ impl CommandHandlerRegistry {
         map.insert((entity, action), Arc::new(handler));
     }
 
-    pub async fn on(frame: Frame, ctx: Arc<Context>, client: Arc<ClientType>) {
+    pub async fn on(frame: P2PFrame, ctx: Arc<Context>, client: Arc<ClientType>) {
         command_handler_registry.handle(frame, ctx, client).await;
     }
     pub async fn clear(&self) {

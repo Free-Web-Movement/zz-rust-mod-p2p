@@ -9,7 +9,7 @@ use anyhow::Context as AnContext;
 use crate::{
     context::Context,
     handlers::ws::WebSocketHandler,
-    protocols::{ frame::Frame, registry::CommandHandlerRegistry },
+    protocols::{ frame::P2PFrame, registry::CommandHandlerRegistry },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -329,7 +329,7 @@ pub async fn read_one_tcp_frame(
     println!("{:?}", msg_buf);
 
     // ---------- 3. Frame 处理 ----------
-    let frame:Frame = Codec::decode(&msg_buf).unwrap();
+    let frame:P2PFrame = Codec::decode(&msg_buf).unwrap();
     CommandHandlerRegistry::on(frame, context, Arc::new(client_type.clone())).await;
 
     Ok(())

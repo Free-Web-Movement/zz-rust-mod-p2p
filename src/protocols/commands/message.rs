@@ -5,7 +5,7 @@ use anyhow::anyhow;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{ Action, Command, Entity };
-use crate::protocols::frame::Frame;
+use crate::protocols::frame::P2PFrame;
 use crate::util::time::timestamp;
 use crate::{ context::Context, protocols::frame::forward_frame };
 
@@ -59,7 +59,7 @@ pub async fn send_text_message(
         Some(encrypted.clone())
     );
 
-    let frame = Frame::build(context.clone(), command, 1).await.unwrap();
+    let frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();
 
     let bytes = Codec::encode(&frame);
 
@@ -124,7 +124,7 @@ pub async fn send_text_message(
 
 pub fn on_text_message(
     cmd: Command,
-    frame: Frame,
+    frame: P2PFrame,
     context: Arc<Context>,
     client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> 
