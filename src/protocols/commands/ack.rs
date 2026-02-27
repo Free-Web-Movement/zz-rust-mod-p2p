@@ -10,7 +10,7 @@ use crate::{
     context::Context,
     protocols::{
         client_type::{ ClientType, send_bytes },
-        command::{ Action, Command, Entity }, frame::P2PFrame,
+        command::{ Action, P2PCommand, Entity }, frame::P2PFrame,
     },
 };
 
@@ -28,7 +28,7 @@ pub async fn send_online_ack(
     client_type: &ClientType,
     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
 ) -> Result<()> {
-    let command = Command::new(Entity::Node as u8, Action::OnLineAck as u8, Some(Codec::encode(&ack)));
+    let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Some(Codec::encode(&ack)));
 
     let frame = P2PFrame::build(context, command, 1).await.unwrap();
 
@@ -41,7 +41,7 @@ pub async fn send_online_ack(
 }
 
 pub fn on_online_ack(
-    cmd: Command,
+    cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
     _client_type: Arc<ClientType>

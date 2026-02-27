@@ -4,7 +4,7 @@ use aex::tcp::types::Codec;
 use anyhow::anyhow;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
-use crate::protocols::command::{ Action, Command, Entity };
+use crate::protocols::command::{ Action, P2PCommand, Entity };
 use crate::protocols::frame::P2PFrame;
 use crate::util::time::timestamp;
 use crate::{ context::Context, protocols::frame::forward_frame };
@@ -53,7 +53,7 @@ pub async fn send_text_message(
 
     println!("created encrypted bytes: {:?}", encrypted);
 
-    let command = Command::new(
+    let command = P2PCommand::new(
         Entity::Message as u8,
         Action::SendText as u8,
         Some(encrypted.clone())
@@ -123,7 +123,7 @@ pub async fn send_text_message(
 }
 
 pub fn on_text_message(
-    cmd: Command,
+    cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
     client_type: Arc<ClientType>

@@ -8,7 +8,7 @@ use serde::{ Deserialize, Serialize };
 use crate::context::Context;
 use crate::nodes::servers::Servers;
 use crate::protocols::client_type::{ ClientType, send_bytes };
-use crate::protocols::command::Command;
+use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::P2PFrame;
@@ -29,7 +29,7 @@ pub async fn send_online(
     client_type: &ClientType,
     data: Option<Vec<u8>>
 ) -> anyhow::Result<()> {
-    let command = Command::new(Entity::Node as u8, Action::OnLine as u8, data);
+    let command = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, data);
 
     let frame = P2PFrame::build(context, command, 1).await.unwrap();
 
@@ -41,7 +41,7 @@ pub async fn send_online(
 }
 
 pub fn on_online(
-    cmd: Command,
+    cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
     client_type: Arc<ClientType>
@@ -98,7 +98,7 @@ pub fn on_online(
         println!("send ack session_id : {:?}", ack.session_id);
         println!("send ack: {:?}", Codec::encode(&ack));
 
-        let command = Command::new(
+        let command = P2PCommand::new(
             Entity::Node as u8,
             Action::OnLineAck as u8,
             Some(Codec::encode(&ack))

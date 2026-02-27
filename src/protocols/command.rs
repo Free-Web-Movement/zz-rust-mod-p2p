@@ -43,16 +43,16 @@ pub enum Action {
 }
 
 
-pub type CommandCallback = fn(Command, P2PFrame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
+pub type CommandCallback = fn(P2PCommand, P2PFrame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
 
 #[derive(Clone, PartialEq, Encode, Decode, Debug)]
-pub struct Command {
+pub struct P2PCommand {
     pub entity: u8,
     pub action: u8,
     pub data: Option<Vec<u8>>
 }
 
-impl Command {
+impl P2PCommand {
     pub fn new(entity: u8, action: u8, data: Option<Vec<u8>>) -> Self {
         Self {
             entity,
@@ -79,13 +79,13 @@ impl Command {
 
     /// send = build + encode (protocol layer, no IO)
     pub fn to_bytes(entity: Entity, action: Action, data: Option<Vec<u8>>) -> Result<Vec<u8>> {
-        let cmd = Command::new(entity as u8, action as u8, data);
+        let cmd = P2PCommand::new(entity as u8, action as u8, data);
         cmd.serialize()
     }
 
     /// receive = decode from wire bytes
-    pub fn from_bytes(bytes: &[u8]) -> Result<Command> {
-        Command::deserialize(bytes)
+    pub fn from_bytes(bytes: &[u8]) -> Result<P2PCommand> {
+        P2PCommand::deserialize(bytes)
     }
 
     pub async fn send(
@@ -107,9 +107,9 @@ mod tests {
 
     #[test]
     fn test_command_serialize_deserialize() {
-        let cmd = Command::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]));
+        let cmd = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]));
         let bytes = cmd.serialize().unwrap();
-        let cmd2 = Command::deserialize(&bytes).unwrap();
+        let cmd2 = P2PCommand::deserialize(&bytes).unwrap();
         assert_eq!(cmd, cmd2);
     }
 
@@ -117,9 +117,9 @@ mod tests {
     fn test_send_receive_roundtrip() {
         let payload = vec![10, 20, 30];
 
-        let bytes = Command::to_bytes(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
+        let bytes = P2PCommand::to_bytes(Entity::Node, Action::OnLine, Some(payload.clone())).unwrap();
 
-        let cmd = Command::from_bytes(&bytes).unwrap();
+        let cmd = P2PCommand::from_bytes(&bytes).unwrap();
 
         assert_eq!(cmd.entity, Entity::Node as u8);
         assert_eq!(cmd.action, Action::OnLine as u8);

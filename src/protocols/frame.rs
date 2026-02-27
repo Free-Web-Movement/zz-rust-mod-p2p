@@ -9,7 +9,7 @@ use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
 use crate::protocols::client_type::send_bytes;
-use crate::protocols::command::Command;
+use crate::protocols::command::P2PCommand;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CryptoState {
@@ -63,14 +63,14 @@ impl FrameBody {
         }
     }
 
-    pub fn data_from_command(&mut self, cmd: &Command) -> anyhow::Result<()> {
+    pub fn data_from_command(&mut self, cmd: &P2PCommand) -> anyhow::Result<()> {
         let bytes = cmd.serialize()?;
         self.data = bytes;
         Ok(())
     }
 
-    pub fn command_from_data(&self) -> anyhow::Result<Command> {
-        let cmd = Command::deserialize(&self.data)?;
+    pub fn command_from_data(&self) -> anyhow::Result<P2PCommand> {
+        let cmd = P2PCommand::deserialize(&self.data)?;
         Ok(cmd)
     }
 }
@@ -118,7 +118,7 @@ impl P2PFrame {
         Ok(frame)
     }
 
-    pub async fn build(context: Arc<Context>, cmd: Command, version: u8) -> anyhow::Result<Self> {
+    pub async fn build(context: Arc<Context>, cmd: P2PCommand, version: u8) -> anyhow::Result<Self> {
         let cmd_bytes = cmd.serialize().unwrap();
         let body = FrameBody {
             address: context.address.to_string(),
@@ -220,8 +220,8 @@ mod tests {
         Ok(())
     }
 
-    fn make_command() -> Command {
-        Command::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]))
+    fn make_command() -> P2PCommand {
+        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, Some(vec![1, 2, 3, 4]))
     }
 
     #[test]
