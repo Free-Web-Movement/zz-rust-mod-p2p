@@ -1,6 +1,6 @@
 use std::{ net::SocketAddr, sync::Arc };
 
-use aex::http::req::Request;
+use aex::{http::protocol::method::HttpMethod, tcp::types::Codec};
 use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
 
 use anyhow::Result;
@@ -9,7 +9,7 @@ use anyhow::Context as AnContext;
 use crate::{
     context::Context,
     handlers::ws::WebSocketHandler,
-    protocols::{ codec::Codec, frame::Frame, registry::CommandHandlerRegistry },
+    protocols::{ frame::Frame, registry::CommandHandlerRegistry },
 };
 
 /// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
@@ -273,7 +273,7 @@ pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool
         | ClientType::WS(stream_pair) => {
           let reader = stream_pair.reader.clone();
           let mut reader = reader.lock().await;
-          Request::is_http_connection(&mut reader).await
+          HttpMethod::is_http_connection(&mut reader).await
         }
     }
 }
@@ -329,7 +329,7 @@ pub async fn read_one_tcp_frame(
     println!("{:?}", msg_buf);
 
     // ---------- 3. Frame 处理 ----------
-    let frame = Frame::from_bytes(&msg_buf).unwrap();
+    let frame:Frame = Codec::decode(&msg_buf).unwrap();
     CommandHandlerRegistry::on(frame, context, Arc::new(client_type.clone())).await;
 
     Ok(())

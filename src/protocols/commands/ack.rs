@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use aex::tcp::types::Codec;
 use anyhow::Result;
 use bincode::{ Decode, Encode };
 use futures::future::BoxFuture;
@@ -9,7 +10,6 @@ use crate::{
     context::Context,
     protocols::{
         client_type::{ ClientType, send_bytes },
-        codec::Codec,
         command::{ Action, Command, Entity },
         frame::Frame,
     },
@@ -29,12 +29,12 @@ pub async fn send_online_ack(
     client_type: &ClientType,
     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
 ) -> Result<()> {
-    let command = Command::new(Entity::Node as u8, Action::OnLineAck as u8, Some(ack.to_bytes()));
+    let command = Command::new(Entity::Node as u8, Action::OnLineAck as u8, Some(Codec::encode(&ack)));
 
     let frame = Frame::build(context, command, 1).await.unwrap();
 
     // 2️⃣ 转成字节发送
-    let bytes = Frame::to_bytes(&frame);
+    let bytes = Codec::encode(&frame);
 
     send_bytes(client_type, &bytes).await;
 
@@ -45,7 +45,7 @@ pub fn on_online_ack(
     cmd: Command,
     frame: Frame,
     context: Arc<Context>,
-    client_type: Arc<ClientType>
+    _client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> 
  {
     Box::pin(async move {
@@ -57,7 +57,7 @@ pub fn on_online_ack(
 
         println!("received ack: {:?}", cmd.data.as_ref().unwrap());
         // ===== 1️⃣ 解码 OnlineAckCommand =====
-        let ack = match OnlineAckCommand::from_bytes(&cmd.data.as_ref().unwrap()) {
+        let ack: OnlineAckCommand = match Codec::decode(&cmd.data.as_ref().unwrap()) {
             Ok(cmd) => cmd,
             Err(e) => {
                 eprintln!("❌ decode OnlineAckCommand failed: {e}");

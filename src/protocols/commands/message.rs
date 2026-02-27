@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use aex::tcp::types::Codec;
 use anyhow::anyhow;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
-use crate::protocols::codec::Codec;
 use crate::protocols::command::{ Action, Command, Entity };
 use crate::protocols::frame::Frame;
 use crate::util::time::timestamp;
@@ -37,7 +37,7 @@ pub async fn send_text_message(
     };
 
     // 编码成 payload（明文）
-    let payload = command.to_bytes();
+    let payload = Codec::encode(&command);
     println!("created plaintext bytes: {:?}", payload);
 
     // 使用 session_key 加密
@@ -61,7 +61,7 @@ pub async fn send_text_message(
 
     let frame = Frame::build(context.clone(), command, 1).await.unwrap();
 
-    let bytes = Frame::to_bytes(&frame);
+    let bytes = Codec::encode(&frame);
 
     println!(
         "Node is sending text message from {} to {}: {}",

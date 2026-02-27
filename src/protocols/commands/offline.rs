@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use aex::tcp::types::Codec;
 use futures::future::BoxFuture;
 
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
-use crate::protocols::codec::Codec;
 use crate::protocols::command::{ Action, Command, Entity };
 use crate::protocols::frame::Frame;
 
@@ -37,7 +37,7 @@ pub async fn send_offline(
 
     let frame = Frame::build(context, command, 1).await.unwrap();
     // 2️⃣ 序列化 Frame
-    let bytes = Frame::to_bytes(&frame);
+    let bytes = Codec::encode(&frame);
     send_bytes(&client_type, &bytes).await;
     // self.send(&bytes).await?;
     Ok(())

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use aex::tcp::types::Codec;
 use bincode::{ Decode, Encode };
 use futures::future::BoxFuture;
 use serde::{ Deserialize, Serialize };
@@ -7,7 +8,6 @@ use serde::{ Deserialize, Serialize };
 use crate::context::Context;
 use crate::nodes::servers::Servers;
 use crate::protocols::client_type::{ ClientType, send_bytes };
-use crate::protocols::codec::Codec;
 use crate::protocols::command::Command;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::ack::OnlineAckCommand;
@@ -33,7 +33,7 @@ pub async fn send_online(
 
     let frame = Frame::build(context, command, 1).await.unwrap();
 
-    let bytes = Frame::to_bytes(&frame);
+    let bytes = Codec::encode(&frame);
 
     send_bytes(client_type, &bytes).await;
 
@@ -45,8 +45,7 @@ pub fn on_online(
     frame: Frame,
     context: Arc<Context>,
     client_type: Arc<ClientType>
-) -> BoxFuture<'static, ()> 
- {
+) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
 
@@ -59,7 +58,7 @@ pub fn on_online(
             }
         };
 
-        let online = match OnlineCommand::from_bytes(&online_data.to_vec()) {
+        let online: OnlineCommand = match Codec::decode(&online_data.to_vec()) {
             Ok(cmd) => cmd,
             Err(e) => {
                 eprintln!("❌ decode OnlineCommand failed: {e}");
@@ -97,12 +96,12 @@ pub fn on_online(
         };
 
         println!("send ack session_id : {:?}", ack.session_id);
-        println!("send ack: {:?}", ack.to_bytes());
+        println!("send ack: {:?}", Codec::encode(&ack));
 
         let command = Command::new(
             Entity::Node as u8,
             Action::OnLineAck as u8,
-            Some(ack.to_bytes())
+            Some(Codec::encode(&ack))
         );
 
         let ack_frame = Frame::build(context.clone(), command, 1).await.unwrap();
@@ -120,6 +119,6 @@ pub fn on_online(
         }
 
         // ===== 5️⃣ 发送 ACK =====
-        send_bytes(&client_type, &Frame::to_bytes(&ack_frame.clone())).await;
+        send_bytes(&client_type, &Codec::encode(&ack_frame.clone())).await;
     })
 }

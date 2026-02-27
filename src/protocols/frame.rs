@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use aex::tcp::types::Codec;
 use rand::Rng;
 use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
@@ -8,7 +9,6 @@ use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
 use crate::protocols::client_type:: send_bytes ;
-use crate::protocols::codec::Codec;
 use crate::protocols::command::Command;
 
 /// ⚠️ 不要写返回类型！
@@ -155,7 +155,7 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
         let conns = clients.get_connections(&receiver, true);
 
         if !conns.is_empty() {
-            let bytes = Frame::to_bytes(&frame.clone());
+            let bytes = Codec::encode(&frame.clone());
 
             for ct in conns {
                 // ⚠️ 只发 bytes，不传 Frame
@@ -170,7 +170,7 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 
     // ===== 2️⃣ 查 servers，向其它服务器转发 =====
     let servers_guard = context.servers.lock().await;
-    let bytes = Frame::to_bytes(&frame.clone());
+    let bytes = Codec::encode(&frame.clone());
 
     if let Some(servers) = &servers_guard.connected_servers {
         let all = servers.inner.iter().chain(servers.external.iter());
@@ -220,8 +220,8 @@ mod tests {
 
         println!("Frame verified successfully!");
 
-        let bytes = Frame::to_bytes(&frame);
-        let frame2 = Frame::from_bytes(&bytes).unwrap();
+        let bytes = Codec::encode(&frame);
+        let frame2: Frame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame1.signature.to_vec(), frame2.signature.to_vec());
         assert_eq!(frame1.body.data.to_vec(), frame2.body.data.to_vec());
@@ -335,8 +335,8 @@ mod tests {
 
         let frame = Frame::sign(body, &identity).unwrap();
 
-        let bytes = Frame::to_bytes(&frame.clone());
-        let decoded = Frame::from_bytes(&bytes).unwrap();
+        let bytes = Codec::encode(&frame.clone());
+        let decoded : Frame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame.signature, decoded.signature);
         assert_eq!(frame.body.nonce, decoded.body.nonce);

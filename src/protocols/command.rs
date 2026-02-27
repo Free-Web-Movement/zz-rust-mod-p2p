@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use aex::tcp::types::Codec;
 use anyhow::Result;
 use bincode::{ Decode, Encode, config };
 use futures::future::BoxFuture;
 
 use crate::context::Context;
 use crate::protocols::client_type::{ ClientType, send_bytes };
-use crate::protocols::codec::Codec;
 use crate::protocols::frame::Frame;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
@@ -95,7 +95,7 @@ impl Command {
         version: u8
     ) -> Result<()> {
         let frame = Frame::build(context, self.clone(), version).await?;
-        let bytes = Frame::to_bytes(&frame);
+        let bytes = Codec::encode(&frame);
         send_bytes(client_type, &bytes).await;
         Ok(())
     }

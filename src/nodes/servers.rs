@@ -1,3 +1,4 @@
+use aex::tcp::types::Codec;
 use anyhow::Result;
 use std::{
     net::{IpAddr, SocketAddr},
@@ -15,7 +16,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{loop_reading, to_client_type}, codec::Codec, commands::{
+        client_type::{loop_reading, to_client_type}, commands::{
             offline::send_offline,
             online::{OnlineCommand, send_online},
         }, defines::ProtocolCapability
@@ -283,7 +284,7 @@ impl Servers {
 
     pub async fn notify_online(
         &self,
-        address: FreeWebMovementAddress,
+        _address: FreeWebMovementAddress,
         context: &Arc<Context>,
     ) -> anyhow::Result<()> {
         println!("Notifying node online start");
@@ -311,7 +312,7 @@ impl Servers {
                 ephemeral_public_key: ephemeral_pub,
             };
 
-            let inner_bytes = inner_cmd.to_bytes();
+            let inner_bytes = Codec::encode(&inner_cmd);
 
 
             println!("inner bytes: {:?}", inner_bytes);
@@ -328,7 +329,7 @@ impl Servers {
                 ephemeral_public_key: ephemeral_pub,
             };
 
-            let external_bytes = external_cmd.to_bytes();
+            let external_bytes = Codec::encode(&external_cmd);
             println!("external bytes: {:?}", external_bytes);
 
             self.notify_online_servers(
