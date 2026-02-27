@@ -12,7 +12,7 @@ export LLVM_PROFILE_FILE=".output/cargo-test-%p-%m.profraw"
 
 # Run tests
 echo "Running cargo tests with coverage instrumentation..."
-cargo test --tests -- --nocapture --show-output
+cargo test . --tests -- --nocapture --show-output
 
 # Find all .profraw files
 PROFRAW_FILES=$(find . -wholename ".output/*.profraw")
@@ -34,7 +34,7 @@ check_installed cargo-nextest
 
 # Generate coverage report
 echo "Generating coverage report with grcov..."
-cargo llvm-cov nextest --html --output-dir coverages
+cargo llvm-cov nextest --html --output-dir coverages --ignore-filename-regex "(aex|zz-rust-mod-account)"
 
 # Clean up .profraw files
 rm -rf .output/

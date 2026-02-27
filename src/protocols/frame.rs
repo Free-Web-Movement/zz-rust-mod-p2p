@@ -1,21 +1,15 @@
 use std::sync::Arc;
-use aex::tcp::types::Codec;
+use aex::tcp::types::{Codec, frame_config};
 use rand::Rng;
 use serde::{ Deserialize, Serialize };
 use zz_account::address::FreeWebMovementAddress;
 
-use bincode::{ Decode, Encode, config };
+use bincode::{ Decode, Encode };
 use bincode::serde::{ decode_from_slice, encode_to_vec };
 
 use crate::context::Context;
 use crate::protocols::client_type:: send_bytes ;
 use crate::protocols::command::Command;
-
-/// ⚠️ 不要写返回类型！
-#[inline]
-pub fn frame_config() -> impl bincode::config::Config {
-    config::standard().with_fixed_int_encoding().with_big_endian()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CryptoState {
@@ -186,7 +180,6 @@ pub async fn forward_frame(receiver: String, frame: &Frame, context: Arc<Context
 mod tests {
     use super::*;
     use crate::{
-        nodes::{ net_info::NetInfo, servers::Servers, storage::Storeage },
         protocols::command::{ Action, Entity },
     };
     use zz_account::address::FreeWebMovementAddress;
@@ -383,19 +376,6 @@ mod tests {
         assert_eq!(decoded.version, 1);
     }
 
-    use crate::context::Context;
     use crate::protocols::command::{ Command };
     use crate::protocols::frame::Frame;
-
-    fn dummy_context() -> Context {
-        let address = FreeWebMovementAddress::random(); // 如果没有 default，换成你真实构造方式
-
-        // 1️⃣ 初始化 storage
-        let storage = Storeage::new(None, None, None, None);
-
-        // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
-        let servers = Servers::new(address.clone(), storage, NetInfo::new(8080));
-
-        Context::new("127.0.0.1".to_string(), 8080, address, servers)
-    }
 }
