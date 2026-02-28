@@ -81,21 +81,6 @@ impl StreamPair {
             println!("TCP read loop closed {:?}", addr);
         });
     }
-
-    // pub async fn is_http_connection(&self) -> anyhow::Result<bool> {
-    //     let mut buf = [0u8; TCP_BUFFER_LENGTH];
-
-    //     let mut reader = self.reader.lock().await;
-
-    //     let n = reader.peek(&mut buf).await?;
-
-    //     if n == 0 {
-    //         return Ok(false);
-    //     }
-
-    //     let s = std::str::from_utf8(&buf[..n]).unwrap_or("");
-    //     Ok(HttpMethod::is_prefixed(s))
-    // }
 }
 
 pub async fn loop_reading(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {

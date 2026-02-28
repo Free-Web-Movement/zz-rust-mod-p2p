@@ -56,7 +56,7 @@ pub async fn send_text_message(
     let command = P2PCommand::new(
         Entity::Message as u8,
         Action::SendText as u8,
-        Some(encrypted.clone())
+        encrypted.clone()
     );
 
     let frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();
@@ -132,15 +132,9 @@ pub fn on_text_message(
     Box::pin(async move {
         let from = &frame.body.address;
 
-        let encrypted = match &cmd.data {
-            Some(v) => v,
-            None => {
-                eprintln!("❌ MessageCommand without data from {}", from);
-                return;
-            }
-        };
+        // let encrypted = &cmd.data;
 
-        println!("get encrypted bytes: {:?}", encrypted);
+        println!("get encrypted bytes: {:?}", cmd.data);
 
         // 1️⃣ 使用 session_key 解密
         let plaintext = {
@@ -154,7 +148,7 @@ pub fn on_text_message(
                 }
             };
 
-            match session.decrypt(encrypted) {
+            match session.decrypt(&cmd.data) {
                 Ok(p) => p,
                 Err(e) => {
                     eprintln!("❌ Decrypt message from {} failed: {:?}", from, e);

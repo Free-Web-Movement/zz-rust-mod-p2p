@@ -27,7 +27,7 @@ impl Codec for OnlineCommand {}
 pub async fn send_online(
     context: Arc<Context>,
     client_type: &ClientType,
-    data: Option<Vec<u8>>
+    data: Vec<u8>
 ) -> anyhow::Result<()> {
     let command = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, data);
 
@@ -50,15 +50,8 @@ pub fn on_online(
         println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
 
         // ===== 1️⃣ OnlineCommand 解码 =====
-        let online_data = match &cmd.data {
-            Some(d) => d,
-            None => {
-                eprintln!("❌ OnlineCommand missing data");
-                return;
-            }
-        };
 
-        let online: OnlineCommand = match Codec::decode(&online_data.to_vec()) {
+        let online: OnlineCommand = match Codec::decode(&cmd.data) {
             Ok(cmd) => cmd,
             Err(e) => {
                 eprintln!("❌ decode OnlineCommand failed: {e}");
@@ -101,7 +94,7 @@ pub fn on_online(
         let command = P2PCommand::new(
             Entity::Node as u8,
             Action::OnLineAck as u8,
-            Some(Codec::encode(&ack))
+            Codec::encode(&ack)
         );
 
         let ack_frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();

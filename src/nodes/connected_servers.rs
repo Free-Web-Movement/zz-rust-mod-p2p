@@ -68,7 +68,7 @@ impl ConnectedServers {
     pub async fn notify_online(
         &self,
         context: &Arc<Context>,
-        data: Option<Vec<u8>>,
+        data: Vec<u8>,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
@@ -87,7 +87,7 @@ impl ConnectedServers {
     pub async fn notify_offline(
         &self,
         context: &Arc<Context>,
-        data: Option<Vec<u8>>,
+        data: Vec<u8>,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };

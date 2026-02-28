@@ -28,7 +28,7 @@ pub async fn send_online_ack(
     client_type: &ClientType,
     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
 ) -> Result<()> {
-    let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Some(Codec::encode(&ack)));
+    let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Codec::encode(&ack));
 
     let frame = P2PFrame::build(context, command, 1).await.unwrap();
 
@@ -54,9 +54,9 @@ pub fn on_online_ack(
             frame.body.nonce
         );
 
-        println!("received ack: {:?}", cmd.data.as_ref().unwrap());
+        println!("received ack: {:?}", cmd.data);
         // ===== 1️⃣ 解码 OnlineAckCommand =====
-        let ack: OnlineAckCommand = match Codec::decode(&cmd.data.as_ref().unwrap()) {
+        let ack: OnlineAckCommand = match Codec::decode(&cmd.data) {
             Ok(cmd) => cmd,
             Err(e) => {
                 eprintln!("❌ decode OnlineAckCommand failed: {e}");

@@ -31,7 +31,7 @@ pub fn on_offline(
 pub async fn send_offline(
     context: Arc<crate::context::Context>,
     client_type: &ClientType,
-    data: Option<Vec<u8>>
+    data: Vec<u8>
 ) -> anyhow::Result<()> {
     let command = P2PCommand::new(Entity::Node as u8, Action::OffLine as u8, data);
 

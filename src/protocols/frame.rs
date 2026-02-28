@@ -1,24 +1,13 @@
-use aex::tcp::types::Codec;
+use aex::tcp::types::{Codec, Frame};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use zz_account::address::FreeWebMovementAddress;
 
-use bincode::{Decode, Encode};
 use crate::context::Context;
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::P2PCommand;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CryptoState {
-    /// 明文（仅用于 Online / Offline / KeyExchange）
-    Plain,
-
-    /// 使用地址绑定的临时会话密钥
-    Encrypted {
-        nonce: [u8; 12], // AEAD nonce
-    },
-}
+use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct FrameBody {
@@ -138,6 +127,37 @@ impl P2PFrame {
 
 impl Codec for P2PFrame {}
 
+impl Frame for P2PFrame {
+    fn validate(&self) -> bool {
+        let bytes = Codec::encode(&self.body);
+        let bytes = bytes.as_slice();
+
+        let public_key = FreeWebMovementAddress::to_public_key(&self.body.public_key);
+        let signature = FreeWebMovementAddress::to_signature(&self.signature);
+
+        if !FreeWebMovementAddress::verify_message(&public_key, bytes, &signature) {
+            return false;
+        }
+        true
+    }
+
+    fn sign<F>(&self, signer: F) -> Vec<u8>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        let raw_bytes = Codec::encode(&self.body); // 假设 Codec 提供 encode()
+        signer(&raw_bytes)
+    }
+
+    fn payload(&self) -> Option<Vec<u8>> {
+        Some(Codec::encode(&self.body))
+    }
+
+    fn command(&self) -> Option<&Vec<u8>> {
+        Some(self.body.data.as_ref())
+    }
+}
+
 pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Context>) {
     // ⚠️ 重要安全原则：
     // - 不解密
@@ -228,7 +248,7 @@ mod tests {
         P2PCommand::new(
             Entity::Node as u8,
             Action::OnLine as u8,
-            Some(vec![1, 2, 3, 4]),
+            vec![1, 2, 3, 4],
         )
     }
 

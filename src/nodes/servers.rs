@@ -259,7 +259,7 @@ impl Servers {
         &self,
         // address: FreeWebMovementAddress,
         context: &Arc<Context>,
-        data: Option<Vec<u8>>,
+        data: Vec<u8>,
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
@@ -272,7 +272,7 @@ impl Servers {
     pub async fn notify_offline_servers(
         &self,
         context: &Arc<Context>,
-        data: &Option<Vec<u8>>,
+        data: &Vec<u8>,
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
@@ -317,7 +317,7 @@ impl Servers {
 
             println!("inner bytes: {:?}", inner_bytes);
 
-            self.notify_online_servers(&context.clone(), Some(inner_bytes), &connections.inner)
+            self.notify_online_servers(&context.clone(), inner_bytes, &connections.inner)
                 .await;
 
             // ---------- external ----------
@@ -334,7 +334,7 @@ impl Servers {
 
             self.notify_online_servers(
                 &context.clone(),
-                Some(external_bytes),
+                external_bytes,
                 &connections.external,
             )
             .await;
@@ -349,14 +349,14 @@ impl Servers {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
-            self.notify_offline_servers(context, &Some(inner_data), &connections.inner)
+            self.notify_offline_servers(context, &inner_data, &connections.inner)
                 .await;
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record, 1);
             self.notify_offline_servers(
                 context,
-                &Some(external_data),
+                &external_data,
                 &connections.external,
             )
             .await;
