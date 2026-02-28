@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use aex::tcp::types::Codec;
+use aex::time::SystemTime;
 use anyhow::anyhow;
 
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{ Action, P2PCommand, Entity };
 use crate::protocols::frame::P2PFrame;
-use crate::util::time::timestamp;
 use crate::{ context::Context, protocols::frame::forward_frame };
 
 use bincode::{ Decode, Encode };
@@ -32,7 +32,7 @@ pub async fn send_text_message(
     // 构造消息
     let command = MessageCommand {
         receiver: receiver.clone(),
-        timestamp: timestamp(),
+        timestamp: SystemTime::timestamp(),
         message: message.to_string(),
     };
 
@@ -137,7 +137,7 @@ pub fn on_text_message(
         println!("get encrypted bytes: {:?}", cmd.data);
 
         // 1️⃣ 使用 session_key 解密
-        let plaintext = {
+        let plaintext: Vec<u8> = {
             let sessions = context.session_keys.lock().await;
 
             let session = match sessions.get(from) {

@@ -8,7 +8,7 @@ use anyhow::Context as AnContext;
 
 use crate::{
     context::Context,
-    handlers::ws::WebSocketHandler,
+    // handlers::ws::WebSocketHandler,
     protocols::{ frame::P2PFrame, registry::CommandHandlerRegistry },
 };
 
@@ -192,21 +192,21 @@ pub async fn on_http_data(
                     }
                     Ok(n) => {
                         // ❗ 已经释放 reader 锁
-                    let data = &buf[..n];
+                    // let data = &buf[..n];
 
                     // WebSocket upgrade
-                    if WebSocketHandler::is_websocket_request(data) {
-                        let ws = Arc::new(WebSocketHandler::new(
-                            Arc::new(client_type.clone()),
-                            ctx,
-                        ));
+                    // if WebSocketHandler::is_websocket_request(data) {
+                    //     let ws = Arc::new(WebSocketHandler::new(
+                    //         Arc::new(client_type.clone()),
+                    //         ctx,
+                    //     ));
 
-                        // ⚠️ 升级阶段不要持锁
-                        let _ = ws.respond_websocket_handshake(data).await;
-                        break;
-                    } else {
+                    //     // ⚠️ 升级阶段不要持锁
+                    //     let _ = ws.respond_websocket_handshake(data).await;
+                    //     break;
+                    // } else {
                       
-                    }
+                    // }
                     }
                     Err(e) => {
                         eprintln!("HTTP read error from {:?}: {:?}", addr, e);

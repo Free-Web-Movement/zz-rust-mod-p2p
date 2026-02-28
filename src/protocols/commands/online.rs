@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use aex::crypto::zero_trust_session_key::SessionKey;
 use aex::tcp::types::Codec;
 use bincode::{ Decode, Encode };
 use futures::future::BoxFuture;
@@ -12,7 +13,6 @@ use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::P2PFrame;
-use crate::protocols::session_key::SessionKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct OnlineCommand {

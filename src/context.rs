@@ -1,3 +1,4 @@
+use aex::{crypto::zero_trust_session_key::SessionKey, time::SystemTime};
 use anyhow::{Result, anyhow};
 use rand::{RngCore, rngs::OsRng};
 use serde_json::Value;
@@ -10,7 +11,6 @@ use zz_account::address::FreeWebMovementAddress as Address;
 
 use crate::{
     nodes::{connected_clients::ConnectedClients, servers::Servers},
-    protocols::session_key::SessionKey,
 };
 
 pub struct Context {
@@ -79,14 +79,14 @@ impl Context {
         self.temp_sessions
             .lock()
             .await
-            .retain(|_, sk| !sk.is_expired(ttl_ms));
+            .retain(|_, sk| !SystemTime::is_expired(sk.updated_at, ttl_ms));
     }
 
     pub async fn cleanup_sessions(&self, ttl_ms: u128) {
         self.session_keys
             .lock()
             .await
-            .retain(|_, sk| !sk.is_expired(ttl_ms));
+            .retain(|_, sk| !SystemTime::is_expired(sk.updated_at, ttl_ms));
     }
 
     pub async fn with_session<R>(
