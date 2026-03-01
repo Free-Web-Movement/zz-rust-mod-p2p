@@ -51,7 +51,7 @@ pub async fn send_text_message(
         encrypted.clone()
     );
 
-    let frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();
+    let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
     let bytes = Codec::encode(&frame);
 

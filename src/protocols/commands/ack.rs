@@ -30,7 +30,7 @@ pub async fn send_online_ack(
 ) -> Result<()> {
     let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Codec::encode(&ack));
 
-    let frame = P2PFrame::build(context, command, 1).await.unwrap();
+    let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
     // 2️⃣ 转成字节发送
     let bytes = Codec::encode(&frame);
@@ -66,36 +66,7 @@ pub fn on_online_ack(
 
         println!("session:id: {:?}", ack.session_id);
 
-        context.paired_session_keys.establish_ends(ack.address.as_bytes().to_vec(), &ack.ephemeral_public_key.to_vec());
-
-        // // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
-        // let session = {
-        //     let mut temp_sessions = context.temp_sessions.lock().await;
-
-        //     let mut session = match temp_sessions.remove(&ack.session_id) {
-        //         Some(s) => s,
-        //         None => {
-        //             eprintln!("❌ temp session not found for session_id={:?}", ack.session_id);
-        //             return;
-        //         }
-        //     };
-
-        //     let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
-        //     if let Err(e) = session.establish(&peer_pub) {
-        //         eprintln!("❌ session establish failed: {e}");
-        //         return;
-        //     }
-
-        //     session.touch();
-        //     session
-        //     // ✅ temp_sessions 锁在这里释放
-        // };
-
-        // // ===== 3️⃣ 写入永久 session_keys（address → session）=====
-        // {
-        //     let mut sessions = context.session_keys.lock().await;
-        //     sessions.insert(ack.address.clone(), session);
-        // }
+        context.paired_session_keys.establish_ends(ack.address.as_bytes().to_vec(), &ack.ephemeral_public_key.to_vec()).await.expect("!!");
 
         println!("🔐 Session established with {} (session_id={:?})", ack.address, ack.session_id);
     })

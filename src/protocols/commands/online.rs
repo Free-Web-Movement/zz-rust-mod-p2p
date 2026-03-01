@@ -23,21 +23,21 @@ pub struct OnlineCommand {
 // ⚡ 实现 CommandCodec，移除 to_bytes/from_bytes
 impl Codec for OnlineCommand {}
 
-pub async fn send_online(
-    context: Arc<Context>,
-    client_type: &ClientType,
-    data: Vec<u8>,
-) -> anyhow::Result<()> {
-    let command = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, data);
+// pub async fn send_online(
+//     context: Arc<Context>,
+//     client_type: &ClientType,
+//     data: Vec<u8>,
+// ) -> anyhow::Result<()> {
+//     let command = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, data);
 
-    let frame = P2PFrame::build(context, command, 1).await.unwrap();
+//     let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
-    let bytes = Codec::encode(&frame);
+//     let bytes = Codec::encode(&frame);
 
-    send_bytes(client_type, &bytes).await;
+//     send_bytes(client_type, &bytes).await;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub fn on_online(
     cmd: P2PCommand,
@@ -98,7 +98,7 @@ pub fn on_online(
             Codec::encode(&ack),
         );
 
-        let ack_frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();
+        let ack_frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
         // ===== 4️⃣ clients 登记 =====
         let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {

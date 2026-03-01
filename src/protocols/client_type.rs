@@ -1,7 +1,11 @@
 use std::{ net::SocketAddr, sync::Arc };
 
-use aex::{http::protocol::method::HttpMethod, tcp::types::Codec};
-use tokio::{ io::{ AsyncReadExt, AsyncWriteExt }, net::{ TcpStream, UdpSocket }, sync::Mutex };
+use aex::{ http::protocol::method::HttpMethod, tcp::types::Codec };
+use tokio::{
+    io::{ AsyncReadExt, AsyncWriteExt },
+    net::{ TcpStream, UdpSocket, tcp::OwnedWriteHalf },
+    sync::Mutex,
+};
 
 use anyhow::Result;
 use anyhow::Context as AnContext;
@@ -184,33 +188,10 @@ pub async fn on_http_data(
                 reader.read(&mut buf).await
             } => {
                 match res {
-                    Ok(0) => {
-                        // EOF
-                        break;
-                    }
-                    Ok(_) => {
-                        // ❗ 已经释放 reader 锁
-                    // let data = &buf[..n];
-
-                    // WebSocket upgrade
-                    // if WebSocketHandler::is_websocket_request(data) {
-                    //     let ws = Arc::new(WebSocketHandler::new(
-                    //         Arc::new(client_type.clone()),
-                    //         ctx,
-                    //     ));
-
-                    //     // ⚠️ 升级阶段不要持锁
-                    //     let _ = ws.respond_websocket_handshake(data).await;
-                    //     break;
-                    // } else {
-                      
-                    // }
-                    }
-                    Err(e) => {
-                        eprintln!("HTTP read error from {:?}: {:?}", addr, e);
-                        break;
-                    }
-                }
+                    Ok(0)=>{break;}
+                    Err(_) => todo!(),
+                    Ok(1_usize..) => todo!()
+                                    }
             }
         }
     }
@@ -254,9 +235,9 @@ pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool
         | ClientType::TCP(stream_pair)
         | ClientType::HTTP(stream_pair)
         | ClientType::WS(stream_pair) => {
-          let reader = stream_pair.reader.clone();
-          let mut reader = reader.lock().await;
-          HttpMethod::is_http_connection(&mut reader).await
+            let reader = stream_pair.reader.clone();
+            let mut reader = reader.lock().await;
+            HttpMethod::is_http_connection(&mut reader).await
         }
     }
 }
@@ -272,6 +253,19 @@ pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::R
         }
     }
     Ok(())
+}
+
+pub async fn get_writer(client_type: &ClientType) -> Arc<Mutex<OwnedWriteHalf>> {
+    match client_type {
+        crate::protocols::client_type::ClientType::UDP { socket: _, peer: _ } => {
+            panic!("Wrong protocal!")
+        }
+        | crate::protocols::client_type::ClientType::TCP(stream_pair)
+        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
+        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
+            stream_pair.writer.clone()
+        }
+    }
 }
 
 pub async fn read_one_tcp_frame(
@@ -312,7 +306,7 @@ pub async fn read_one_tcp_frame(
     println!("{:?}", msg_buf);
 
     // ---------- 3. Frame 处理 ----------
-    let frame:P2PFrame = Codec::decode(&msg_buf).unwrap();
+    let frame: P2PFrame = Codec::decode(&msg_buf).unwrap();
     CommandHandlerRegistry::on(frame, context, Arc::new(client_type.clone())).await;
 
     Ok(())

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use aex::time::SystemTime;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 use crate::protocols::defines::Listener;
@@ -23,8 +22,6 @@ pub struct Node {
     pub port: u16, // Bound port of the node
     pub stun_port: u16, // STUN service port
     pub trun_port: u16, // TURN service port
-    pub start_time: u128, // Timestamp when the node was started
-    pub stop_time: u128, // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     // pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -47,8 +44,6 @@ impl Node {
             trun_port: port + 2,
             tcp_handler: None,
             context: None,
-            start_time: 0,
-            stop_time: 0,
             net_info: None,
             storage: storage,
         }
@@ -67,7 +62,7 @@ impl Node {
     // Removed incorrect generic overload that used `Arc` as a trait bound (not allowed).
     // Use the parameterless `start` implementation below to start the node's handlers.
     pub async fn start(&mut self) {
-        self.start_time = SystemTime::timestamp();
+        // self.start_time = SystemTime::timestamp();
         let ip = self.ip.clone();
         let port = self.port;
         CommandHandlerRegistry::init_registry().await;
@@ -106,7 +101,7 @@ impl Node {
         self.tcp_handler.take();
         // self.udp_handler.take();
 
-        self.stop_time = SystemTime::timestamp();
+        // self.stop_time = SystemTime::timestamp();
     }
 
     pub fn init_storage_and_servers(&mut self, _port: u16) -> Servers {

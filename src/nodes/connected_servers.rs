@@ -1,14 +1,16 @@
 use std::sync::Arc;
 use std::time::Duration;
-
 use futures::{ StreamExt, stream };
 use tokio::{ net::TcpStream, time::timeout };
+use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::{ ClientType,to_client_type };
+use crate::protocols::client_type::{ ClientType, get_writer, to_client_type };
+use crate::protocols::command::{ Action, Entity };
 use crate::protocols::commands::offline::send_offline;
-use crate::protocols::commands::online::send_online;
+use crate::protocols::commands::online::OnlineCommand;
+use crate::protocols::frame::P2PFrame;
 
 /// 已连接的服务器（控制面 + 数据面）
 ///
@@ -40,7 +42,7 @@ impl ConnectedServers {
                         tracing::info!("tcp connect succeeded {}", record.endpoint);
                         Some(ConnectedServer {
                             record,
-                            client_type: tcp
+                            client_type: tcp,
                         })
                     }
                     Ok(Err(e)) => {
@@ -67,29 +69,33 @@ impl ConnectedServers {
     /// 🔔 通知所有服务器上线
     pub async fn notify_online(
         &self,
-        context: &Arc<Context>,
-        data: Vec<u8>,
+        address: &FreeWebMovementAddress,
+        cmd: &OnlineCommand,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
 
         let futures = all.map(|server| {
-            let bytes = data.clone();
+            // let bytes = data.clone();
             async move {
-                let _ = send_online(context.clone(), &server.client_type, bytes).await;
-            }
+                let writer = get_writer(&server.client_type).await;
+                let mut guard = writer.lock().await;
+
+                P2PFrame::send::<OnlineCommand>(
+                    address,
+                    &mut *&mut guard,
+                    &cmd,
+                    Entity::Node as u8,
+                    Action::OnLine as u8
+                ).await.expect("Error sending online command!")
+              }
         });
 
         futures::future::join_all(futures).await;
     }
 
     /// 🔔 通知所有服务器下线
-    pub async fn notify_offline(
-        &self,
-        context: &Arc<Context>,
-        data: Vec<u8>,
-        is_external: bool
-    ) {
+    pub async fn notify_offline(&self, context: &Arc<Context>, data: Vec<u8>, is_external: bool) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
         let futures = all.map(|server| {
             let payload = data.clone();
@@ -147,5 +153,4 @@ mod tests {
         let connected = ConnectedServers::connect(records).await;
         assert!(connected.is_empty());
     }
-
 }

@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use aex::tcp::types::{Codec, Command};
-use anyhow::{Ok, Result};
 use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType, send_bytes};
+use crate::protocols::client_type::{ClientType};
 use crate::protocols::frame::P2PFrame;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
@@ -62,18 +61,6 @@ impl P2PCommand {
             action,
             data
         }
-    }
-
-    pub async fn send(
-        &self,
-        context: Arc<Context>,
-        client_type: &ClientType,
-        version: u8,
-    ) -> Result<()> {
-        let frame = P2PFrame::build(context, self.clone(), version).await?;
-        let bytes = Codec::encode(&frame);
-        send_bytes(client_type, &bytes).await;
-        Ok(())
     }
 }
 

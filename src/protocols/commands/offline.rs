@@ -35,7 +35,7 @@ pub async fn send_offline(
 ) -> anyhow::Result<()> {
     let command = P2PCommand::new(Entity::Node as u8, Action::OffLine as u8, data);
 
-    let frame = P2PFrame::build(context, command, 1).await.unwrap();
+    let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
     // 2️⃣ 序列化 Frame
     let bytes = Codec::encode(&frame);
     send_bytes(&client_type, &bytes).await;
