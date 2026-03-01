@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct OnlineAckCommand {
-    pub session_id: [u8; 16], // 临时 session id
+    pub session_id: Vec<u8>, // 临时 session id
     pub address: String, // ⚠️ 明确：String
     pub ephemeral_public_key: [u8; 32], // 对方 ephemeral 公钥
 }
@@ -66,34 +66,36 @@ pub fn on_online_ack(
 
         println!("session:id: {:?}", ack.session_id);
 
-        // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
-        let session = {
-            let mut temp_sessions = context.temp_sessions.lock().await;
+        context.paired_session_keys.establish_ends(ack.address.as_bytes().to_vec(), &ack.ephemeral_public_key.to_vec());
 
-            let mut session = match temp_sessions.remove(&ack.session_id) {
-                Some(s) => s,
-                None => {
-                    eprintln!("❌ temp session not found for session_id={:?}", ack.session_id);
-                    return;
-                }
-            };
+        // // ===== 2️⃣ 从 temp_sessions 中取出 session（限定作用域）=====
+        // let session = {
+        //     let mut temp_sessions = context.temp_sessions.lock().await;
 
-            let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
-            if let Err(e) = session.establish(&peer_pub) {
-                eprintln!("❌ session establish failed: {e}");
-                return;
-            }
+        //     let mut session = match temp_sessions.remove(&ack.session_id) {
+        //         Some(s) => s,
+        //         None => {
+        //             eprintln!("❌ temp session not found for session_id={:?}", ack.session_id);
+        //             return;
+        //         }
+        //     };
 
-            session.touch();
-            session
-            // ✅ temp_sessions 锁在这里释放
-        };
+        //     let peer_pub = x25519_dalek::PublicKey::from(ack.ephemeral_public_key);
+        //     if let Err(e) = session.establish(&peer_pub) {
+        //         eprintln!("❌ session establish failed: {e}");
+        //         return;
+        //     }
 
-        // ===== 3️⃣ 写入永久 session_keys（address → session）=====
-        {
-            let mut sessions = context.session_keys.lock().await;
-            sessions.insert(ack.address.clone(), session);
-        }
+        //     session.touch();
+        //     session
+        //     // ✅ temp_sessions 锁在这里释放
+        // };
+
+        // // ===== 3️⃣ 写入永久 session_keys（address → session）=====
+        // {
+        //     let mut sessions = context.session_keys.lock().await;
+        //     sessions.insert(ack.address.clone(), session);
+        // }
 
         println!("🔐 Session established with {} (session_id={:?})", ack.address, ack.session_id);
     })

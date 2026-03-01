@@ -163,15 +163,13 @@ pub async fn read_http(client_type: &ClientType, context: &Arc<Context>, addr: S
 }
 
 pub async fn on_http_data(
-    client_type: &ClientType,
+    _client_type: &ClientType,
     stream_pair: &StreamPair,
     context: &Arc<Context>,
     addr: SocketAddr
 ) {
     let mut buf = vec![0u8; 64 * 1024];
     let token = context.clone().token.clone();
-
-    let ctx = context.clone();
 
     loop {
         tokio::select! {
@@ -190,7 +188,7 @@ pub async fn on_http_data(
                         // EOF
                         break;
                     }
-                    Ok(n) => {
+                    Ok(_) => {
                         // ❗ 已经释放 reader 锁
                     // let data = &buf[..n];
 

@@ -1,22 +1,21 @@
 use std::sync::Arc;
 
-use aex::crypto::zero_trust_session_key::SessionKey;
 use aex::tcp::types::Codec;
-use bincode::{ Decode, Encode };
+use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 use crate::context::Context;
 use crate::nodes::servers::Servers;
-use crate::protocols::client_type::{ ClientType, send_bytes };
+use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::P2PCommand;
-use crate::protocols::command::{ Action, Entity };
+use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::P2PFrame;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct OnlineCommand {
-    pub session_id: [u8; 16], // 临时 session id
+    pub session_id: Vec<u8>, // 临时 session id
     pub endpoints: Vec<u8>,
     pub ephemeral_public_key: [u8; 32],
 }
@@ -27,7 +26,7 @@ impl Codec for OnlineCommand {}
 pub async fn send_online(
     context: Arc<Context>,
     client_type: &ClientType,
-    data: Vec<u8>
+    data: Vec<u8>,
 ) -> anyhow::Result<()> {
     let command = P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, data);
 
@@ -44,10 +43,13 @@ pub fn on_online(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    client_type: Arc<ClientType>
+    client_type: Arc<ClientType>,
 ) -> BoxFuture<'static, ()> {
     Box::pin(async move {
-        println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
+        println!(
+            "✅ Node Online: addr={}, nonce={}",
+            frame.body.address, frame.body.nonce
+        );
 
         // ===== 1️⃣ OnlineCommand 解码 =====
 
@@ -61,25 +63,24 @@ pub fn on_online(
 
         println!("received session_id: {:?}", online.session_id);
 
-        // ===== 2️⃣ 服务器生成 SessionKey（包含 ephemeral keypair）并派生对称密钥 =====
-        let mut session_key = SessionKey::new();
-        let ephemeral_public = session_key.ephemeral_public.clone();
-        let client_pub = x25519_dalek::PublicKey::from(online.ephemeral_public_key);
-
-        if let Err(e) = session_key.establish(&client_pub) {
-            eprintln!("❌ Failed to establish session key: {e}");
-            return;
-        } else {
-            println!(
-                "🔐 Session established with {} (session_id={:?})",
-                frame.body.address,
-                online.session_id
-            );
-        }
-        session_key.touch();
-
-        // 保存 session_key 到 session_keys，key 为客户端 address
-        context.session_keys.lock().await.insert(frame.body.address.clone(), session_key);
+        let ephemeral_public = match context
+            .paired_session_keys
+            .establish_begins(
+                frame.body.address.as_bytes().to_vec(),
+                &online.ephemeral_public_key.to_vec(),
+            )
+            .await
+        {
+            Ok(k) => match k {
+                Some(v) => v,
+                None => {
+                    return eprintln!("❌ Failed to establish session key: {:?}", online.session_id);
+                }
+            },
+            Err(_) => {
+                return eprintln!("❌ Failed to establish session key: {:?}", online.session_id);
+            }
+        };
 
         // ===== 3️⃣ 构造 OnlineAckCommand =====
         let ack = OnlineAckCommand {
@@ -94,7 +95,7 @@ pub fn on_online(
         let command = P2PCommand::new(
             Entity::Node as u8,
             Action::OnLineAck as u8,
-            Codec::encode(&ack)
+            Codec::encode(&ack),
         );
 
         let ack_frame = P2PFrame::build(context.clone(), command, 1).await.unwrap();

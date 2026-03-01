@@ -5,7 +5,7 @@ use zz_account::address::FreeWebMovementAddress as Address;
 use crate::protocols::defines::Listener;
 use crate::protocols::registry::CommandHandlerRegistry;
 use crate::{ context::Context, nodes::servers::Servers };
-use crate::{ handlers::{ tcp::TCPHandler, udp::UDPHandler }, nodes::storage::Storeage };
+use crate::{ handlers:: tcp::TCPHandler , nodes::storage::Storeage };
 use crate::{ nodes::net_info::NetInfo };
 
 /* =========================
@@ -27,7 +27,7 @@ pub struct Node {
     pub stop_time: u128, // Timestamp when the node was started
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
-    pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
+    // pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
 }
 
 impl Node {
@@ -46,13 +46,11 @@ impl Node {
             stun_port: port + 1,
             trun_port: port + 2,
             tcp_handler: None,
-            udp_handler: None,
             context: None,
             start_time: 0,
             stop_time: 0,
             net_info: None,
             storage: storage,
-            // servers: None,
         }
     }
 
@@ -88,10 +86,10 @@ impl Node {
         servers.notify_online(self.address.clone(), &context.clone()).await.unwrap();
 
         let tcp = TCPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
-        let udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
+        // let _udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         self.tcp_handler = Some(self.listen(tcp).await);
-        self.udp_handler = Some(self.listen(udp).await);
+        // self.udp_handler = Some(self.listen(udp).await);
     }
 
     pub async fn stop(&mut self) {

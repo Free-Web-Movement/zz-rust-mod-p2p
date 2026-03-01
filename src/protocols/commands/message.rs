@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use aex::tcp::types::Codec;
 use aex::time::SystemTime;
-use anyhow::anyhow;
-
 use crate::protocols::client_type::{ClientType, send_bytes};
 use crate::protocols::command::{ Action, P2PCommand, Entity };
 use crate::protocols::frame::P2PFrame;
@@ -41,15 +39,9 @@ pub async fn send_text_message(
     println!("created plaintext bytes: {:?}", payload);
 
     // 使用 session_key 加密
-    let encrypted: Vec<u8> = {
-        let sessions = context.session_keys.lock().await;
 
-        let session = sessions
-            .get(&receiver)
-            .ok_or_else(|| anyhow!("no session_key for receiver {}", receiver))?;
+    let encrypted: Vec<u8> =  context.paired_session_keys.encrypt(&receiver.as_bytes().to_vec(), &payload).await?;
 
-        session.encrypt(&payload)?
-    };
 
     println!("created encrypted bytes: {:?}", encrypted);
 
@@ -126,7 +118,7 @@ pub fn on_text_message(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    client_type: Arc<ClientType>
+    _client_type: Arc<ClientType>
 ) -> BoxFuture<'static, ()> 
  {
     Box::pin(async move {
@@ -137,25 +129,9 @@ pub fn on_text_message(
         println!("get encrypted bytes: {:?}", cmd.data);
 
         // 1️⃣ 使用 session_key 解密
-        let plaintext: Vec<u8> = {
-            let sessions = context.session_keys.lock().await;
 
-            let session = match sessions.get(from) {
-                Some(s) => s,
-                None => {
-                    eprintln!("❌ No session_key for sender {}", from);
-                    return;
-                }
-            };
-
-            match session.decrypt(&cmd.data) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("❌ Decrypt message from {} failed: {:?}", from, e);
-                    return;
-                }
-            }
-        };
+                let plaintext: Vec<u8> = context.paired_session_keys.
+                decrypt(&from.as_bytes().to_vec(), &cmd.data).await.expect("Wrong encrypted data!");
 
         println!("get plain text: {:?}", plaintext);
 
@@ -194,32 +170,8 @@ pub fn on_text_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::client_type::{ ClientType, to_client_type };
-    use tokio::net::TcpListener;
-    use tokio::net::TcpStream;
 
     use bincode::config;
-
-    /// 创建 TCP client/server pair，用于捕获发送的数据
-    async fn tcp_pair() -> (ClientType, tokio::sync::oneshot::Receiver<Vec<u8>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-
-        tokio::spawn(async move {
-            let (socket, _) = listener.accept().await.unwrap();
-            let mut buf = vec![0u8; 4096];
-            let _n = socket.readable().await.unwrap();
-            let n = socket.try_read(&mut buf).unwrap();
-            let _ = tx.send(buf[..n].to_vec());
-        });
-
-        let client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let tcp = to_client_type(client);
-        (tcp, rx)
-    }
-
     #[test]
     fn test_message_command_bincode_roundtrip() {
         let cmd = MessageCommand {

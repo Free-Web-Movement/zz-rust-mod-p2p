@@ -290,24 +290,26 @@ impl Servers {
         println!("Notifying node online start");
 
         if let Some(connections) = &self.connected_servers {
-            // 🔑 创建临时 session（一次 online 一次 session）
-            let session_id = context.create_temp_session().await;
+            // // 🔑 创建临时 session（一次 online 一次 session）
+            // let session_id = context.create_temp_session().await;
 
-            // 取出对应 SessionKey，拿 ephemeral public key
-            let temp_sessions = context.temp_sessions.lock().await;
-            let sk = temp_sessions
-                .get(&session_id)
-                .expect("temp session must exist");
+            // // 取出对应 SessionKey，拿 ephemeral public key
+            // let temp_sessions = context.temp_sessions.lock().await;
+            // let sk = temp_sessions
+            //     .get(&session_id)
+            //     .expect("temp session must exist");
 
-            let ephemeral_pub: [u8; 32] = sk.ephemeral_public.as_bytes().clone();
 
-            drop(temp_sessions); // 🔴 及时释放锁
+            // drop(temp_sessions); // 🔴 及时释放锁
+
+            let (session_id , ephemeral_public)= context.paired_session_keys.create(false).await;
+            let ephemeral_pub: [u8; 32] = ephemeral_public.as_bytes().clone();
 
             // ---------- inner ----------
             let inner_endpoints = Servers::to_endpoints(&self.host_inner_record, 0);
 
             let inner_cmd = OnlineCommand {
-                session_id,
+                session_id: session_id.clone(),
                 endpoints: inner_endpoints,
                 ephemeral_public_key: ephemeral_pub,
             };

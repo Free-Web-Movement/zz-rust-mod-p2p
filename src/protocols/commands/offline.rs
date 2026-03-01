@@ -9,10 +9,10 @@ use crate::protocols::command::{ Action, P2PCommand, Entity };
 use crate::protocols::frame::P2PFrame;
 
 pub fn on_offline(
-    cmd: P2PCommand,
+    _: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    client_type: Arc<ClientType>
+    __: Arc<ClientType>
 ) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         // 处理 Node Offline 命令的逻辑
