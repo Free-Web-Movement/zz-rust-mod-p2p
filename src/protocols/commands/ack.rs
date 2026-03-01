@@ -23,22 +23,22 @@ pub struct OnlineAckCommand {
 
 impl Codec for OnlineAckCommand {}
 
-pub async fn send_online_ack(
-    context: Arc<Context>,
-    client_type: &ClientType,
-    ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
-) -> Result<()> {
-    let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Codec::encode(&ack));
+// pub async fn send_online_ack(
+//     context: Arc<Context>,
+//     client_type: &ClientType,
+//     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
+// ) -> Result<()> {
+//     let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Codec::encode(&ack));
 
-    let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
+//     let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
-    // 2️⃣ 转成字节发送
-    let bytes = Codec::encode(&frame);
+//     // 2️⃣ 转成字节发送
+//     let bytes = Codec::encode(&frame);
 
-    send_bytes(client_type, &bytes).await;
+//     send_bytes(client_type, &bytes).await;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub fn on_online_ack(
     cmd: P2PCommand,

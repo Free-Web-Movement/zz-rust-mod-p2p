@@ -6,9 +6,9 @@ use tokio::net::tcp::OwnedWriteHalf;
 use std::sync::Arc;
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::{ context::Context, protocols::command::Entity };
+use crate::context::Context;
 use crate::protocols::client_type::send_bytes;
-use crate::protocols::command::{ Action, P2PCommand };
+use crate::protocols::command::P2PCommand;
 use bincode::{ Decode, Encode };
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
@@ -161,11 +161,15 @@ impl P2PFrame {
     pub async fn send<C: Codec>(
         address: &FreeWebMovementAddress,
         writer: &mut OwnedWriteHalf,
-        sub_command: &C,
+        sub_command: &Option<C>,
         entity: u8,
-        action: u8
+        action: u8,
+        // _encrypted: bool
     ) -> anyhow::Result<()> {
-        let data = Codec::encode(sub_command);
+        let data = match sub_command {
+            Some(cmd) => Codec::encode(cmd),
+            None => vec![],
+        };
         let command = P2PCommand::new(entity, action, data);
 
         let frame = P2PFrame::build(address, command, 1).await.unwrap();

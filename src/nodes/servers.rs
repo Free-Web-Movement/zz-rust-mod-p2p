@@ -1,7 +1,7 @@
-use aex::tcp::types::{ Codec, Frame };
+use aex::tcp::types::Codec;
 use anyhow::Result;
 use std::{ net::{ IpAddr, SocketAddr }, sync::Arc };
-use tokio::net::{ TcpStream, tcp::OwnedWriteHalf };
+use tokio::net::TcpStream;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     protocols::{
         client_type::{ get_writer, loop_reading, to_client_type },
         command::{ Action, Entity },
-        commands::{ offline::send_offline, online::OnlineCommand },
+        commands::{ offline::OfflineCommand, online::OnlineCommand },
         defines::ProtocolCapability,
         frame::P2PFrame,
     },
@@ -254,7 +254,7 @@ impl Servers {
     pub async fn notify_online_servers(
         &self,
         address: &FreeWebMovementAddress,
-        cmd: &OnlineCommand,
+        cmd: &Option<OnlineCommand>,
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
@@ -276,12 +276,22 @@ impl Servers {
     /// 🔹 通知一组服务器下线
     pub async fn notify_offline_servers(
         &self,
-        context: &Arc<Context>,
-        data: &Vec<u8>,
+        address: &FreeWebMovementAddress,
+        cmd: &Option<OfflineCommand>,
         servers: &Vec<ConnectedServer>
     ) {
         for server in servers {
-            let _ = send_offline(context.clone(), &server.client_type, data.clone()).await;
+            let writer = get_writer(&server.client_type).await;
+
+            let mut writer = writer.lock().await;
+            P2PFrame::send::<OfflineCommand>(
+                &address,
+                &mut *writer,
+                cmd,
+                Entity::Node as u8,
+                Action::OffLine as u8
+            ).await.expect("error notify offline server!");
+            // let _ = send_offline(context.clone(), &server.client_type, data.clone()).await;
         }
     }
 
@@ -311,7 +321,11 @@ impl Servers {
 
             println!("inner bytes: {:?}", inner_bytes);
 
-            self.notify_online_servers(&context.address, &inner_cmd, &connections.inner).await;
+            self.notify_online_servers(
+                &context.address,
+                &Some(inner_cmd),
+                &connections.inner
+            ).await;
 
             // ---------- external ----------
             let external_endpoints = Servers::to_endpoints(&self.host_external_record, 1);
@@ -327,7 +341,7 @@ impl Servers {
 
             self.notify_online_servers(
                 &context.address,
-                &external_cmd,
+                &Some(external_cmd),
                 &connections.external
             ).await;
         }
@@ -337,15 +351,35 @@ impl Servers {
     }
 
     /// 🔹 通知所有已连接服务器当前节点的下线
-    pub async fn notify_offline(&self, context: &Arc<Context>) -> anyhow::Result<()> {
+    pub async fn notify_offline(
+        &self,
+        context: &Arc<Context>
+    ) -> anyhow::Result<()> {
         if let Some(connections) = &self.connected_servers {
             // inner endpoints 序列化
             let inner_data = Servers::to_endpoints(&self.host_inner_record, 0);
-            self.notify_offline_servers(context, &inner_data, &connections.inner).await;
+
+            let inner_cmd = OfflineCommand {
+                session_id: context.address.to_string().as_bytes().to_vec(),
+                endpoints: inner_data,
+            };
+            self.notify_offline_servers(
+                &context.address,
+                &Some(inner_cmd),
+                &connections.inner
+            ).await;
 
             // external endpoints 序列化
             let external_data = Servers::to_endpoints(&self.host_external_record, 1);
-            self.notify_offline_servers(context, &external_data, &connections.external).await;
+            let external_cmd = OfflineCommand {
+                session_id: context.address.to_string().as_bytes().to_vec(),
+                endpoints: external_data,
+            };
+            self.notify_offline_servers(
+                &context.address,
+                &Some(external_cmd),
+                &connections.external
+            ).await;
         }
         Ok(())
     }

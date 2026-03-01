@@ -8,7 +8,6 @@ use crate::context::Context;
 use crate::nodes::record::NodeRecord;
 use crate::protocols::client_type::{ ClientType, get_writer, to_client_type };
 use crate::protocols::command::{ Action, Entity };
-use crate::protocols::commands::offline::send_offline;
 use crate::protocols::commands::online::OnlineCommand;
 use crate::protocols::frame::P2PFrame;
 
@@ -70,7 +69,7 @@ impl ConnectedServers {
     pub async fn notify_online(
         &self,
         address: &FreeWebMovementAddress,
-        cmd: &OnlineCommand,
+        cmd: &Option<OnlineCommand>,
         is_external: bool
     ) {
         let all = if is_external { self.inner.iter() } else { self.external.iter() };
@@ -84,24 +83,11 @@ impl ConnectedServers {
                 P2PFrame::send::<OnlineCommand>(
                     address,
                     &mut *&mut guard,
-                    &cmd,
+                    cmd,
                     Entity::Node as u8,
                     Action::OnLine as u8
                 ).await.expect("Error sending online command!")
               }
-        });
-
-        futures::future::join_all(futures).await;
-    }
-
-    /// 🔔 通知所有服务器下线
-    pub async fn notify_offline(&self, context: &Arc<Context>, data: Vec<u8>, is_external: bool) {
-        let all = if is_external { self.inner.iter() } else { self.external.iter() };
-        let futures = all.map(|server| {
-            let payload = data.clone();
-            async move {
-                let _ = send_offline(context.clone(), &server.client_type, payload).await;
-            }
         });
 
         futures::future::join_all(futures).await;
