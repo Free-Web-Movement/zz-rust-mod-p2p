@@ -1,9 +1,9 @@
 use std::{ net::SocketAddr, sync::Arc };
 
-use aex::{ http::protocol::method::HttpMethod, tcp::types::Codec };
+use aex:: tcp::types::Codec ;
 use tokio::{
     io::{ AsyncReadExt, AsyncWriteExt },
-    net::{ TcpStream, UdpSocket, tcp::OwnedWriteHalf },
+    net::{ TcpStream, UdpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf} },
     sync::Mutex,
 };
 
@@ -119,31 +119,6 @@ pub fn to_client_type(stream: TcpStream) -> ClientType {
     tcp
 }
 
-// pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
-//     match client_type {
-//         crate::protocols::client_type::ClientType::UDP { socket, peer } => {
-//             println!("UDP is sending {} bytes to {:?}", bytes.len(), peer);
-//             if let Err(e) = socket.send_to(bytes, peer).await {
-//                 eprintln!("Failed to send UDP bytes: {:?}", e);
-//             }
-//         }
-//         | crate::protocols::client_type::ClientType::TCP(stream_pair)
-//         | crate::protocols::client_type::ClientType::HTTP(stream_pair)
-//         | crate::protocols::client_type::ClientType::WS(stream_pair) => {
-//             let mut writer = stream_pair.writer.lock().await;
-//             println!("\nsend tcp {} bytes: {:?}\n", bytes.len(), bytes);
-
-//             let len = bytes.len() as u32;
-//             if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
-//                 eprintln!("Failed to send TCP bytes: {:?}", e);
-//             }
-//             if let Err(e) = writer.write_all(&bytes).await {
-//                 eprintln!("Failed to send TCP bytes: {:?}", e);
-//             }
-//         }
-//     }
-// }
-
 pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {
         ClientType::UDP { socket: _, peer: _ } => todo!(),
@@ -229,18 +204,18 @@ pub async fn on_tcp_data(
     println!("TCP connection closed {:?}", addr);
 }
 
-pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => Ok(false),
-        | ClientType::TCP(stream_pair)
-        | ClientType::HTTP(stream_pair)
-        | ClientType::WS(stream_pair) => {
-            let reader = stream_pair.reader.clone();
-            let mut reader = reader.lock().await;
-            HttpMethod::is_http_connection(&mut reader).await
-        }
-    }
-}
+// pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
+//     match client_type {
+//         ClientType::UDP { socket: _, peer: _ } => Ok(false),
+//         | ClientType::TCP(stream_pair)
+//         | ClientType::HTTP(stream_pair)
+//         | ClientType::WS(stream_pair) => {
+//             let reader = stream_pair.reader.clone();
+//             let mut reader = reader.lock().await;
+//             HttpMethod::is_http_connection(&mut reader).await
+//         }
+//     }
+// }
 
 pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::Result<()> {
     context.token.cancel();
@@ -264,6 +239,19 @@ pub async fn get_writer(client_type: &ClientType) -> Arc<Mutex<OwnedWriteHalf>> 
         | crate::protocols::client_type::ClientType::HTTP(stream_pair)
         | crate::protocols::client_type::ClientType::WS(stream_pair) => {
             stream_pair.writer.clone()
+        }
+    }
+}
+
+pub async fn get_reader(client_type: &ClientType) -> Arc<Mutex<OwnedReadHalf>> {
+    match client_type {
+        crate::protocols::client_type::ClientType::UDP { socket: _, peer: _ } => {
+            panic!("Wrong protocal!")
+        }
+        | crate::protocols::client_type::ClientType::TCP(stream_pair)
+        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
+        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
+            stream_pair.reader.clone()
         }
     }
 }

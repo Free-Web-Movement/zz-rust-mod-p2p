@@ -102,15 +102,14 @@ impl ConnectedServers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::defines::ProtocolCapability;
     use chrono::Utc;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::{collections::HashSet, net::{IpAddr, Ipv4Addr, SocketAddr}};
     use tokio::net::TcpListener;
 
     fn make_record(port: u16) -> NodeRecord {
         NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
-            protocols: ProtocolCapability::TCP,
+            protocols: HashSet::new(),
             first_seen: Utc::now(),
             last_seen: Utc::now(),
             connected: false,

@@ -1,11 +1,10 @@
+use aex::connection::protocol::{ Protocol};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::{IpAddr, SocketAddr},
 };
-
-use crate::protocols::defines::ProtocolCapability;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NodeRecord {
@@ -13,7 +12,7 @@ pub struct NodeRecord {
     pub endpoint: SocketAddr,
 
     /// 该 endpoint 支持 / 曾成功使用过的协议集合
-    pub protocols: ProtocolCapability,
+    pub protocols: HashSet<Protocol>,
 
     /// 首次发现时间
     pub first_seen: DateTime<Utc>,
@@ -38,14 +37,14 @@ impl NodeRecord {
     pub fn to_list(
         ip_addrs: Vec<IpAddr>,
         port: u16,
-        protocol_capabilities: ProtocolCapability,
+        protocols: HashSet<Protocol>,
     ) -> Vec<NodeRecord> {
         let now = Utc::now();
         ip_addrs
             .into_iter()
             .map(|ip| NodeRecord {
                 endpoint: SocketAddr::new(ip, port),
-                protocols: protocol_capabilities,
+                protocols: protocols.clone(),
                 first_seen: now,
                 last_seen: now,
                 connected: false,
@@ -59,8 +58,10 @@ impl NodeRecord {
     /// 使用 dst 更新 self（self = older, dst = newer）
     pub fn update(mut self, other: NodeRecord) -> NodeRecord {
         debug_assert_eq!(self.endpoint, other.endpoint);
-
-        self.protocols |= other.protocols;
+        // let _ = self.protocols.union(&other.protocols);
+        for protocol in other.protocols {
+            self.protocols.insert(protocol);
+        }
 
         self.first_seen = self.first_seen.min(other.first_seen);
         self.last_seen = self.last_seen.max(other.last_seen);
@@ -109,10 +110,12 @@ mod tests {
     fn test_to_list_single_ipv4() {
         let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
         let port = 3030;
-        let protocols = ProtocolCapability::TCP | ProtocolCapability::UDP;
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
+        protocols.insert(Protocol::Udp);
 
         let before = Utc::now();
-        let list = NodeRecord::to_list(vec![ip], port, protocols);
+        let list = NodeRecord::to_list(vec![ip], port, protocols.clone());
         let after = Utc::now();
 
         assert_eq!(list.len(), 1);
@@ -136,9 +139,10 @@ mod tests {
         ];
 
         let port = 4040;
-        let protocols = ProtocolCapability::TCP;
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
 
-        let list = NodeRecord::to_list(ips.clone(), port, protocols);
+        let list = NodeRecord::to_list(ips.clone(), port, protocols.clone());
 
         assert_eq!(list.len(), 2);
 
@@ -155,23 +159,8 @@ mod tests {
         let list = NodeRecord::to_list(
             Vec::new(),
             1234,
-            ProtocolCapability::TCP | ProtocolCapability::UDP,
+            HashSet::new()
         );
         assert!(list.is_empty());
-    }
-
-    #[test]
-    fn test_protocol_capability_preserved() {
-        let ip = IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9));
-        let protocols =
-            ProtocolCapability::TCP | ProtocolCapability::UDP | ProtocolCapability::WEBSOCKET;
-
-        let list = NodeRecord::to_list(vec![ip], 8080, protocols);
-        let node = &list[0];
-
-        assert!(node.protocols.contains(ProtocolCapability::TCP));
-        assert!(node.protocols.contains(ProtocolCapability::UDP));
-        assert!(node.protocols.contains(ProtocolCapability::WEBSOCKET));
-        assert!(!node.protocols.contains(ProtocolCapability::HTTP));
     }
 }

@@ -1,6 +1,7 @@
-use aex::tcp::types::Codec;
+use aex::{connection::protocol::Protocol, tcp::types::Codec};
 use anyhow::Result;
 use std::{
+    collections::HashSet,
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
@@ -19,7 +20,6 @@ use crate::{
         client_type::{get_writer, loop_reading, to_client_type},
         command::{Action, Entity},
         commands::{offline::OfflineCommand, online::OnlineCommand},
-        defines::ProtocolCapability,
         frame::P2PFrame,
     },
 };
@@ -53,21 +53,15 @@ impl Servers {
         let mut external = storage.read_external_server_list().unwrap_or_default();
 
         // 当前节点的公网记录
-        let host_external_record = NodeRecord::to_list(
-            net_info.public_ips(),
-            net_info.port,
-            crate::protocols::defines::ProtocolCapability::TCP
-                | crate::protocols::defines::ProtocolCapability::UDP,
-        );
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
+        protocols.insert(Protocol::Udp);
+        let host_external_record =
+            NodeRecord::to_list(net_info.public_ips(), net_info.port, protocols.clone());
 
         // 当前节点的内网IP
 
-        let host_inner_record = NodeRecord::to_list(
-            net_info.local_ips(),
-            net_info.port,
-            crate::protocols::defines::ProtocolCapability::TCP
-                | crate::protocols::defines::ProtocolCapability::UDP,
-        );
+        let host_inner_record = NodeRecord::to_list(net_info.local_ips(), net_info.port, protocols);
 
         // 合并当前节点公网记录到 external（用于广播）
         external = NodeRecord::merge(host_external_record.clone(), external);
@@ -125,10 +119,12 @@ impl Servers {
         // let client_type = Arc::new(tcp.clone());
         let tcp_clone = tcp.clone();
 
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
         // 构造 NodeRecord
         let record = NodeRecord {
             endpoint: addr,
-            protocols: ProtocolCapability::TCP,
+            protocols,
             first_seen: chrono::Utc::now(),
             last_seen: chrono::Utc::now(),
             connected: true,
@@ -405,8 +401,6 @@ impl Servers {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocols::defines::ProtocolCapability;
-
     use super::*;
     use chrono::Utc;
     use std::{
@@ -417,10 +411,13 @@ mod tests {
     // ------------------------------
     // 测试辅助：构造 NodeRecord
     // ------------------------------
+
     fn node(ip: [u8; 4], port: u16) -> NodeRecord {
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
         NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3])), port),
-            protocols: ProtocolCapability::TCP,
+            protocols: protocols.clone(),
             first_seen: Utc::now(),
             last_seen: Utc::now(),
             connected: false,

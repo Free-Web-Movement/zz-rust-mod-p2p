@@ -1,11 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use aex::http::protocol::method::HttpMethod;
 use async_trait::async_trait;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::context::Context;
-use crate::protocols::client_type::{is_http_connection, on_data, read_http, to_client_type};
+use crate::protocols::client_type::{get_reader, on_data, read_http, to_client_type};
 use crate::protocols::defines::{Listener};
 
 #[derive(Clone)]
@@ -69,7 +70,10 @@ async fn handle_connection(
     {
         // let mut guard = stream.lock().await;
 
-        match is_http_connection(&client_type).await {
+        let guard = get_reader(&client_type).await;
+        let reader = &mut * guard.lock().await;
+
+        match HttpMethod::is_http_connection(reader).await {
             Ok(true) => {
                 println!("HTTP connection detected from {:?}", addr);
 

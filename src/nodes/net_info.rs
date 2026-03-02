@@ -1,10 +1,10 @@
+use aex::connection::protocol::Protocol;
 use if_addrs::get_if_addrs;
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use crate::protocols::defines::ProtocolCapability;
 /// 本地与公网 IP 集合
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LPIP<T> {
@@ -18,12 +18,16 @@ pub struct NetInfo {
     pub port: u16,
     pub v4: LPIP<Ipv4Addr>,
     pub v6: LPIP<Ipv6Addr>,
-    pub protocol_capabilities: ProtocolCapability,
+    pub protocols: HashSet<Protocol>,
 }
 
 impl NetInfo {
     /// 默认创建节点信息，protocol_capabilities 默认 TCP|UDP
     pub fn new(port: u16) -> Self {
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
+        protocols.insert(Protocol::Udp);
+        
         NetInfo {
             port,
             v4: LPIP {
@@ -34,7 +38,7 @@ impl NetInfo {
                 local_ips: Vec::new(),
                 public_ips: Vec::new(),
             },
-            protocol_capabilities: ProtocolCapability::TCP | ProtocolCapability::UDP,
+            protocols
         }
     }
 
@@ -129,7 +133,7 @@ impl NetInfo {
                 local_ips: v6_local,
                 public_ips: v6_public,
             },
-            protocol_capabilities: ProtocolCapability::TCP | ProtocolCapability::UDP,
+            protocols: HashSet::new()
         })
     }
 
@@ -235,8 +239,8 @@ mod tests {
         assert_eq!(info.port, 9000);
         assert!(info.v4.local_ips.is_empty());
         assert!(info.v6.public_ips.is_empty());
-        assert!(info.protocol_capabilities.contains(ProtocolCapability::TCP));
-        assert!(info.protocol_capabilities.contains(ProtocolCapability::UDP));
+        assert!(info.protocols.contains(&Protocol::Tcp));
+        assert!(info.protocols.contains(&Protocol::Udp));
     }
 
     /* ---------- public_ips() ---------- */

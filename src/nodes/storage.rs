@@ -2,10 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::consts::{
-    DEFAULT_APP_DIR,
-    DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
-    DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE,
-    DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
+    DEFAULT_APP_DIR, DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
+    DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE, DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
 };
 
 use crate::nodes::record::NodeRecord;
@@ -24,15 +22,14 @@ impl Storeage {
         data_dir: Option<&str>,
         address_file_name: Option<&str>,
         external_list_file_name: Option<&str>,
-        inner_server_list_file_name: Option<&str>
+        inner_server_list_file_name: Option<&str>,
     ) -> Self {
         let app_dir = if let Some(dir) = data_dir {
             println!("Using custom storage dir: {}", dir);
             PathBuf::from(dir)
         } else {
             println!("Using default storage dir");
-            dirs_next
-                ::data_dir()
+            dirs_next::data_dir()
                 .map(|dir| dir.join(DEFAULT_APP_DIR))
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_APP_DIR))
         };
@@ -40,16 +37,15 @@ impl Storeage {
 
         let _ = fs::create_dir_all(&app_dir);
 
-        let address_file = app_dir.join(
-            address_file_name.unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE)
-        );
+        let address_file =
+            app_dir.join(address_file_name.unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE));
 
         let external_server_list_file = app_dir.join(
-            external_list_file_name.unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE)
+            external_list_file_name.unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE),
         );
 
         let inner_server_list_file = app_dir.join(
-            inner_server_list_file_name.unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE)
+            inner_server_list_file_name.unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE),
         );
 
         Storeage {
@@ -72,7 +68,7 @@ impl Storeage {
     pub fn read_address(&self) -> anyhow::Result<Option<FreeWebMovementAddress>> {
         println!("Reading address from {:?}", &self.address_file);
         if !self.address_file.exists() {
-          println!("Address file does not exist.");
+            println!("Address file does not exist.");
             return Ok(None);
         }
 
@@ -121,22 +117,29 @@ impl Storeage {
     }
 
     pub fn dir(&self) -> &str {
-      let str = self.app_dir.as_os_str().to_str().unwrap();
-      str
+        let str = self.app_dir.as_os_str().to_str().unwrap();
+        str
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aex::connection::protocol::Protocol;
     use chrono::Utc;
-    use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
+    use std::{
+        collections::HashSet,
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+    };
     use tempfile::tempdir;
 
     fn dummy_record(port: u16) -> NodeRecord {
+        let mut protocols = HashSet::new();
+        protocols.insert(Protocol::Tcp);
+        protocols.insert(Protocol::Udp);
         NodeRecord {
             endpoint: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-            protocols: crate::protocols::defines::ProtocolCapability::TCP,
+            protocols,
             first_seen: Utc::now(),
             last_seen: Utc::now(),
             last_disappeared: None,
