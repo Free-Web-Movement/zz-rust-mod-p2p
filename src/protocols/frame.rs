@@ -164,13 +164,13 @@ impl P2PFrame {
         sub_command: &Option<C>,
         entity: u8,
         action: u8,
-        // _encrypted: bool
+        encrypted: bool
     ) -> anyhow::Result<()> {
         let data = match sub_command {
             Some(cmd) => Codec::encode(cmd),
             None => vec![],
         };
-        let command = P2PCommand::new(entity, action, data);
+        let command = P2PCommand::new(entity, action, data, encrypted);
 
         let frame = P2PFrame::build(address, command, 1).await.unwrap();
 
@@ -273,7 +273,7 @@ mod tests {
     }
 
     fn make_command() -> P2PCommand {
-        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, vec![1, 2, 3, 4])
+        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, vec![1, 2, 3, 4], false)
     }
 
     #[test]

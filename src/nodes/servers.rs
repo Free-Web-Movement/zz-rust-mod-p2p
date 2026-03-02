@@ -267,7 +267,8 @@ impl Servers {
                 &mut *writer,
                 cmd,
                 Entity::Node as u8,
-                Action::OnLine as u8
+                Action::OnLine as u8,
+                false
             ).await.expect("error notify online server!");
             println!("notify send!");
         }
@@ -289,7 +290,8 @@ impl Servers {
                 &mut *writer,
                 cmd,
                 Entity::Node as u8,
-                Action::OffLine as u8
+                Action::OffLine as u8,
+                false
             ).await.expect("error notify offline server!");
             // let _ = send_offline(context.clone(), &server.client_type, data.clone()).await;
         }

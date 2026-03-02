@@ -48,7 +48,8 @@ pub async fn send_text_message(
     let command = P2PCommand::new(
         Entity::Message as u8,
         Action::SendText as u8,
-        encrypted.clone()
+        encrypted.clone(),
+        true
     );
 
     let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();

@@ -1,13 +1,11 @@
-use std::sync::Arc;
+use futures::{StreamExt, stream};
 use std::time::Duration;
-use futures::{ StreamExt, stream };
-use tokio::{ net::TcpStream, time::timeout };
+use tokio::{net::TcpStream, time::timeout};
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::context::Context;
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::{ ClientType, get_writer, to_client_type };
-use crate::protocols::command::{ Action, Entity };
+use crate::protocols::client_type::{ClientType, get_writer, to_client_type};
+use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::online::OnlineCommand;
 use crate::protocols::frame::P2PFrame;
 
@@ -32,8 +30,7 @@ impl ConnectedServers {
 
     /// 🔗 仅使用 TCP 建立初始控制连接
     pub async fn connect(records: Vec<NodeRecord>) -> Vec<ConnectedServer> {
-        stream
-            ::iter(records)
+        stream::iter(records)
             .map(|record| async move {
                 match timeout(Self::CONNECT_TIMEOUT, TcpStream::connect(record.endpoint)).await {
                     Ok(Ok(stream)) => {
@@ -56,7 +53,8 @@ impl ConnectedServers {
             })
             .buffer_unordered(Self::MAX_CONCURRENT)
             .filter_map(|x| async { x })
-            .collect().await
+            .collect()
+            .await
     }
 
     pub async fn new(inner: Vec<NodeRecord>, external: Vec<NodeRecord>) -> Self {
@@ -70,9 +68,13 @@ impl ConnectedServers {
         &self,
         address: &FreeWebMovementAddress,
         cmd: &Option<OnlineCommand>,
-        is_external: bool
+        is_external: bool,
     ) {
-        let all = if is_external { self.inner.iter() } else { self.external.iter() };
+        let all = if is_external {
+            self.inner.iter()
+        } else {
+            self.external.iter()
+        };
 
         let futures = all.map(|server| {
             // let bytes = data.clone();
@@ -85,9 +87,12 @@ impl ConnectedServers {
                     &mut *&mut guard,
                     cmd,
                     Entity::Node as u8,
-                    Action::OnLine as u8
-                ).await.expect("Error sending online command!")
-              }
+                    Action::OnLine as u8,
+                    false,
+                )
+                .await
+                .expect("Error sending online command!")
+            }
         });
 
         futures::future::join_all(futures).await;
@@ -99,7 +104,7 @@ mod tests {
     use super::*;
     use crate::protocols::defines::ProtocolCapability;
     use chrono::Utc;
-    use std::net::{ IpAddr, Ipv4Addr, SocketAddr };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::net::TcpListener;
 
     fn make_record(port: u16) -> NodeRecord {
