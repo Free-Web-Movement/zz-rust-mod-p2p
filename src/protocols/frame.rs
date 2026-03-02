@@ -1,15 +1,18 @@
-use aex::tcp::types::{ Codec, Frame };
+use aex::{
+    crypto::session_key_manager::PairedSessionKey,
+    tcp::types::{Codec, Frame},
+};
 use rand::Rng;
-use serde::{ Deserialize, Serialize };
-use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedWriteHalf;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::context::Context;
 use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::P2PCommand;
-use bincode::{ Decode, Encode };
+use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct FrameBody {
@@ -42,7 +45,7 @@ impl FrameBody {
         public_key: Vec<u8>,
         nonce: u64,
         data_length: u32,
-        data: Vec<u8>
+        data: Vec<u8>,
     ) -> Self {
         FrameBody {
             version,
@@ -112,7 +115,7 @@ impl P2PFrame {
     pub async fn build(
         address: &FreeWebMovementAddress,
         cmd: P2PCommand,
-        version: u8
+        version: u8,
     ) -> anyhow::Result<Self> {
         let cmd_bytes = Codec::encode(&cmd);
         let body = FrameBody {
@@ -143,7 +146,10 @@ impl Frame for P2PFrame {
         true
     }
 
-    fn sign<F>(&self, signer: F) -> Vec<u8> where F: FnOnce(&[u8]) -> Vec<u8> {
+    fn sign<F>(&self, signer: F) -> Vec<u8>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
         let raw_bytes = Codec::encode(&self.body); // 假设 Codec 提供 encode()
         signer(&raw_bytes)
     }
@@ -164,13 +170,24 @@ impl P2PFrame {
         sub_command: &Option<C>,
         entity: u8,
         action: u8,
-        encrypted: bool
+        paired_session_key: Option<Arc<Mutex<PairedSessionKey>>>,
     ) -> anyhow::Result<()> {
         let data = match sub_command {
             Some(cmd) => Codec::encode(cmd),
             None => vec![],
         };
-        let command = P2PCommand::new(entity, action, data, encrypted);
+
+        let bytes = match paired_session_key {
+            Some(psk) => {
+                let encode = psk.lock().await;
+                encode
+                    .encrypt(&address.to_string().as_bytes().to_vec(), &data)
+                    .await?
+            }
+            None => data,
+        };
+
+        let command = P2PCommand::new(entity, action, bytes);
 
         let frame = P2PFrame::build(address, command, 1).await.unwrap();
 
@@ -231,7 +248,7 @@ pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Cont
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocols::command::{ Action, Entity };
+    use crate::protocols::command::{Action, Entity};
     use zz_account::address::FreeWebMovementAddress;
 
     #[tokio::test]
@@ -273,7 +290,7 @@ mod tests {
     }
 
     fn make_command() -> P2PCommand {
-        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, vec![1, 2, 3, 4], false)
+        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, vec![1, 2, 3, 4])
     }
 
     #[test]
@@ -286,7 +303,7 @@ mod tests {
             addr.public_key.to_bytes(),
             100,
             4,
-            vec![9, 8, 7, 6]
+            vec![9, 8, 7, 6],
         );
 
         assert_eq!(body.version, 1);
@@ -305,7 +322,7 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             0,
-            vec![]
+            vec![],
         );
 
         let cmd = make_command();
@@ -329,7 +346,7 @@ mod tests {
             addr.public_key.to_bytes(),
             1,
             1,
-            vec![0xaa]
+            vec![0xaa],
         );
 
         let frame = P2PFrame::new(body.clone(), vec![0xbb]);
@@ -348,7 +365,7 @@ mod tests {
             identity.public_key.to_bytes(),
             42,
             5,
-            b"hello".to_vec()
+            b"hello".to_vec(),
         );
 
         let frame = P2PFrame::sign(body.clone(), &identity)?;
@@ -358,7 +375,10 @@ mod tests {
         let verified = P2PFrame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
-        assert_eq!(frame.body.address.to_string(), verified.body.address.to_string());
+        assert_eq!(
+            frame.body.address.to_string(),
+            verified.body.address.to_string()
+        );
 
         Ok(())
     }
@@ -373,7 +393,7 @@ mod tests {
             identity.public_key.to_bytes(),
             7,
             3,
-            vec![1, 2, 3]
+            vec![1, 2, 3],
         );
 
         let frame = P2PFrame::sign(body, &identity).unwrap();
@@ -395,7 +415,7 @@ mod tests {
             identity.public_key.to_bytes(),
             9,
             3,
-            vec![1, 2, 3]
+            vec![1, 2, 3],
         );
 
         let mut frame = P2PFrame::sign(body.clone(), &identity).unwrap();
@@ -414,7 +434,14 @@ mod tests {
         // 只要能成功编码解码即视为一致
         let addr = FreeWebMovementAddress::random();
 
-        let body = FrameBody::new(1, addr.to_string(), addr.public_key.to_bytes(), 0, 0, vec![]);
+        let body = FrameBody::new(
+            1,
+            addr.to_string(),
+            addr.public_key.to_bytes(),
+            0,
+            0,
+            vec![],
+        );
 
         let bytes = Codec::encode(&body);
 

@@ -49,18 +49,16 @@ pub type CommandCallback =
 pub struct P2PCommand {
     pub entity: u8,
     pub action: u8,
-    pub encrypted: bool,
     pub data: Vec<u8>,
 }
 
 impl Codec for P2PCommand {}
 
 impl P2PCommand {
-    pub fn new(entity: u8, action: u8, data: Vec<u8>, encrypted: bool) -> Self {
+    pub fn new(entity: u8, action: u8, data: Vec<u8>) -> Self {
         Self {
             entity,
             action,
-            encrypted,
             data
         }
     }
@@ -88,7 +86,6 @@ mod tests {
             Entity::Node as u8,
             Action::OnLine as u8,
             payload.clone(),
-            false
         );
 
         let bytes = Codec::encode(&cmd);

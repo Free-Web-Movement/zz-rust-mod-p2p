@@ -88,7 +88,7 @@ impl ConnectedServers {
                     cmd,
                     Entity::Node as u8,
                     Action::OnLine as u8,
-                    false,
+                    None,
                 )
                 .await
                 .expect("Error sending online command!")

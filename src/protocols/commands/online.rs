@@ -47,8 +47,11 @@ pub fn on_online(
 
         println!("received session_id: {:?}", online.session_id);
 
-        let ephemeral_public = match context
-            .paired_session_keys
+        let psk = context.paired_session_keys.clone();
+
+        let guard = &mut *psk.lock().await;
+
+        let ephemeral_public = match guard
             .establish_begins(
                 frame.body.address.as_bytes().to_vec(),
                 &online.ephemeral_public_key.to_vec(),
@@ -58,11 +61,17 @@ pub fn on_online(
             Ok(k) => match k {
                 Some(v) => v,
                 None => {
-                    return eprintln!("❌ Failed to establish session key: {:?}", online.session_id);
+                    return eprintln!(
+                        "❌ Failed to establish session key: {:?}",
+                        online.session_id
+                    );
                 }
             },
             Err(_) => {
-                return eprintln!("❌ Failed to establish session key: {:?}", online.session_id);
+                return eprintln!(
+                    "❌ Failed to establish session key: {:?}",
+                    online.session_id
+                );
             }
         };
 
@@ -91,8 +100,15 @@ pub fn on_online(
         let writer = get_writer(&client_type).await;
         let mut guard = writer.lock().await;
 
-
-        P2PFrame::send(&context.address, &mut *guard, &Some(ack), 
-        Entity::Node as u8, Action::OnLineAck as u8, false).await.expect("Error send online ack!");
+        P2PFrame::send(
+            &context.address,
+            &mut *guard,
+            &Some(ack),
+            Entity::Node as u8,
+            Action::OnLineAck as u8,
+            None,
+        )
+        .await
+        .expect("Error send online ack!");
     })
 }

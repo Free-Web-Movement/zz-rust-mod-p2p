@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
+use crate::protocols::client_type::{ClientType, get_writer, send_bytes};
+use crate::protocols::command::{Action, Entity, P2PCommand};
+use crate::protocols::frame::P2PFrame;
+use crate::{context::Context, protocols::frame::forward_frame};
 use aex::tcp::types::Codec;
 use aex::time::SystemTime;
-use crate::protocols::client_type::{ClientType, send_bytes};
-use crate::protocols::command::{ Action, P2PCommand, Entity };
-use crate::protocols::frame::P2PFrame;
-use crate::{ context::Context, protocols::frame::forward_frame };
 
-use bincode::{ Decode, Encode };
+use bincode::{Decode, Encode};
 
-use futures::future::{ BoxFuture, join_all };
-use serde::{ Deserialize, Serialize };
+use futures::future::{BoxFuture, join_all};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageCommand {
@@ -25,7 +25,7 @@ impl Codec for MessageCommand {}
 pub async fn send_text_message(
     receiver: String,
     context: Arc<Context>,
-    message: &str
+    message: &str,
 ) -> anyhow::Result<()> {
     // 构造消息
     let command = MessageCommand {
@@ -35,50 +35,74 @@ pub async fn send_text_message(
     };
 
     // 编码成 payload（明文）
-    let payload = Codec::encode(&command);
-    println!("created plaintext bytes: {:?}", payload);
+    // let payload = Codec::encode(&command);
+    // println!("created plaintext bytes: {:?}", payload);
 
     // 使用 session_key 加密
 
-    let encrypted: Vec<u8> =  context.paired_session_keys.encrypt(&receiver.as_bytes().to_vec(), &payload).await?;
+    // let encrypted: Vec<u8> =  context.paired_session_keys.encrypt(&receiver.as_bytes().to_vec(), &payload).await?;
 
+    // println!("created encrypted bytes: {:?}", encrypted);
 
-    println!("created encrypted bytes: {:?}", encrypted);
+    // let command = P2PCommand::new(
+    //     Entity::Message as u8,
+    //     Action::SendText as u8,
+    //     encrypted.clone(),
+    //     true
+    // );
+    // let cloned = command
 
-    let command = P2PCommand::new(
-        Entity::Message as u8,
-        Action::SendText as u8,
-        encrypted.clone(),
-        true
-    );
+    // let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
 
-    let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
+    // let bytes = Codec::encode(&frame);
 
-    let bytes = Codec::encode(&frame);
-
-    println!(
-        "Node is sending text message from {} to {}: {}",
-        context.address.to_string(),
-        receiver,
-        message
-    );
+    // println!(
+    //     "Node is sending text message from {} to {}: {}",
+    //     context.address.to_string(),
+    //     receiver,
+    //     message
+    // );
 
     // 1️⃣ 尝试本地发送
     let clients = context.clients.lock().await;
     let local_conns = clients.get_connections(&receiver, true);
 
-    println!("Found {} local connections for {}", local_conns.len(), receiver);
+    println!(
+        "Found {} local connections for {}",
+        local_conns.len(),
+        receiver
+    );
 
     if !local_conns.is_empty() {
-        let bytes = bytes.clone();
+        // let bytes = bytes.clone();
+        // let command = command.clone();
         // let receiver = receiver.clone();
         let futures: Vec<_> = local_conns
             .into_iter()
             .map(|tcp_arc| {
-                let bytes = bytes.clone();
+                // let bytes = bytes.clone();
+                let address = context.address.clone();
+                let command = command.clone();
+                let psk = context.paired_session_keys.clone();
                 // let receiver = receiver.clone();
                 println!("local tcp stream found.");
-                tokio::spawn(async move { send_bytes(&tcp_arc, &bytes).await })
+                tokio::spawn(async move {
+                    let writer = get_writer(&tcp_arc).await;
+                    let mut guard = writer.lock().await;
+
+                    P2PFrame::send(
+                        &address,
+                        &mut *guard,
+                        &Some(command.clone()),
+                        Entity::Message as u8,
+                        Action::SendText as u8,
+                        Some(psk),
+                    )
+                    .await
+                    .expect("Error Send Message!");
+
+                    // send_bytes(&tcp_arc, &bytes).await
+                })
             })
             .collect();
 
@@ -97,14 +121,33 @@ pub async fn send_text_message(
         let servers = servers.lock().await;
         if let Some(connected_servers) = &servers.connected_servers {
             // 使用 iter().chain() 合并两个列表
-            let all_servers = connected_servers.inner
+            let all_servers = connected_servers
+                .inner
                 .iter()
                 .chain(connected_servers.external.iter());
 
             let futures = all_servers.map(|server| {
-                let bytes = bytes.clone();
+                // let bytes = bytes.clone();
+                // let bytes = bytes.clone();
+                let address = context.address.clone();
+                let command = command.clone();
+                let psk = context.paired_session_keys.clone();
+                let client_type = server.client_type.clone();
+
                 async move {
-                    let _ = send_bytes(&server.client_type, &bytes).await;
+                    let writer = get_writer(&client_type).await;
+                    let mut guard = writer.lock().await;
+
+                    P2PFrame::send(
+                        &address,
+                        &mut *guard,
+                        &Some(command.clone()),
+                        Entity::Message as u8,
+                        Action::SendText as u8,
+                        Some(psk),
+                    )
+                    .await
+                    .expect("Error Send Message!");
                 }
             });
 
@@ -119,9 +162,8 @@ pub fn on_text_message(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    _client_type: Arc<ClientType>
-) -> BoxFuture<'static, ()> 
- {
+    _client_type: Arc<ClientType>,
+) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         let from = &frame.body.address;
 
@@ -131,15 +173,21 @@ pub fn on_text_message(
 
         // 1️⃣ 使用 session_key 解密
 
-                let plaintext: Vec<u8> = context.paired_session_keys.
-                decrypt(&from.as_bytes().to_vec(), &cmd.data).await.expect("Wrong encrypted data!");
+        let psk = context.paired_session_keys.clone();
+
+        let guard = &mut *psk.lock().await;
+
+            let plaintext: Vec<u8> = guard.decrypt(&from.as_bytes().to_vec(), &cmd.data)
+            .await
+            .expect("Wrong encrypted data!");
 
         println!("get plain text: {:?}", plaintext);
 
         // 2️⃣ bincode 解码
-        let (msg, _) = match
-            bincode::decode_from_slice::<MessageCommand, _>(&plaintext, bincode::config::standard())
-        {
+        let (msg, _) = match bincode::decode_from_slice::<MessageCommand, _>(
+            &plaintext,
+            bincode::config::standard(),
+        ) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
@@ -147,7 +195,10 @@ pub fn on_text_message(
             }
         };
 
-        println!("📨 {} → {} @ {}: {}", from, msg.receiver, msg.timestamp, msg.message);
+        println!(
+            "📨 {} → {} @ {}: {}",
+            from, msg.receiver, msg.timestamp, msg.message
+        );
 
         let receiver = msg.receiver.clone();
 
@@ -182,9 +233,8 @@ mod tests {
         };
 
         let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-        let (decoded, _) = bincode
-            ::decode_from_slice::<MessageCommand, _>(&encoded, config::standard())
-            .unwrap();
+        let (decoded, _) =
+            bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
 
         assert_eq!(cmd, decoded);
     }

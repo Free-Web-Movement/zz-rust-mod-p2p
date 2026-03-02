@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use aex::crypto::session_key_manager::PairedSessionKey;
 use serde_json::Value;
 
@@ -18,7 +20,7 @@ pub struct Context {
     pub global: Value,
     pub local: Value,
     pub servers: Mutex<Servers>,
-    pub paired_session_keys: PairedSessionKey,
+    pub paired_session_keys: Arc<Mutex<PairedSessionKey>>,
 }
 
 impl Context {
@@ -32,7 +34,7 @@ impl Context {
             global: Value::Object(serde_json::Map::new()),
             local: Value::Object(serde_json::Map::new()),
             servers: Mutex::new(servers),
-            paired_session_keys: PairedSessionKey::new(16)
+            paired_session_keys: Arc::new(Mutex::new(PairedSessionKey::new(16)))
         }
     }
 
