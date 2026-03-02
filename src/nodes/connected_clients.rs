@@ -17,13 +17,13 @@ impl ConnectedClients {
         }
     }
 
-    pub fn add_inner(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
-        self.inner.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
-    }
+    // pub fn add_inner(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
+    //     self.inner.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
+    // }
 
-    pub fn add_external(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
-        self.external.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
-    }
+    // pub fn add_external(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
+    //     self.external.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
+    // }
 
     pub async fn remove_client(&mut self, address: &str) {
         // 取出 inner + external 的所有连接

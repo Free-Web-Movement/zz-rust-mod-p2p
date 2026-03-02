@@ -9,9 +9,8 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::context::Context;
-use crate::protocols::client_type::send_bytes;
 use crate::protocols::command::P2PCommand;
+use crate::{context::Context, protocols::client_type::get_writer};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
@@ -201,6 +200,12 @@ impl P2PFrame {
         }
         Ok(())
     }
+
+    pub async fn send_bytes(writer: &mut OwnedWriteHalf, bytes: &[u8]) {
+        if let Err(e) = writer.write_all(&bytes).await {
+            eprintln!("Failed to send TCP bytes: {:?}", e);
+        }
+    }
 }
 
 pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Context>) {
@@ -222,7 +227,9 @@ pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Cont
 
             for ct in conns {
                 // ⚠️ 只发 bytes，不传 Frame
-                send_bytes(&ct, &bytes).await;
+                let writer = get_writer(&ct).await;
+                let guard = &mut *writer.lock().await;
+                P2PFrame::send_bytes(guard, &bytes).await;
             }
 
             // 🚨 非常重要：找到就必须 return
@@ -240,7 +247,10 @@ pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Cont
 
         for server in all {
             // ⚠️ server.client_type 本质也是一条连接
-            send_bytes(&server.client_type, &bytes).await;
+
+            let writer = get_writer(&server.client_type).await;
+            let guard = &mut *writer.lock().await;
+            P2PFrame::send_bytes(guard, &bytes).await;
         }
     }
 }

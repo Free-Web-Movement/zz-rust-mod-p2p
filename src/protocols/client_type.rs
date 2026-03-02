@@ -119,30 +119,30 @@ pub fn to_client_type(stream: TcpStream) -> ClientType {
     tcp
 }
 
-pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
-    match client_type {
-        crate::protocols::client_type::ClientType::UDP { socket, peer } => {
-            println!("UDP is sending {} bytes to {:?}", bytes.len(), peer);
-            if let Err(e) = socket.send_to(bytes, peer).await {
-                eprintln!("Failed to send UDP bytes: {:?}", e);
-            }
-        }
-        | crate::protocols::client_type::ClientType::TCP(stream_pair)
-        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
-        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
-            let mut writer = stream_pair.writer.lock().await;
-            println!("\nsend tcp {} bytes: {:?}\n", bytes.len(), bytes);
+// pub async fn send_bytes(client_type: &ClientType, bytes: &[u8]) {
+//     match client_type {
+//         crate::protocols::client_type::ClientType::UDP { socket, peer } => {
+//             println!("UDP is sending {} bytes to {:?}", bytes.len(), peer);
+//             if let Err(e) = socket.send_to(bytes, peer).await {
+//                 eprintln!("Failed to send UDP bytes: {:?}", e);
+//             }
+//         }
+//         | crate::protocols::client_type::ClientType::TCP(stream_pair)
+//         | crate::protocols::client_type::ClientType::HTTP(stream_pair)
+//         | crate::protocols::client_type::ClientType::WS(stream_pair) => {
+//             let mut writer = stream_pair.writer.lock().await;
+//             println!("\nsend tcp {} bytes: {:?}\n", bytes.len(), bytes);
 
-            let len = bytes.len() as u32;
-            if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
-                eprintln!("Failed to send TCP bytes: {:?}", e);
-            }
-            if let Err(e) = writer.write_all(&bytes).await {
-                eprintln!("Failed to send TCP bytes: {:?}", e);
-            }
-        }
-    }
-}
+//             let len = bytes.len() as u32;
+//             if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
+//                 eprintln!("Failed to send TCP bytes: {:?}", e);
+//             }
+//             if let Err(e) = writer.write_all(&bytes).await {
+//                 eprintln!("Failed to send TCP bytes: {:?}", e);
+//             }
+//         }
+//     }
+// }
 
 pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
     match client_type {

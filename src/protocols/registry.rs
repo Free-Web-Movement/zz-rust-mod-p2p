@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
 
 use crate::{
     context::Context,
     protocols::{
-        client_type::ClientType,
+        client_type::{ClientType, get_writer},
         command::{ Action, CommandCallback, Entity },
         commands::{
             ack::on_online_ack,
@@ -44,7 +44,8 @@ impl CommandHandlerRegistry {
         if let Some(handler) = map.get(&(entity, action)) {
             // 调用 handler
             println!("inside hanlder!");
-            handler(cmd, frame, ctx, client).await;
+            let writer: Arc<Mutex<OwnedWriteHalf>> = get_writer(&client).await;
+            handler(cmd, frame, ctx, writer).await;
         } else {
             tracing::info!("⚠️ Unsupported command: entity={:?}, action={:?}", entity, action);
         }

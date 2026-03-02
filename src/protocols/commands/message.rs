@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::protocols::client_type::{ClientType, get_writer, send_bytes};
+use crate::protocols::client_type::get_writer;
 use crate::protocols::command::{Action, Entity, P2PCommand};
 use crate::protocols::frame::P2PFrame;
 use crate::{context::Context, protocols::frame::forward_frame};
@@ -11,6 +11,8 @@ use bincode::{Decode, Encode};
 
 use futures::future::{BoxFuture, join_all};
 use serde::{Deserialize, Serialize};
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageCommand {
@@ -27,41 +29,11 @@ pub async fn send_text_message(
     context: Arc<Context>,
     message: &str,
 ) -> anyhow::Result<()> {
-    // 构造消息
     let command = MessageCommand {
         receiver: receiver.clone(),
         timestamp: SystemTime::timestamp(),
         message: message.to_string(),
     };
-
-    // 编码成 payload（明文）
-    // let payload = Codec::encode(&command);
-    // println!("created plaintext bytes: {:?}", payload);
-
-    // 使用 session_key 加密
-
-    // let encrypted: Vec<u8> =  context.paired_session_keys.encrypt(&receiver.as_bytes().to_vec(), &payload).await?;
-
-    // println!("created encrypted bytes: {:?}", encrypted);
-
-    // let command = P2PCommand::new(
-    //     Entity::Message as u8,
-    //     Action::SendText as u8,
-    //     encrypted.clone(),
-    //     true
-    // );
-    // let cloned = command
-
-    // let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
-
-    // let bytes = Codec::encode(&frame);
-
-    // println!(
-    //     "Node is sending text message from {} to {}: {}",
-    //     context.address.to_string(),
-    //     receiver,
-    //     message
-    // );
 
     // 1️⃣ 尝试本地发送
     let clients = context.clients.lock().await;
@@ -74,17 +46,12 @@ pub async fn send_text_message(
     );
 
     if !local_conns.is_empty() {
-        // let bytes = bytes.clone();
-        // let command = command.clone();
-        // let receiver = receiver.clone();
         let futures: Vec<_> = local_conns
             .into_iter()
             .map(|tcp_arc| {
-                // let bytes = bytes.clone();
                 let address = context.address.clone();
                 let command = command.clone();
                 let psk = context.paired_session_keys.clone();
-                // let receiver = receiver.clone();
                 println!("local tcp stream found.");
                 tokio::spawn(async move {
                     let writer = get_writer(&tcp_arc).await;
@@ -162,7 +129,7 @@ pub fn on_text_message(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    _client_type: Arc<ClientType>,
+    _writer: Arc<Mutex<OwnedWriteHalf>>,
 ) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         let from = &frame.body.address;
@@ -177,7 +144,8 @@ pub fn on_text_message(
 
         let guard = &mut *psk.lock().await;
 
-            let plaintext: Vec<u8> = guard.decrypt(&from.as_bytes().to_vec(), &cmd.data)
+        let plaintext: Vec<u8> = guard
+            .decrypt(&from.as_bytes().to_vec(), &cmd.data)
             .await
             .expect("Wrong encrypted data!");
 

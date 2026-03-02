@@ -4,10 +4,10 @@ use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::sync::Mutex;
 
 use crate::context::Context;
-use crate::nodes::servers::Servers;
-use crate::protocols::client_type::{ClientType, get_writer};
 use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
@@ -27,7 +27,7 @@ pub fn on_online(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    client_type: Arc<ClientType>,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
 ) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         println!(
@@ -86,18 +86,18 @@ pub fn on_online(
         println!("send ack: {:?}", Codec::encode(&ack));
 
         // ===== 4️⃣ clients 登记 =====
-        let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
-            (eps, flag) => (eps, flag == 0),
-        };
-        let addr = frame.body.address.clone();
-        let mut clients = context.clients.lock().await;
-        if is_inner {
-            clients.add_inner(&addr, (*client_type).clone(), endpoints);
-        } else {
-            clients.add_external(&addr, (*client_type).clone(), endpoints);
-        }
+        // let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
+        //     (eps, flag) => (eps, flag == 0),
+        // };
+        // let addr = frame.body.address.clone();
+        // let mut clients = context.clients.lock().await;
+        // if is_inner {
+        //     clients.add_inner(&addr, (*client_type).clone(), endpoints);
+        // } else {
+        //     clients.add_external(&addr, (*client_type).clone(), endpoints);
+        // }
 
-        let writer = get_writer(&client_type).await;
+        // let writer = get_writer(&client_type).await;
         let mut guard = writer.lock().await;
 
         P2PFrame::send(

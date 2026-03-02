@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
 use aex::tcp::types::Codec;
-use anyhow::Result;
 use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
+use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
 
 use crate::{
     context::Context,
-    protocols::{
-        client_type::{ClientType, send_bytes},
-        command::{Action, Entity, P2PCommand},
-        frame::P2PFrame,
-    },
+    protocols::{ command::P2PCommand, frame::P2PFrame},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -24,28 +20,11 @@ pub struct OnlineAckCommand {
 
 impl Codec for OnlineAckCommand {}
 
-// pub async fn send_online_ack(
-//     context: Arc<Context>,
-//     client_type: &ClientType,
-//     ack: OnlineAckCommand // 传入已经构造好的 OnlineAckCommand
-// ) -> Result<()> {
-//     let command = P2PCommand::new(Entity::Node as u8, Action::OnLineAck as u8, Codec::encode(&ack));
-
-//     let frame = P2PFrame::build(&context.address, command, 1).await.unwrap();
-
-//     // 2️⃣ 转成字节发送
-//     let bytes = Codec::encode(&frame);
-
-//     send_bytes(client_type, &bytes).await;
-
-//     Ok(())
-// }
-
 pub fn on_online_ack(
     cmd: P2PCommand,
     frame: P2PFrame,
     context: Arc<Context>,
-    _client_type: Arc<ClientType>,
+    _writer: Arc<Mutex<OwnedWriteHalf>>,
 ) -> BoxFuture<'static, ()> {
     Box::pin(async move {
         println!(

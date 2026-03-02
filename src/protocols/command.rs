@@ -4,9 +4,10 @@ use aex::tcp::types::{Codec, Command};
 use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::sync::Mutex;
 
 use crate::context::Context;
-use crate::protocols::client_type::{ClientType};
 use crate::protocols::frame::P2PFrame;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
@@ -43,7 +44,7 @@ pub enum Action {
 }
 
 pub type CommandCallback =
-    fn(P2PCommand, P2PFrame, Arc<Context>, Arc<ClientType>) -> BoxFuture<'static, ()>;
+    fn(P2PCommand, P2PFrame, Arc<Context>, Arc<Mutex<OwnedWriteHalf>> ) -> BoxFuture<'static, ()>;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Encode, Decode, Debug)]
 pub struct P2PCommand {
