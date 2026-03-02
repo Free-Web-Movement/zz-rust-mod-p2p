@@ -6,7 +6,6 @@ use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
 use crate::{
     context::Context,
     protocols::{
-        client_type::{ClientType, get_writer},
         command::{ Action, CommandCallback, Entity },
         commands::{
             ack::on_online_ack,
@@ -32,7 +31,7 @@ impl CommandHandlerRegistry {
     }
 
     /// 处理 Frame
-    pub async fn handle(&self, frame: P2PFrame, ctx: Arc<Context>, client: Arc<ClientType>) {
+    pub async fn handle(&self, frame: P2PFrame, ctx: Arc<Context>, writer: Arc<Mutex<OwnedWriteHalf>>) {
         println!("inside registry handling!");
         let cmd = frame.body.command_from_data().unwrap();
         let entity = cmd.entity;
@@ -44,7 +43,7 @@ impl CommandHandlerRegistry {
         if let Some(handler) = map.get(&(entity, action)) {
             // 调用 handler
             println!("inside hanlder!");
-            let writer: Arc<Mutex<OwnedWriteHalf>> = get_writer(&client).await;
+            // let writer: Arc<Mutex<OwnedWriteHalf>> = get_writer(&client).await;
             handler(cmd, frame, ctx, writer).await;
         } else {
             tracing::info!("⚠️ Unsupported command: entity={:?}, action={:?}", entity, action);
@@ -70,8 +69,8 @@ impl CommandHandlerRegistry {
         map.insert((entity, action), Arc::new(handler));
     }
 
-    pub async fn on(frame: P2PFrame, ctx: Arc<Context>, client: Arc<ClientType>) {
-        command_handler_registry.handle(frame, ctx, client).await;
+    pub async fn on(frame: P2PFrame, ctx: Arc<Context>, writer: Arc<Mutex<OwnedWriteHalf>>) {
+        command_handler_registry.handle(frame, ctx, writer).await;
     }
     pub async fn clear(&self) {
         let mut map = self.handlers.lock().await;

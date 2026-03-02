@@ -54,12 +54,13 @@ pub async fn send_text_message(
                 let psk = context.paired_session_keys.clone();
                 println!("local tcp stream found.");
                 tokio::spawn(async move {
-                    let writer = get_writer(&tcp_arc).await;
-                    let mut guard = writer.lock().await;
+                    let (_, writer) = tcp_arc;
+
+                    let mut writer = &mut *writer.lock().await;
 
                     P2PFrame::send(
                         &address,
-                        &mut *guard,
+                        &mut writer,
                         &Some(command.clone()),
                         Entity::Message as u8,
                         Action::SendText as u8,

@@ -2,7 +2,7 @@ use std::{ net::SocketAddr, sync::Arc };
 
 use aex:: tcp::types::Codec ;
 use tokio::{
-    io::{ AsyncReadExt, AsyncWriteExt },
+    io:: AsyncReadExt ,
     net::{ TcpStream, UdpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf} },
     sync::Mutex,
 };
@@ -35,24 +35,24 @@ pub enum ClientType {
 }
 
 impl StreamPair {
-    pub async fn close(&self) {
-        // 先关闭写端（发送 FIN）
-        {
-            let mut writer = self.writer.lock().await;
-            let _ = writer.shutdown().await;
-        }
+    // pub async fn close(&self) {
+    //     // 先关闭写端（发送 FIN）
+    //     {
+    //         let mut writer = self.writer.lock().await;
+    //         let _ = writer.shutdown().await;
+    //     }
 
-        // 再关闭读端（drop）
-        {
-            let reader = self.reader.lock().await;
-            drop(reader);
-        }
-    }
+    //     // 再关闭读端（drop）
+    //     {
+    //         let reader = self.reader.lock().await;
+    //         drop(reader);
+    //     }
+    // }
 
-    pub async fn send(&self, bytes: &[u8]) {
-        let mut writer = self.writer.lock().await;
-        let _ = writer.write_all(&bytes).await;
-    }
+    // pub async fn send(&self, bytes: &[u8]) {
+    //     let mut writer = self.writer.lock().await;
+    //     let _ = writer.write_all(&bytes).await;
+    // }
 
     pub async fn loop_read(
         &self,
@@ -98,14 +98,14 @@ pub async fn loop_reading(client_type: &ClientType, context: &Arc<Context>, addr
         }
     }
 }
-pub async fn close_client_type(client_type: &ClientType) {
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => todo!(),
-        ClientType::TCP(sp) | ClientType::HTTP(sp) | ClientType::WS(sp) => {
-            sp.close().await;
-        }
-    }
-}
+// pub async fn close_client_type(client_type: &ClientType) {
+//     match client_type {
+//         ClientType::UDP { socket: _, peer: _ } => todo!(),
+//         ClientType::TCP(sp) | ClientType::HTTP(sp) | ClientType::WS(sp) => {
+//             sp.close().await;
+//         }
+//     }
+// }
 pub fn to_client_type(stream: TcpStream) -> ClientType {
     let (reader, writer) = stream.into_split();
     let reader = Arc::new(Mutex::new(reader));
@@ -204,18 +204,6 @@ pub async fn on_tcp_data(
     println!("TCP connection closed {:?}", addr);
 }
 
-// pub async fn is_http_connection(client_type: &ClientType) -> anyhow::Result<bool> {
-//     match client_type {
-//         ClientType::UDP { socket: _, peer: _ } => Ok(false),
-//         | ClientType::TCP(stream_pair)
-//         | ClientType::HTTP(stream_pair)
-//         | ClientType::WS(stream_pair) => {
-//             let reader = stream_pair.reader.clone();
-//             let mut reader = reader.lock().await;
-//             HttpMethod::is_http_connection(&mut reader).await
-//         }
-//     }
-// }
 
 pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::Result<()> {
     context.token.cancel();
@@ -295,7 +283,8 @@ pub async fn read_one_tcp_frame(
 
     // ---------- 3. Frame 处理 ----------
     let frame: P2PFrame = Codec::decode(&msg_buf).unwrap();
-    CommandHandlerRegistry::on(frame, context, Arc::new(client_type.clone())).await;
 
+    let writer = get_writer(client_type).await;
+    CommandHandlerRegistry::on(frame, context, writer).await;
     Ok(())
 }

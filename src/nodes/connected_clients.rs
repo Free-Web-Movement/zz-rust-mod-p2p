@@ -1,12 +1,27 @@
-use std::{ collections::HashMap };
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use crate::protocols::client_type::{ ClientType, close_client_type };
+use tokio::io::AsyncWriteExt;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ConnectedClients {
-    pub inner: HashMap<String, Vec<(ClientType, Vec<SocketAddr>)>>,
-    pub external: HashMap<String, Vec<(ClientType, Vec<SocketAddr>)>>,
+    pub inner: HashMap<
+        String,
+        Vec<(
+            (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+            Vec<SocketAddr>,
+        )>,
+    >,
+    pub external: HashMap<
+        String,
+        Vec<(
+            (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+            Vec<SocketAddr>,
+        )>,
+    >,
 }
 
 impl ConnectedClients {
@@ -24,6 +39,21 @@ impl ConnectedClients {
     // pub fn add_external(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
     //     self.external.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
     // }
+
+    pub async fn close(data: (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>)) {
+        let (reader, writer) = data;
+        // 先关闭写端（发送 FIN）
+        {
+            let mut writer = writer.lock().await;
+            let _ = writer.shutdown().await;
+        }
+
+        // 再关闭读端（drop）
+        {
+            let reader = reader.lock().await;
+            drop(reader);
+        }
+    }
 
     pub async fn remove_client(&mut self, address: &str) {
         // 取出 inner + external 的所有连接
@@ -43,27 +73,31 @@ impl ConnectedClients {
 
         // 统一优雅关闭
         for tcp in streams {
-            close_client_type(&tcp).await;
+            Self::close(tcp).await;
         }
     }
 
     pub async fn close_all(&mut self) {
         for (_, list) in self.inner.drain() {
             for (tcp, _) in list {
-                close_client_type(&tcp).await;
+                Self::close(tcp).await;
             }
         }
 
         for (_, list) in self.external.drain() {
             for (tcp, _) in list {
-                close_client_type(&tcp).await;
+                Self::close(tcp).await;
             }
         }
     }
 
     /// 根据 address 查找对应的 TCP 连接
     /// 如果同时存在 inner 和 external，可以通过 `include_external` 控制是否包含 external
-    pub fn get_connections(&self, address: &String, include_external: bool) -> Vec<ClientType> {
+    pub fn get_connections(
+        &self,
+        address: &String,
+        include_external: bool,
+    ) -> Vec<(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>)> {
         let mut result = Vec::new();
 
         if let Some(list) = self.inner.get(address) {

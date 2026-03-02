@@ -227,7 +227,7 @@ pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Cont
 
             for ct in conns {
                 // ⚠️ 只发 bytes，不传 Frame
-                let writer = get_writer(&ct).await;
+                let (_, writer) = ct;
                 let guard = &mut *writer.lock().await;
                 P2PFrame::send_bytes(guard, &bytes).await;
             }

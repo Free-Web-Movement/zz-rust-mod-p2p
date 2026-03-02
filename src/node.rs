@@ -20,8 +20,8 @@ pub struct Node {
     pub address: Address, // Unique network address of the node
     pub ip: String, // Bound IP address of the node
     pub port: u16, // Bound port of the node
-    pub stun_port: u16, // STUN service port
-    pub trun_port: u16, // TURN service port
+    // pub stun_port: u16, // STUN service port
+    // pub trun_port: u16, // TURN service port
     pub context: Option<Arc<Context>>,
     pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     // pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
@@ -40,8 +40,8 @@ impl Node {
             address,
             ip: ip,
             port,
-            stun_port: port + 1,
-            trun_port: port + 2,
+            // stun_port: port + 1,
+            // trun_port: port + 2,
             tcp_handler: None,
             context: None,
             net_info: None,
