@@ -10,7 +10,7 @@ use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::protocols::command::P2PCommand;
-use crate::{context::Context, protocols::client_type::get_writer};
+use crate::{context::Context};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
@@ -248,7 +248,7 @@ pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Cont
         for server in all {
             // ⚠️ server.client_type 本质也是一条连接
 
-            let writer = get_writer(&server.client_type).await;
+            let (_, writer) = &server.client_type;
             let guard = &mut *writer.lock().await;
             P2PFrame::send_bytes(guard, &bytes).await;
         }

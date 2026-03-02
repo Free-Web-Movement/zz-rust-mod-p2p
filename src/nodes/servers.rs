@@ -17,7 +17,7 @@ use crate::{
         storage,
     },
     protocols::{
-        client_type::{get_writer, loop_reading, to_client_type},
+        client_type::{loop_reading, to_client_type},
         command::{Action, Entity},
         commands::{offline::OfflineCommand, online::OnlineCommand},
         frame::P2PFrame,
@@ -152,7 +152,7 @@ impl Servers {
             }
         }
 
-        let stream: crate::protocols::client_type::ClientType = tcp_clone.clone();
+        // let stream: crate::protocols::client_type::ClientType = tcp.clone();
 
         println!("out side notify_online");
 
@@ -161,10 +161,11 @@ impl Servers {
         // Clone the Arc<Context> so we can move it into the spawned task without borrowing self.
         let context_clone = Arc::clone(&context);
         let context = Arc::clone(&context);
+        let tcp = tcp_clone.clone();
         tokio::spawn(async move {
             // Move-owned `stream` and `context` are referenced inside the async block,
             // so no non-'static borrow from `self` escapes.
-            loop_reading(&stream, &context, addr).await;
+            loop_reading(&tcp, &context, addr).await;
         });
 
         // {
@@ -259,7 +260,7 @@ impl Servers {
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            let writer = get_writer(&server.client_type).await;
+            let (_, writer) = &server.client_type;
 
             let mut writer = writer.lock().await;
 
@@ -285,7 +286,7 @@ impl Servers {
         servers: &Vec<ConnectedServer>,
     ) {
         for server in servers {
-            let writer = get_writer(&server.client_type).await;
+            let (_, writer) = &server.client_type;
 
             let mut writer = writer.lock().await;
             P2PFrame::send::<OfflineCommand>(

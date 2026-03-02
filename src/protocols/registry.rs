@@ -43,7 +43,6 @@ impl CommandHandlerRegistry {
         if let Some(handler) = map.get(&(entity, action)) {
             // 调用 handler
             println!("inside hanlder!");
-            // let writer: Arc<Mutex<OwnedWriteHalf>> = get_writer(&client).await;
             handler(cmd, frame, ctx, writer).await;
         } else {
             tracing::info!("⚠️ Unsupported command: entity={:?}, action={:?}", entity, action);

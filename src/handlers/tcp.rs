@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::context::Context;
-use crate::protocols::client_type::{get_reader, on_data, read_http, to_client_type};
+use crate::protocols::client_type::{on_data, read_http, to_client_type};
 use crate::protocols::defines::{Listener};
 
 #[derive(Clone)]
@@ -68,10 +68,8 @@ async fn handle_connection(
 
     // ========= HTTP 探测 =========
     {
-        // let mut guard = stream.lock().await;
-
-        let guard = get_reader(&client_type).await;
-        let reader = &mut * guard.lock().await;
+        let (reader, _) = client_type.clone();
+        let reader = &mut * reader.lock().await;
 
         match HttpMethod::is_http_connection(reader).await {
             Ok(true) => {

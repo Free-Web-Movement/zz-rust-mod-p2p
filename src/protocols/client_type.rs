@@ -1,151 +1,84 @@
-use std::{ net::SocketAddr, sync::Arc };
+use std::{net::SocketAddr, sync::Arc};
 
-use aex:: tcp::types::Codec ;
+use aex::tcp::types::Codec;
 use tokio::{
-    io:: AsyncReadExt ,
-    net::{ TcpStream, UdpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf} },
+    io::AsyncReadExt,
+    net::{
+        TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
     sync::Mutex,
 };
 
-use anyhow::Result;
 use anyhow::Context as AnContext;
+use anyhow::Result;
 
 use crate::{
     context::Context,
     // handlers::ws::WebSocketHandler,
-    protocols::{ frame::P2PFrame, registry::CommandHandlerRegistry },
+    protocols::{frame::P2PFrame, registry::CommandHandlerRegistry},
 };
 
-/// 每个 TCP/HTTP/WS 连接，拆分成 reader/writer
-#[derive(Debug, Clone)]
-pub struct StreamPair {
-    pub reader: Arc<Mutex<tokio::net::tcp::OwnedReadHalf>>,
-    pub writer: Arc<Mutex<tokio::net::tcp::OwnedWriteHalf>>,
-}
+pub async fn loop_read(
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    context: &Arc<Context>,
+    addr: SocketAddr,
+) {
+    println!("inside tcp loop reading");
+    let context = context.clone();
+    let ct = client_type.clone();
 
-#[derive(Debug, Clone)]
-pub enum ClientType {
-    UDP {
-        socket: Arc<UdpSocket>,
-        peer: SocketAddr,
-    },
-    TCP(StreamPair),
-    HTTP(StreamPair),
-    WS(StreamPair),
-}
-
-impl StreamPair {
-    // pub async fn close(&self) {
-    //     // 先关闭写端（发送 FIN）
-    //     {
-    //         let mut writer = self.writer.lock().await;
-    //         let _ = writer.shutdown().await;
-    //     }
-
-    //     // 再关闭读端（drop）
-    //     {
-    //         let reader = self.reader.lock().await;
-    //         drop(reader);
-    //     }
-    // }
-
-    // pub async fn send(&self, bytes: &[u8]) {
-    //     let mut writer = self.writer.lock().await;
-    //     let _ = writer.write_all(&bytes).await;
-    // }
-
-    pub async fn loop_read(
-        &self,
-        client_type: &ClientType,
-        context: &Arc<Context>,
-        addr: SocketAddr
-    ) {
-        println!("inside tcp loop reading");
-
-        // let reader = self.reader.clone();
-        let stream_pair = self.clone();
-        let client_type = client_type.clone();
-        let context = context.clone();
-
-        tokio::spawn(async move {
-            loop {
-                if
-                    let Err(e) = read_one_tcp_frame(
-                        &stream_pair,
-                        context.clone(),
-                        &client_type.clone(),
-                        addr
-                    ).await
-                {
-                    eprintln!("TCP read loop exit {:?} - {:?}", addr, e);
-                    break;
-                }
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = read_one_tcp_frame(context.clone(), &ct.clone(), addr).await {
+                eprintln!("TCP read loop exit {:?} - {:?}", addr, e);
+                break;
             }
-
-            println!("TCP read loop closed {:?}", addr);
-        });
-    }
-}
-
-pub async fn loop_reading(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
-    println!("inside loop read!");
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => todo!(),
-        | ClientType::TCP(stream_pair)
-        | ClientType::HTTP(stream_pair)
-        | ClientType::WS(stream_pair) => {
-            stream_pair.loop_read(client_type, context, addr).await;
         }
-    }
+
+        println!("TCP read loop closed {:?}", addr);
+    });
 }
-// pub async fn close_client_type(client_type: &ClientType) {
-//     match client_type {
-//         ClientType::UDP { socket: _, peer: _ } => todo!(),
-//         ClientType::TCP(sp) | ClientType::HTTP(sp) | ClientType::WS(sp) => {
-//             sp.close().await;
-//         }
-//     }
-// }
-pub fn to_client_type(stream: TcpStream) -> ClientType {
+
+pub async fn loop_reading(
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    context: &Arc<Context>,
+    addr: SocketAddr,
+) {
+    println!("inside loop read!");
+
+    loop_read(client_type, context, addr).await;
+}
+
+pub fn to_client_type(
+    stream: TcpStream,
+) -> (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>) {
     let (reader, writer) = stream.into_split();
     let reader = Arc::new(Mutex::new(reader));
     let writer = Arc::new(Mutex::new(writer));
-
-    let sp = StreamPair {
-        reader: reader.clone(),
-        writer: writer.clone(),
-    };
-    let tcp = ClientType::TCP(sp);
-    tcp
+    (reader, writer)
 }
 
-pub async fn on_data(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => todo!(),
-        | ClientType::TCP(stream_pair)
-        | ClientType::HTTP(stream_pair)
-        | ClientType::WS(stream_pair) => {
-            on_tcp_data(client_type, stream_pair, context, addr).await;
-        }
-    }
+pub async fn on_data(
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    context: &Arc<Context>,
+    addr: SocketAddr,
+) {
+    on_tcp_data(client_type, context, addr).await;
 }
 
-pub async fn read_http(client_type: &ClientType, context: &Arc<Context>, addr: SocketAddr) {
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => todo!(),
-        | ClientType::TCP(stream_pair)
-        | ClientType::HTTP(stream_pair)
-        | ClientType::WS(stream_pair) => {
-            on_http_data(client_type, stream_pair, context, addr).await;
-        }
-    }
+pub async fn read_http(
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    context: &Arc<Context>,
+    addr: SocketAddr,
+) {
+    on_http_data(client_type, context, addr).await
 }
 
 pub async fn on_http_data(
-    _client_type: &ClientType,
-    stream_pair: &StreamPair,
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
     context: &Arc<Context>,
-    addr: SocketAddr
+    addr: SocketAddr,
 ) {
     let mut buf = vec![0u8; 64 * 1024];
     let token = context.clone().token.clone();
@@ -159,7 +92,8 @@ pub async fn on_http_data(
 
             res = async {
                 // 只在这里持锁
-                let mut reader = stream_pair.reader.lock().await;
+                let (reader, _) = client_type;
+                let mut reader = reader.lock().await;
                 reader.read(&mut buf).await
             } => {
                 match res {
@@ -175,10 +109,9 @@ pub async fn on_http_data(
 }
 
 pub async fn on_tcp_data(
-    client_type: &ClientType,
-    stream_pair: &StreamPair,
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
     context: &Arc<Context>,
-    addr: SocketAddr
+    addr: SocketAddr,
 ) {
     loop {
         tokio::select! {
@@ -188,7 +121,6 @@ pub async fn on_tcp_data(
             }
 
             res = read_one_tcp_frame(
-                stream_pair,
                 context.clone(),
                 client_type,
                 addr,
@@ -204,59 +136,29 @@ pub async fn on_tcp_data(
     println!("TCP connection closed {:?}", addr);
 }
 
-
-pub async fn stop(client_type: &ClientType, context: &Arc<Context>) -> anyhow::Result<()> {
+pub async fn stop(
+    _client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    context: &Arc<Context>,
+) -> anyhow::Result<()> {
     context.token.cancel();
-    match client_type {
-        ClientType::UDP { socket: _, peer: _ } => {}
-        | ClientType::TCP(_stream_pair)
-        | ClientType::HTTP(_stream_pair)
-        | ClientType::WS(_stream_pair) => {
-            let _ = TcpStream::connect(format!("{}:{}", context.ip, context.port)).await;
-        }
-    }
+    let _ = TcpStream::connect(format!("{}:{}", context.ip, context.port)).await;
     Ok(())
 }
 
-pub async fn get_writer(client_type: &ClientType) -> Arc<Mutex<OwnedWriteHalf>> {
-    match client_type {
-        crate::protocols::client_type::ClientType::UDP { socket: _, peer: _ } => {
-            panic!("Wrong protocal!")
-        }
-        | crate::protocols::client_type::ClientType::TCP(stream_pair)
-        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
-        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
-            stream_pair.writer.clone()
-        }
-    }
-}
-
-pub async fn get_reader(client_type: &ClientType) -> Arc<Mutex<OwnedReadHalf>> {
-    match client_type {
-        crate::protocols::client_type::ClientType::UDP { socket: _, peer: _ } => {
-            panic!("Wrong protocal!")
-        }
-        | crate::protocols::client_type::ClientType::TCP(stream_pair)
-        | crate::protocols::client_type::ClientType::HTTP(stream_pair)
-        | crate::protocols::client_type::ClientType::WS(stream_pair) => {
-            stream_pair.reader.clone()
-        }
-    }
-}
-
 pub async fn read_one_tcp_frame(
-    stream_pair: &StreamPair,
     context: Arc<Context>,
-    client_type: &ClientType,
-    addr: SocketAddr
+    client_type: &(Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
+    addr: SocketAddr,
 ) -> Result<()> {
     let mut len_buf = [0u8; 4];
 
     // ---------- 1. 读取长度 ----------
     {
-        let mut reader = stream_pair.reader.lock().await;
+        let (reader, _) = client_type.clone();
+        let mut reader = reader.lock().await;
         reader
-            .read_exact(&mut len_buf).await
+            .read_exact(&mut len_buf)
+            .await
             .with_context(|| format!("TCP read length error from {:?}", addr))?;
     }
 
@@ -272,9 +174,11 @@ pub async fn read_one_tcp_frame(
     // ---------- 2. 读取消息体 ----------
     let mut msg_buf = vec![0u8; msg_len];
     {
-        let mut reader = stream_pair.reader.lock().await;
+        let ( reader, _) = client_type.clone();
+        let mut reader = reader.lock().await;
         reader
-            .read_exact(&mut msg_buf).await
+            .read_exact(&mut msg_buf)
+            .await
             .with_context(|| format!("TCP read body error from {:?}", addr))?;
     }
 
@@ -284,7 +188,8 @@ pub async fn read_one_tcp_frame(
     // ---------- 3. Frame 处理 ----------
     let frame: P2PFrame = Codec::decode(&msg_buf).unwrap();
 
-    let writer = get_writer(client_type).await;
-    CommandHandlerRegistry::on(frame, context, writer).await;
+    // let writer = get_writer(client_type).await;
+    let (_, writer) = client_type;
+    CommandHandlerRegistry::on(frame, context, writer.clone()).await;
     Ok(())
 }

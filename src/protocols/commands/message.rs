@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::protocols::client_type::get_writer;
 use crate::protocols::command::{Action, Entity, P2PCommand};
 use crate::protocols::frame::P2PFrame;
 use crate::{context::Context, protocols::frame::forward_frame};
@@ -103,7 +102,7 @@ pub async fn send_text_message(
                 let client_type = server.client_type.clone();
 
                 async move {
-                    let writer = get_writer(&client_type).await;
+                    let (_, writer) = &client_type;
                     let mut guard = writer.lock().await;
 
                     P2PFrame::send(

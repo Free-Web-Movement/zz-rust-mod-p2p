@@ -1,10 +1,13 @@
 use futures::{StreamExt, stream};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::Mutex;
 use tokio::{net::TcpStream, time::timeout};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::{ClientType, get_writer, to_client_type};
+use crate::protocols::client_type::{to_client_type};
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::online::OnlineCommand;
 use crate::protocols::frame::P2PFrame;
@@ -14,7 +17,7 @@ use crate::protocols::frame::P2PFrame;
 #[derive(Clone)]
 pub struct ConnectedServer {
     pub record: NodeRecord,
-    pub client_type: ClientType,
+    pub client_type: (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>),
 }
 
 /// 已连接服务器集合（区分 inner / external）
@@ -77,9 +80,8 @@ impl ConnectedServers {
         };
 
         let futures = all.map(|server| {
-            // let bytes = data.clone();
             async move {
-                let writer = get_writer(&server.client_type).await;
+                let (_, writer) = &server.client_type;
                 let mut guard = writer.lock().await;
 
                 P2PFrame::send::<OnlineCommand>(
@@ -103,7 +105,10 @@ impl ConnectedServers {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use std::{collections::HashSet, net::{IpAddr, Ipv4Addr, SocketAddr}};
+    use std::{
+        collections::HashSet,
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+    };
     use tokio::net::TcpListener;
 
     fn make_record(port: u16) -> NodeRecord {

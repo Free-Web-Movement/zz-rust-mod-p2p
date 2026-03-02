@@ -32,13 +32,13 @@ impl ConnectedClients {
         }
     }
 
-    // pub fn add_inner(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
-    //     self.inner.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
-    // }
+    pub fn add_inner(&mut self, address: &str, tcp: (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>), sockets: Vec<SocketAddr>) {
+        self.inner.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
+    }
 
-    // pub fn add_external(&mut self, address: &str, tcp: ClientType, sockets: Vec<SocketAddr>) {
-    //     self.external.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
-    // }
+    pub fn add_external(&mut self, address: &str, tcp: (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>), sockets: Vec<SocketAddr>) {
+        self.external.entry(address.to_string()).or_insert_with(Vec::new).push((tcp, sockets));
+    }
 
     pub async fn close(data: (Arc<Mutex<OwnedReadHalf>>, Arc<Mutex<OwnedWriteHalf>>)) {
         let (reader, writer) = data;
