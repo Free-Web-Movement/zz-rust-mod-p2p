@@ -9,8 +9,8 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
+use crate::context::Context;
 use crate::protocols::command::P2PCommand;
-use crate::{context::Context};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
@@ -159,6 +159,9 @@ impl Frame for P2PFrame {
 
     fn command(&self) -> Option<&Vec<u8>> {
         Some(self.body.data.as_ref())
+    }
+    fn is_flat(&self) -> bool {
+        false
     }
 }
 
