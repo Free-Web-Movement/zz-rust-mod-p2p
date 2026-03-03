@@ -1,4 +1,4 @@
-use aex::{connection::protocol::Protocol, tcp::types::Codec};
+use aex::{connection::protocol::Protocol, storage::Storage, tcp::types::Codec};
 use anyhow::Result;
 use std::{
     collections::HashSet,
@@ -14,7 +14,6 @@ use crate::{
         connected_servers::{ConnectedServer, ConnectedServers},
         net_info,
         record::NodeRecord,
-        storage,
     },
     protocols::{
         client_type::{loop_reading, to_client_type},
@@ -46,12 +45,11 @@ pub struct Servers {
 impl Servers {
     pub fn new(
         address: FreeWebMovementAddress,
-        storage: storage::Storeage,
+        storage: Storage,
         net_info: net_info::NetInfo,
     ) -> Self {
-        let mut inner = storage.read_inner_server_list().unwrap_or_default();
-        let mut external = storage.read_external_server_list().unwrap_or_default();
-
+        let mut inner = storage.read::<Vec<NodeRecord>>("inner".to_string()).unwrap().expect("Read inner server Wrong!");
+        let mut external = storage.read::<Vec<NodeRecord>>("external".to_string()).unwrap().expect("Read inner server Wrong!");
         // 当前节点的公网记录
         let mut protocols = HashSet::new();
         protocols.insert(Protocol::Tcp);
@@ -73,12 +71,11 @@ impl Servers {
         let purified_inner = Self::purify_servers(&host_inner_record, &inner);
 
         // let connected_servers = Some(ConnectedServers::new(purified_inner.clone(), purified_external.clone()).await);
+        
 
-        storage
-            .save_external_server_list(&external)
-            .unwrap_or_default();
-
-        storage.save_inner_server_list(&inner).unwrap_or_default();
+        storage.save::<Vec<NodeRecord>>("inner".to_string(), &inner).unwrap();
+        storage.save::<Vec<NodeRecord>>("external".to_string(), &external).unwrap();
+    
 
         Self {
             inner,

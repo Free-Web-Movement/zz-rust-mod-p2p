@@ -1,10 +1,11 @@
+use aex::storage::Storage;
 // src/main.rs
 use clap::Parser;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use zz_account::address::FreeWebMovementAddress as Address;
-use zz_p2p::{cli::Cli, node::Node, nodes::storage::Storeage};
+use zz_p2p::{cli::Cli, node::Node};
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]
@@ -26,15 +27,15 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let storage = Storeage::new(opt.data_dir.as_deref(), None, None, None);
+    let storage = Storage::new(opt.data_dir.as_deref());
 
-    let address = if let Some(addr) = storage.read_address()? {
+    let address = if let Some(addr) = storage.read::<Address>("address".to_string())? {
         println!("Using existing address: {}", &addr);
         addr
     } else {
         let addr = Address::random();
         println!("Generated new address: {}", &addr);
-        storage.save_address(&addr)?;
+        storage.save::<Address>("address".to_string(),&addr)?;
         addr
     };
 
