@@ -265,8 +265,8 @@ impl Servers {
                 &address,
                 &mut *writer,
                 cmd,
-                Entity::Node as u8,
-                Action::OnLine as u8,
+                Entity::Node,
+                Action::OnLine,
                 None,
             )
             .await
@@ -290,8 +290,8 @@ impl Servers {
                 &address,
                 &mut *writer,
                 cmd,
-                Entity::Node as u8,
-                Action::OffLine as u8,
+                Entity::Node,
+                Action::OffLine,
                 None,
             )
             .await

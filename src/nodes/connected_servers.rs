@@ -88,8 +88,8 @@ impl ConnectedServers {
                     address,
                     &mut *&mut guard,
                     cmd,
-                    Entity::Node as u8,
-                    Action::OnLine as u8,
+                    Entity::Node,
+                    Action::OnLine,
                     None,
                 )
                 .await

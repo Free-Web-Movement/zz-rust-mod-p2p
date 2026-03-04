@@ -1,6 +1,6 @@
 use crate::handlers::tcp::TCPHandler;
 use crate::nodes::net_info::NetInfo;
-use crate::protocols::registry::CommandHandlerRegistry;
+// use crate::protocols::registry::CommandHandlerRegistry;
 use crate::{context::Context, nodes::servers::Servers};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -66,7 +66,7 @@ impl Node {
         // self.start_time = SystemTime::timestamp();
         let ip = self.ip.clone();
         let port = self.port;
-        CommandHandlerRegistry::init_registry().await;
+        // CommandHandlerRegistry::init_registry().await;
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 

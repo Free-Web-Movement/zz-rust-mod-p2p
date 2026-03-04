@@ -61,8 +61,8 @@ pub async fn send_text_message(
                         &address,
                         &mut writer,
                         &Some(command.clone()),
-                        Entity::Message as u8,
-                        Action::SendText as u8,
+                        Entity::Message,
+                        Action::SendText,
                         Some(psk),
                     )
                     .await
@@ -109,8 +109,8 @@ pub async fn send_text_message(
                         &address,
                         &mut *guard,
                         &Some(command.clone()),
-                        Entity::Message as u8,
-                        Action::SendText as u8,
+                        Entity::Message,
+                        Action::SendText,
                         Some(psk),
                     )
                     .await

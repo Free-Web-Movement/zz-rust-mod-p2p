@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
+use aex::connection::global::{self, GlobalContext};
 use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::io::AsyncWrite;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 
 use crate::context::Context;
@@ -22,6 +24,21 @@ pub struct OnlineCommand {
 
 // ⚡ 实现 CommandCodec，移除 to_bytes/from_bytes
 impl Codec for OnlineCommand {}
+
+pub async fn online_handler(
+    global: Arc<GlobalContext>,
+    frame: &mut P2PFrame,
+    cmd: &mut P2PCommand,
+    writer: &mut (dyn AsyncWrite + Send + Unpin),
+) {
+    let online: OnlineCommand = match Codec::decode(&cmd.data) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("❌ decode OnlineCommand failed: {e}");
+            return;
+        }
+    };
+}
 
 pub fn on_online(
     cmd: P2PCommand,
@@ -104,8 +121,8 @@ pub fn on_online(
             &context.address,
             &mut *guard,
             &Some(ack),
-            Entity::Node as u8,
-            Action::OnLineAck as u8,
+            Entity::Node,
+            Action::OnLineAck,
             None,
         )
         .await

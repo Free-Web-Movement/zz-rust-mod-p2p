@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use crate::context::Context;
 use crate::protocols::frame::P2PFrame;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Entity {
     Node = 1,
     Message,
@@ -19,7 +19,7 @@ pub enum Entity {
     File,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Action {
     //Node Actions
     OnLine = 1,
@@ -48,26 +48,30 @@ pub type CommandCallback =
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Encode, Decode, Debug)]
 pub struct P2PCommand {
-    pub entity: u8,
-    pub action: u8,
+    pub entity: Entity,
+    pub action: Action,
     pub data: Vec<u8>,
 }
 
 impl Codec for P2PCommand {}
 
 impl P2PCommand {
-    pub fn new(entity: u8, action: u8, data: Vec<u8>) -> Self {
+    pub fn new(entity: Entity, action: Action, data: Vec<u8>) -> Self {
         Self {
             entity,
             action,
             data
         }
     }
+
+    pub fn to_u32(entity: Entity, action: Action) -> u32 {
+        ((action as u32) << 8) | (entity as u32)
+    }
 }
 
 impl Command for P2PCommand {
     fn id(&self) -> u32 {
-        ((self.action as u32) << 8) | (self.entity as u32)
+        P2PCommand::to_u32(self.entity, self.action)
     }
     
     fn data(&self) -> &Vec<u8> {
@@ -84,16 +88,16 @@ mod tests {
         let payload = vec![10, 20, 30];
 
         let cmd = P2PCommand::new(
-            Entity::Node as u8,
-            Action::OnLine as u8,
+            Entity::Node,
+            Action::OnLine,
             payload.clone(),
         );
 
         let bytes = Codec::encode(&cmd);
         let cmd: P2PCommand = Codec::decode(&bytes).unwrap();
 
-        assert_eq!(cmd.entity, Entity::Node as u8);
-        assert_eq!(cmd.action, Action::OnLine as u8);
+        assert_eq!(cmd.entity, Entity::Node);
+        assert_eq!(cmd.action, Action::OnLine);
         assert_eq!(cmd.data, payload);
     }
 }

@@ -16,7 +16,7 @@ use anyhow::Result;
 use crate::{
     context::Context,
     // handlers::ws::WebSocketHandler,
-    protocols::{frame::P2PFrame, registry::CommandHandlerRegistry},
+    protocols::{frame::P2PFrame},
 };
 
 pub async fn loop_read(
@@ -190,6 +190,6 @@ pub async fn read_one_tcp_frame(
 
     // let writer = get_writer(client_type).await;
     let (_, writer) = client_type;
-    CommandHandlerRegistry::on(frame, context, writer.clone()).await;
+    // CommandHandlerRegistry::on(frame, context, writer.clone()).await;
     Ok(())
 }

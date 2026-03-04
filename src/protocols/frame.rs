@@ -9,7 +9,7 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::context::Context;
+use crate::{context::Context, protocols::command::{Action, Entity}};
 use crate::protocols::command::P2PCommand;
 use bincode::{Decode, Encode};
 
@@ -170,8 +170,8 @@ impl P2PFrame {
         address: &FreeWebMovementAddress,
         writer: &mut OwnedWriteHalf,
         sub_command: &Option<C>,
-        entity: u8,
-        action: u8,
+        entity: Entity,
+        action: Action,
         paired_session_key: Option<Arc<Mutex<PairedSessionKey>>>,
     ) -> anyhow::Result<()> {
         let data = match sub_command {
@@ -303,7 +303,7 @@ mod tests {
     }
 
     fn make_command() -> P2PCommand {
-        P2PCommand::new(Entity::Node as u8, Action::OnLine as u8, vec![1, 2, 3, 4])
+        P2PCommand::new(Entity::Node, Action::OnLine, vec![1, 2, 3, 4])
     }
 
     #[test]
