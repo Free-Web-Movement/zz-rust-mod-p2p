@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
-use crate::protocols::command::{Action, Entity, P2PCommand};
+use crate::protocols::command::{ Action, Entity, P2PCommand };
 use crate::protocols::frame::P2PFrame;
-use crate::{context::Context, protocols::frame::forward_frame};
+use aex::connection::context::Context;
 use aex::tcp::types::Codec;
 use aex::time::SystemTime;
 
-use bincode::{Decode, Encode};
+use bincode::{ Decode, Encode };
 
-use futures::future::{BoxFuture, join_all};
-use serde::{Deserialize, Serialize};
-use tokio::net::tcp::OwnedWriteHalf;
+use serde::{ Deserialize, Serialize };
 use tokio::sync::Mutex;
+use zz_account::address::FreeWebMovementAddress;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageCommand {
@@ -25,8 +24,8 @@ impl Codec for MessageCommand {}
 // 本地Node向外发送
 pub async fn send_text_message(
     receiver: String,
-    context: Arc<Context>,
-    message: &str,
+    ctx: Arc<Mutex<Context>>,
+    message: &str
 ) -> anyhow::Result<()> {
     let command = MessageCommand {
         receiver: receiver.clone(),
@@ -34,155 +33,180 @@ pub async fn send_text_message(
         message: message.to_string(),
     };
 
-    // 1️⃣ 尝试本地发送
-    let clients = context.clients.lock().await;
-    let local_conns = clients.get_connections(&receiver, true);
+    let address = {
+        let guard = ctx.lock().await;
+        let opt_address: Option<FreeWebMovementAddress> = guard
+            .get().await
+            .expect("FreeWebMovementAddress must be set!");
+        opt_address.unwrap()
+    };
+    let psk = {
+        let guard = ctx.lock().await;
+        let global = guard.global.clone();
+        global.paired_session_keys.clone()
+    };
 
-    println!(
-        "Found {} local connections for {}",
-        local_conns.len(),
-        receiver
-    );
+    let manager = {
+        let guard = ctx.lock().await;
+        guard.global.manager.clone()
+    };
 
-    if !local_conns.is_empty() {
-        let futures: Vec<_> = local_conns
-            .into_iter()
-            .map(|tcp_arc| {
-                let address = context.address.clone();
-                let command = command.clone();
-                let psk = context.paired_session_keys.clone();
-                println!("local tcp stream found.");
-                tokio::spawn(async move {
-                    let (_, writer) = tcp_arc;
-
-                    let mut writer = &mut *writer.lock().await;
-
+    manager.forward(|entries| async move {
+        for entry in entries {
+            {
+                if let Some(writer_arc) = &entry.writer {
+                    let writer_lock = writer_arc.clone();
+                    let mut writer = writer_lock.lock().await;
                     P2PFrame::send(
                         &address,
-                        &mut writer,
+                        &mut *writer,
                         &Some(command.clone()),
                         Entity::Message,
                         Action::SendText,
-                        Some(psk),
-                    )
-                    .await
-                    .expect("Error Send Message!");
-
-                    // send_bytes(&tcp_arc, &bytes).await
-                })
-            })
-            .collect();
-
-        // 等待全部发送完成
-        for f in futures {
-            println!("sending!");
-            let _ = f.await;
-        }
-
-        return Ok(());
-    }
-
-    // 2️⃣ 本地没有 -> 向所有已连接服务器发送
-    {
-        let servers = &context.clone().servers;
-        let servers = servers.lock().await;
-        if let Some(connected_servers) = &servers.connected_servers {
-            // 使用 iter().chain() 合并两个列表
-            let all_servers = connected_servers
-                .inner
-                .iter()
-                .chain(connected_servers.external.iter());
-
-            let futures = all_servers.map(|server| {
-                let address = context.address.clone();
-                let command = command.clone();
-                let psk = context.paired_session_keys.clone();
-                let client_type = server.client_type.clone();
-
-                async move {
-                    let (_, writer) = &client_type;
-                    let mut guard = writer.lock().await;
-
-                    P2PFrame::send(
-                        &address,
-                        &mut *guard,
-                        &Some(command.clone()),
-                        Entity::Message,
-                        Action::SendText,
-                        Some(psk),
-                    )
-                    .await
-                    .expect("Error Send Message!");
+                        psk.clone()
+                    ).await.expect("Error Send Message!");
                 }
-            });
-
-            join_all(futures).await;
+            }
         }
-    }
+    }).await;
 
     Ok(())
 }
 
-pub fn on_text_message(
-    cmd: P2PCommand,
-    frame: P2PFrame,
-    context: Arc<Context>,
-    _writer: Arc<Mutex<OwnedWriteHalf>>,
-) -> BoxFuture<'static, ()> {
-    Box::pin(async move {
-        let from = &frame.body.address;
+// pub fn on_text_message(
+//     cmd: P2PCommand,
+//     frame: P2PFrame,
+//     context: Arc<Mutex<Context>>,
+//     _writer: Arc<Mutex<OwnedWriteHalf>>
+// ) -> BoxFuture<'static, ()> {
+//     Box::pin(async move {
+//         let from = &frame.body.address;
 
-        // let encrypted = &cmd.data;
+//         // let encrypted = &cmd.data;
 
-        println!("get encrypted bytes: {:?}", cmd.data);
+//         println!("get encrypted bytes: {:?}", cmd.data);
 
-        // 1️⃣ 使用 session_key 解密
+//         // 1️⃣ 使用 session_key 解密
 
-        let psk = context.paired_session_keys.clone();
+//         let psk = context.paired_session_keys.clone();
 
-        let guard = &mut *psk.lock().await;
+//         let guard = &mut *psk.lock().await;
 
-        let plaintext: Vec<u8> = guard
-            .decrypt(&from.as_bytes().to_vec(), &cmd.data)
-            .await
-            .expect("Wrong encrypted data!");
+//         let plaintext: Vec<u8> = guard
+//             .decrypt(&from.as_bytes().to_vec(), &cmd.data).await
+//             .expect("Wrong encrypted data!");
 
-        println!("get plain text: {:?}", plaintext);
+//         println!("get plain text: {:?}", plaintext);
 
-        // 2️⃣ bincode 解码
-        let (msg, _) = match bincode::decode_from_slice::<MessageCommand, _>(
-            &plaintext,
-            bincode::config::standard(),
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
-                return;
-            }
-        };
+//         // 2️⃣ bincode 解码
+//         let (msg, _) = match
+//             bincode::decode_from_slice::<MessageCommand, _>(&plaintext, bincode::config::standard())
+//         {
+//             Ok(v) => v,
+//             Err(e) => {
+//                 eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
+//                 return;
+//             }
+//         };
 
-        println!(
-            "📨 {} → {} @ {}: {}",
-            from, msg.receiver, msg.timestamp, msg.message
-        );
+//         println!("📨 {} → {} @ {}: {}", from, msg.receiver, msg.timestamp, msg.message);
 
-        let receiver = msg.receiver.clone();
+//         let receiver = msg.receiver.clone();
 
-        // ===== 1️⃣ 如果 receiver 是自己 =====
-        if receiver == context.address.to_string() {
-            // ✔️ 消费消息
-            // on_text_message(frame, context, client_type).await;
+//         // ===== 1️⃣ 如果 receiver 是自己 =====
+//         if receiver == context.address.to_string() {
+//             // ✔️ 消费消息
+//             // on_text_message(frame, context, client_type).await;
 
-            // on_receive_message();
-            println!("Message received!");
+//             // on_receive_message();
+//             println!("Message received!");
+//             return;
+//         }
+
+//         // 如果是作为服务器接收的消息，即地址不是节点地址时，
+//         // 要转发消息
+
+//         forward_frame(receiver, &frame, context).await;
+//     })
+// }
+
+pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
+    let from = &frame.body.address;
+
+    // let encrypted = &cmd.data;
+
+    println!("get encrypted bytes: {:?}", cmd.data);
+
+    // 1️⃣ 使用 session_key 解密
+
+    let psk = {
+        let guard = ctx.lock().await;
+        guard.global.paired_session_keys.clone().unwrap()
+    };
+
+    let plaintext: Vec<u8> = {
+        let guard = psk.lock().await;
+        guard.decrypt(&from.as_bytes().to_vec(), &cmd.data).await.expect("Wrong encrypted data!")
+    };
+
+    println!("get plain text: {:?}", plaintext);
+
+    let message: MessageCommand = match Codec::decode(&plaintext) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
             return;
         }
+    };
 
-        // 如果是作为服务器接收的消息，即地址不是节点地址时，
-        // 要转发消息
+    println!("📨 {} → {} @ {}: {}", from, message.receiver, message.timestamp, message.message);
 
-        forward_frame(receiver, &frame, context).await;
-    })
+    let receiver = message.receiver.clone();
+
+    // ===== 1️⃣ 如果 receiver 是自己 =====
+
+    let address: FreeWebMovementAddress = {
+        let guard = ctx.lock().await;
+        guard.get().await.unwrap()
+    };
+    if receiver == address.to_string() {
+        // ✔️ 消费消息
+        // on_text_message(frame, context, client_type).await;
+
+        // on_receive_message();
+        println!("Message received!");
+        return;
+    }
+
+    let manager = {
+        let guard = ctx.lock().await;
+        guard.global.manager.clone()
+    };
+
+
+    manager.forward(|entries| async move {
+      for entry in entries {
+            {
+                if let Some(writer_arc) = &entry.writer {
+                    let writer_lock = writer_arc.clone();
+                    let mut writer = writer_lock.lock().await;
+                    P2PFrame::send(
+                        &address,
+                        &mut *writer,
+                        &Some(message.clone()),
+                        Entity::Message,
+                        Action::SendText,
+                        Some(psk.clone())
+                    ).await.expect("Error Send Message!");
+                }
+            }
+      }
+    }).await
+
+    // 如果是作为服务器接收的消息，即地址不是节点地址时，
+    // 要转发消息
+
+    // forward_frame(receiver, &frame, context).await;
 }
 
 #[cfg(test)]
@@ -199,8 +223,9 @@ mod tests {
         };
 
         let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-        let (decoded, _) =
-            bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
+        let (decoded, _) = bincode
+            ::decode_from_slice::<MessageCommand, _>(&encoded, config::standard())
+            .unwrap();
 
         assert_eq!(cmd, decoded);
     }

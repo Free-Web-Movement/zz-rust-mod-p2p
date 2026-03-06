@@ -2,8 +2,8 @@ use aex::tcp::router::Router;
 use futures::FutureExt;
 
 use crate::protocols::{
-    command::{Action, Entity, P2PCommand},
-    commands::{ack::onlineack_handler, online::online_handler},
+    command::{ Action, Entity, P2PCommand },
+    commands::{ ack::onlineack_handler, message::message_handler, online::online_handler },
     frame::P2PFrame,
 };
 
@@ -14,10 +14,9 @@ pub fn register(router: &mut Router) {
             Box::pin(async move {
                 online_handler(ctx.clone(), frame, cmd).await;
                 Ok(true)
-            })
-            .boxed()
+            }).boxed()
         }),
-        vec![],
+        vec![]
     );
 
     router.on::<P2PFrame, P2PCommand>(
@@ -26,10 +25,9 @@ pub fn register(router: &mut Router) {
             Box::pin(async move {
                 online_handler(ctx.clone(), frame, cmd).await;
                 Ok(true)
-            })
-            .boxed()
+            }).boxed()
         }),
-        vec![],
+        vec![]
     );
 
     router.on::<P2PFrame, P2PCommand>(
@@ -38,21 +36,19 @@ pub fn register(router: &mut Router) {
             Box::pin(async move {
                 onlineack_handler(ctx.clone(), frame, cmd).await;
                 Ok(true)
-            })
-            .boxed()
+            }).boxed()
         }),
-        vec![],
+        vec![]
     );
 
-        router.on::<P2PFrame, P2PCommand>(
+    router.on::<P2PFrame, P2PCommand>(
         P2PCommand::to_u32(Entity::Message, Action::SendText),
         Box::new(|ctx, frame, cmd| {
             Box::pin(async move {
-                onlineack_handler(ctx.clone(), frame, cmd).await;
+                message_handler(ctx.clone(), frame, cmd).await;
                 Ok(true)
-            })
-            .boxed()
+            }).boxed()
         }),
-        vec![],
+        vec![]
     );
 }

@@ -54,14 +54,14 @@ impl Cli {
                     let recv_for_print = receiver.clone();
 
                     tokio::spawn(async move {
-                        let n = node.lock().await;
-                        if let Err(e) =
-                            send_text_message(receiver, n.context.clone().unwrap(), &msg).await
-                        {
-                            println!("Failed to send message: {:?}", e);
-                        } else {
-                            println!("Message sent to {}", recv_for_print);
-                        }
+                        // let n = node.lock().await;
+                        // if let Err(e) =
+                        //     // send_text_message(receiver, n.context.clone().unwrap(), &msg).await
+                        // {
+                        //     println!("Failed to send message: {:?}", e);
+                        // } else {
+                        //     println!("Message sent to {}", recv_for_print);
+                        // }
                     });
                 }
 
