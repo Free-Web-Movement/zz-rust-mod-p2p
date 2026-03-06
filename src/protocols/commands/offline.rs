@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
+use aex::connection::context::Context;
 use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
-use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::Mutex;
 
-use crate::context::Context;
+// use crate::context::Context;
 use crate::protocols::command::P2PCommand;
 use crate::protocols::frame::P2PFrame;
 
@@ -20,20 +19,19 @@ pub struct OfflineCommand {
 // ⚡ 实现 CommandCodec，移除 to_bytes/from_bytes
 impl Codec for OfflineCommand {}
 
-pub fn on_offline(
-    _: P2PCommand,
+pub async fn onffline_handler(
+    ctx: Arc<Mutex<Context>>,
     frame: P2PFrame,
-    context: Arc<Context>,
-    _writer: Arc<Mutex<OwnedWriteHalf>>,
-) -> BoxFuture<'static, ()> {
-    Box::pin(async move {
-        // 处理 Node Offline 命令的逻辑
-        println!(
-            "Node Offline Command Received: addr={}, nonce={}",
-            frame.body.address, frame.body.nonce
-        );
-        let addr = frame.body.address.clone();
-        let mut clients = context.clients.lock().await;
-        clients.remove_client(&addr).await
-    })
+    _cmd: P2PCommand,
+) {
+    // 处理 Node Offline 命令的逻辑
+    println!(
+        "Node Offline Command Received: addr={}, nonce={}",
+        frame.body.address, frame.body.nonce
+    );
+
+    // should remove address info for future handler
+
+    let guard = ctx.lock().await;
+    guard.global.manager.remove(guard.addr, true);
 }

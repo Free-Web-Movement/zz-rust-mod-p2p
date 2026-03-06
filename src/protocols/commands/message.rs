@@ -94,8 +94,6 @@ pub async fn send_text_message(
                 .chain(connected_servers.external.iter());
 
             let futures = all_servers.map(|server| {
-                // let bytes = bytes.clone();
-                // let bytes = bytes.clone();
                 let address = context.address.clone();
                 let command = command.clone();
                 let psk = context.paired_session_keys.clone();

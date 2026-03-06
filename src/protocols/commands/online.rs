@@ -23,9 +23,9 @@ pub struct OnlineCommand {
 impl Codec for OnlineCommand {}
 
 pub async fn online_handler(
-    ctx: &mut Context<'_>,
-    frame: &mut P2PFrame,
-    cmd: &mut P2PCommand,
+    ctx: Arc<Mutex<Context>>,
+    frame: P2PFrame,
+    cmd: P2PCommand,
     // writer: &mut (dyn AsyncWrite + Send + Unpin),
 ) {
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
@@ -43,7 +43,7 @@ pub async fn online_handler(
     // ===== 1️⃣ OnlineCommand 解码 =====
 
     println!("received session_id: {:?}", online.session_id);
-    // let mut ctx = ctx.lock().await;
+    let mut ctx = ctx.lock().await;
 
     if let Some(ref psk) = ctx.global.paired_session_keys {
         // 在这个作用域里，psk 是 &PairedSessionKey
