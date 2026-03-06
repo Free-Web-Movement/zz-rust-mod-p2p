@@ -7,7 +7,7 @@ use tokio::{net::TcpStream, time::timeout};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::{to_client_type};
+use crate::protocols::client_type::to_client_type;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::online::OnlineCommand;
 use crate::protocols::frame::P2PFrame;
@@ -79,22 +79,20 @@ impl ConnectedServers {
             self.external.iter()
         };
 
-        let futures = all.map(|server| {
-            async move {
-                let (_, writer) = &server.client_type;
-                let mut guard = writer.lock().await;
+        let futures = all.map(|server| async move {
+            let (_, writer) = &server.client_type;
+            let mut guard = writer.lock().await;
 
-                P2PFrame::send::<OnlineCommand>(
-                    address,
-                    &mut *&mut guard,
-                    cmd,
-                    Entity::Node,
-                    Action::OnLine,
-                    None,
-                )
-                .await
-                .expect("Error sending online command!")
-            }
+            P2PFrame::send::<OnlineCommand>(
+                address,
+                &mut *guard,
+                cmd,
+                Entity::Node,
+                Action::OnLine,
+                None,
+            )
+            .await
+            .expect("Error sending online command!")
         });
 
         futures::future::join_all(futures).await;

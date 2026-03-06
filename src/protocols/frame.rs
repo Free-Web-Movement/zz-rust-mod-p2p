@@ -5,7 +5,7 @@ use aex::{
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::net::tcp::OwnedWriteHalf;
+use tokio::{io::AsyncWrite, net::tcp::OwnedWriteHalf};
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
@@ -168,7 +168,7 @@ impl Frame for P2PFrame {
 impl P2PFrame {
     pub async fn send<C: Codec>(
         address: &FreeWebMovementAddress,
-        writer: &mut OwnedWriteHalf,
+        writer: &mut (dyn AsyncWrite + Send + Unpin),
         sub_command: &Option<C>,
         entity: Entity,
         action: Action,

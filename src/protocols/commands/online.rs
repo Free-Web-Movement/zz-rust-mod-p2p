@@ -1,15 +1,12 @@
 use std::sync::Arc;
 
-use aex::connection::global::{self, GlobalContext};
+use aex::connection::context::Context;
 use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
-use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWrite;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
+use zz_account::address::FreeWebMovementAddress;
 
-use crate::context::Context;
 use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
@@ -26,49 +23,32 @@ pub struct OnlineCommand {
 impl Codec for OnlineCommand {}
 
 pub async fn online_handler(
-    global: Arc<GlobalContext>,
+    ctx: &mut Context<'_>,
     frame: &mut P2PFrame,
     cmd: &mut P2PCommand,
-    writer: &mut (dyn AsyncWrite + Send + Unpin),
+    // writer: &mut (dyn AsyncWrite + Send + Unpin),
 ) {
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
         Err(e) => {
             eprintln!("❌ decode OnlineCommand failed: {e}");
-            return;
+            return ()
         }
     };
-}
+    println!(
+        "✅ Node Online: addr={}, nonce={}",
+        frame.body.address, frame.body.nonce
+    );
 
-pub fn on_online(
-    cmd: P2PCommand,
-    frame: P2PFrame,
-    context: Arc<Context>,
-    writer: Arc<Mutex<OwnedWriteHalf>>,
-) -> BoxFuture<'static, ()> {
-    Box::pin(async move {
-        println!(
-            "✅ Node Online: addr={}, nonce={}",
-            frame.body.address, frame.body.nonce
-        );
+    // ===== 1️⃣ OnlineCommand 解码 =====
 
-        // ===== 1️⃣ OnlineCommand 解码 =====
+    println!("received session_id: {:?}", online.session_id);
+    // let mut ctx = ctx.lock().await;
 
-        let online: OnlineCommand = match Codec::decode(&cmd.data) {
-            Ok(cmd) => cmd,
-            Err(e) => {
-                eprintln!("❌ decode OnlineCommand failed: {e}");
-                return;
-            }
-        };
-
-        println!("received session_id: {:?}", online.session_id);
-
-        let psk = context.paired_session_keys.clone();
-
-        let guard = &mut *psk.lock().await;
-
-        let ephemeral_public = match guard
+    if let Some(ref psk) = ctx.global.paired_session_keys {
+        // 在这个作用域里，psk 是 &PairedSessionKey
+        // 把它传给需要它的函数
+        let ephemeral_public = match psk
             .establish_begins(
                 frame.body.address.as_bytes().to_vec(),
                 &online.ephemeral_public_key.to_vec(),
@@ -78,54 +58,59 @@ pub fn on_online(
             Ok(k) => match k {
                 Some(v) => v,
                 None => {
-                    return eprintln!(
+                 eprintln!(
                         "❌ Failed to establish session key: {:?}",
                         online.session_id
                     );
+                    return  ();
                 }
             },
             Err(_) => {
-                return eprintln!(
+             eprintln!(
                     "❌ Failed to establish session key: {:?}",
                     online.session_id
                 );
+                return ();
             }
         };
-
-        // ===== 3️⃣ 构造 OnlineAckCommand =====
+        let address: FreeWebMovementAddress = ctx.get().await.expect("Expect Address be set!");
         let ack = OnlineAckCommand {
             session_id: online.session_id,
-            address: context.address.to_string(),
+            address: address.to_string(),
             ephemeral_public_key: ephemeral_public.to_bytes(),
         };
 
         println!("send ack session_id : {:?}", ack.session_id);
         println!("send ack: {:?}", Codec::encode(&ack));
+        // let writer = ctx.writer;
+        // ctx.global.manager.add(ctx.addr, writer, handle, true);
+        // 假设 ctx.writer 是 &mut Option<Box<dyn AsyncWrite...>>
+        if let Some(w) = ctx.writer.as_deref_mut() {
+            P2PFrame::send::<OnlineAckCommand>(
+                &address,
+                w, // 这里的 w 已经是 &mut dyn AsyncWrite 了
+                &Some(ack),
+                Entity::Node,
+                Action::OnLineAck,
+                None,
+            )
+            .await
+            .expect("Error send online ack!");
+        }
+        match ctx.writer.take() {
+            Some(writer) => {
+                ctx.global
+                    .manager
+                    .update(ctx.addr, true, Arc::new(Mutex::new(writer)));
+                return ();
+            }
+            None => {
+                return ();
+            },
+        }
+    }  else {
+        // 处理没有密钥的情况
+        return ();
+    }
 
-        // ===== 4️⃣ clients 登记 =====
-        // let (endpoints, is_inner) = match Servers::from_endpoints(online.endpoints) {
-        //     (eps, flag) => (eps, flag == 0),
-        // };
-        // let addr = frame.body.address.clone();
-        // let mut clients = context.clients.lock().await;
-        // if is_inner {
-        //     clients.add_inner(&addr, (*client_type).clone(), endpoints);
-        // } else {
-        //     clients.add_external(&addr, (*client_type).clone(), endpoints);
-        // }
-
-        // let writer = get_writer(&client_type).await;
-        let mut guard = writer.lock().await;
-
-        P2PFrame::send(
-            &context.address,
-            &mut *guard,
-            &Some(ack),
-            Entity::Node,
-            Action::OnLineAck,
-            None,
-        )
-        .await
-        .expect("Error send online ack!");
-    })
 }

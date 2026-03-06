@@ -90,25 +90,61 @@
 //     static ref command_handler_registry: CommandHandlerRegistry = CommandHandlerRegistry::new();
 // }
 
-use aex::tcp::router::Router;
+use std::sync::Arc;
+
+use aex::{connection::context::Context, tcp::router::Router};
 
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
     commands::online::online_handler,
     frame::P2PFrame,
 };
+use tokio::sync::Mutex;
 
 pub fn register(router: &mut Router) {
     router.on::<P2PFrame, P2PCommand, _, _>(
         P2PCommand::to_u32(Entity::Node, Action::OnLine),
-        |g, f, c, _r, mut w| {
-            let g = g.clone();
-            let mut f = f.clone();
-            let mut c = c.clone();
-            async move {
-                let _ = online_handler(g, &mut f, &mut c, w.as_mut()).await;
-                Ok(false)
-            }
-        },
+      |ctx_arc: Arc<Mutex<Context<'_>>>, f, c| {
+    // 1. 在同步层（异步块外）把所有需要的数据“解构”出来
+    // 这一步彻底切断了数据与 '1 生命周期的联系
+    let (mut r_owned, mut w_owned, global, addr, local) = {
+        let mut guard = ctx_arc.blocking_lock();
+        (
+            guard.reader.take(), // 提取 Box
+            guard.writer.take(), 
+            guard.global.clone(),
+            guard.addr,
+            guard.local.clone()
+        )
+    };
+
+    // 2. 将引用类型转为所有权类型
+    let mut f_owned = f.clone();
+    let mut c_owned = c.clone();
+
+    // ⚡ 这里的关键：我们将 ctx_arc 留在外面，不 move 进去
+    // 或者即使 move 进去，也不要在异步块里访问它
+    async move {
+        // 3. 在异步块内部重建临时 Context
+        // 这个 temp_ctx 借用的是 async 块拥有的 r_owned，所以是安全的
+        let mut temp_ctx = Context::new(
+            &mut r_owned,
+            &mut w_owned,
+            global,
+            addr,
+        );
+        temp_ctx.local = local;
+
+        // 4. 执行业务
+        let result = online_handler(&mut temp_ctx, &mut f_owned, &mut c_owned).await;
+
+        // 5. ⚡ 如果你必须归还 IO，不能直接用之前的 ctx_arc
+        // 你需要把结果和 IO 返回给外层，由外层负责塞回去
+        // 或者使用下面提到的“无生命周期 Context”重构
+        
+        result;
+        Ok(true)
+    }
+}
     );
 }
