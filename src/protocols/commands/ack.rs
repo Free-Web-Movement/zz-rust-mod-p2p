@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aex::{ connection::context::Context, tcp::types::Codec };
+use aex::{ connection::{context::Context, node::Node}, tcp::types::Codec };
 use bincode::{ Decode, Encode };
 use serde::{ Deserialize, Serialize };
 use tokio::sync::Mutex;
@@ -11,6 +11,7 @@ use crate::protocols::{ command::P2PCommand, frame::P2PFrame };
 pub struct OnlineAckCommand {
     pub session_id: Vec<u8>, // 临时 session id
     pub address: String, // ⚠️ 明确：String
+    pub node: Node,
     pub ephemeral_public_key: [u8; 32], // 对方 ephemeral 公钥
 }
 

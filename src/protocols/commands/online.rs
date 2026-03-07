@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use aex::connection::context::{ AexWriter, Context };
+use aex::connection::node::Node;
 use aex::tcp::types::Codec;
 use bincode::{ Decode, Encode };
 use serde::{ Deserialize, Serialize };
@@ -15,7 +16,7 @@ use crate::protocols::frame::P2PFrame;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct OnlineCommand {
     pub session_id: Vec<u8>, // 临时 session id
-    pub endpoints: Vec<u8>,
+    pub node: Node,
     pub ephemeral_public_key: [u8; 32],
 }
 
@@ -65,9 +66,20 @@ pub async fn online_handler(
         ctx.get().await.expect("Expect Address be set!")
     };
 
+    let local_node = {
+              let ctx = ctx.lock().await;
+        ctx.global.local_node.clone()
+    };
+
+    let node = {
+      let guard = local_node.write().await;
+      guard.clone()
+    };
+
     let ack = OnlineAckCommand {
         session_id: online.session_id,
         address: address.to_string(),
+        node,
         ephemeral_public_key: ephemeral_public.to_bytes(),
     };
 

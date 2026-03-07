@@ -1,15 +1,14 @@
-use aex::{
-    connection::context::Context,
-    storage::Storage,
-};
+use aex::{ connection::context::Context, storage::Storage };
 use anyhow::Result;
-use std::{net::SocketAddr, sync::Arc};
+use std::{ net::SocketAddr, sync::Arc };
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     consts::{
-        DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE, DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
+        DEFAULT_APP_DIR_ADDRESS_JSON_FILE,
+        DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE,
+        DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
     },
     nodes::record::NodeRegistry,
 };
@@ -22,12 +21,20 @@ pub struct Servers {
 }
 
 impl Servers {
-    pub fn new(address: FreeWebMovementAddress, storage: Storage) -> Self {
-        let inner =
-            NodeRegistry::load_from_storage(&storage, DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE);
+    pub fn new(storage: Storage) -> Self {
+        let address = match
+            storage.read::<FreeWebMovementAddress>(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string())
+        {
+            Ok(Some(set)) => set,
+            _ => FreeWebMovementAddress::random(),
+        };
+        let inner = NodeRegistry::load_from_storage(
+            &storage,
+            DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE
+        );
         let external = NodeRegistry::load_from_storage(
             &storage,
-            DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE,
+            DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE
         );
 
         Self {
@@ -41,7 +48,7 @@ impl Servers {
     pub async fn connect_to_node(
         &mut self,
         addr: SocketAddr,
-        _ctx: Arc<Mutex<Context>>,
+        _ctx: Arc<Mutex<Context>>
     ) -> Result<()> {
         println!("Connect to node: {}:{}", addr.ip(), addr.port());
         // 尝试 TCP 连接
