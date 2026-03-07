@@ -1,16 +1,17 @@
 use aex::{
-    server::{HTTPServer},
-    // storage::Storage,
-    tcp::router::Router,
+    connection::global::GlobalContext, server::HTTPServer, storage::Storage, tcp::router::Router,
 };
 // src/main.rs
 use clap::Parser;
 use std::{net::SocketAddr, sync::Arc};
-use zz_p2p::protocols::{command::P2PCommand, frame::P2PFrame};
+use tokio::sync::Mutex;
+use zz_p2p::{
+    cli::Cli, consts::DEFAULT_APP_DIR_ADDRESS_JSON_FILE, node::Node, protocols::{command::P2PCommand, frame::P2PFrame}
+};
 
 use aex::tcp::types::Command;
 
-// use zz_account::address::FreeWebMovementAddress as Address;
+use zz_account::address::FreeWebMovementAddress as Address;
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]
@@ -32,21 +33,35 @@ struct Opt {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    // let storage = Storage::new(opt.data_dir.as_deref());
+    let storage = Storage::new(opt.data_dir.as_deref());
 
-    // let address = if let Some(addr) = storage.read::<Address>("address".to_string())? {
-    //     println!("Using existing address: {}", &addr);
-    //     addr
-    // } else {
-    //     let addr = Address::random();
-    //     println!("Generated new address: {}", &addr);
-    //     storage.save::<Address>("address".to_string(), &addr)?;
-    //     addr
-    // };
+    let address = if let Some(addr) = storage
+        .read(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string())
+        .unwrap()
+    {
+        tracing::info!("Using existing address: {}", &addr);
+        addr
+    } else {
+        let addr = Address::random();
+        tracing::info!("Generated new address: {}", &addr);
+        storage.save("address".to_string(), &addr).unwrap();
+        addr
+    };
 
-    let socket_addr = format!("{}:{}", opt.ip.clone(), opt.port).parse::<SocketAddr>()?;
+    let addr = format!("{}:{}", opt.ip.clone(), opt.port)
+        .parse::<SocketAddr>()
+        .unwrap();
 
-    let server = HTTPServer::new(socket_addr);
+    let global = Arc::new(Mutex::new(GlobalContext::new(addr)));
+    let node = Arc::new(Mutex::new(Node::new(
+        opt.name.clone(),
+        address,
+        addr,
+        storage.clone(),
+        global.clone(),
+    )));
+
+    let server = HTTPServer::new(addr);
 
     let router = Router::new();
 
@@ -73,8 +88,8 @@ async fn main() -> anyhow::Result<()> {
 
     // println!("Node started at {}:{}", opt.ip, opt.port);
 
-    // let cli = Cli::new(node);
-    // cli.run().await?;
+    let cli = Cli::new(node);
+    cli.run().await?;
 
     Ok(())
 }
