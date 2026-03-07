@@ -1,7 +1,6 @@
 // use crate::handlers::tcp::TCPHandler;
-use crate::nodes::net_info::NetInfo;
+// use crate::nodes::net_info::NetInfo;
 // use crate::protocols::registry::CommandHandlerRegistry;
-use crate::{nodes::servers::Servers};
 use std::sync::Arc;
 use aex::connection::context::Context;
 use tokio::sync::Mutex;
@@ -15,7 +14,7 @@ use aex::storage::Storage;
 
 #[derive(Clone)]
 pub struct Node {
-    pub net_info: Option<NetInfo>,
+    // pub net_info: Option<NetInfo>,
     pub storage: Option<Storage>,
     // pub servers: Option<Servers>,
     pub name: String,     // User defined name for the node, no need to be unique
@@ -46,7 +45,7 @@ impl Node {
             // trun_port: port + 2,
             // tcp_handler: None,
             context: None,
-            net_info: None,
+            // net_info: None,
             storage: storage,
         }
     }
@@ -65,15 +64,15 @@ impl Node {
     // Use the parameterless `start` implementation below to start the node's handlers.
     pub async fn start(&mut self) {
         // self.start_time = SystemTime::timestamp();
-        let ip = self.ip.clone();
-        let port = self.port;
+        // let _ip = self.ip.clone();
+        // let port = self.port;
         // CommandHandlerRegistry::init_registry().await;
 
         // 节点全局共享的内容，所有持久化的信息都保存在context里面
 
-        self.net_info = Some(NetInfo::collect(port).unwrap());
-        let mut servers = self.init_storage_and_servers(port);
-        servers.connect().await;
+        // self.net_info = Some(NetInfo::collect(port).unwrap());
+        // let mut servers = self.init_storage_and_servers(port);
+        // servers.connect().await;
 
         // let context = Arc::new(Context::new(
         //     ip.clone(),
@@ -116,7 +115,7 @@ impl Node {
         // self.stop_time = SystemTime::timestamp();
     }
 
-    pub fn init_storage_and_servers(&mut self, _port: u16) -> Servers {
+    pub fn init_storage_and_servers(&mut self, _port: u16) {
         // 1️⃣ 初始化 storage
         if self.storage.is_none() {
             self.storage = Some(Storage::new(None));
@@ -124,15 +123,15 @@ impl Node {
         let storage = self.storage.as_ref().unwrap().clone();
 
         // 2️⃣ 初始化 Servers（内部完成 external list 的 merge + persist）
-        let servers = Servers::new(
-            self.address.clone(),
-            storage.clone(),
-            self.net_info.as_ref().expect("net_info missing").clone(),
-        );
+        // let servers = Servers::new(
+        //     self.address.clone(),
+        //     storage.clone(),
+        //     self.net_info.as_ref().expect("net_info missing").clone(),
+        // );
 
         // 3️⃣ 保存当前节点 address
         storage.save("address".to_string(), &self.address).unwrap();
-        servers
+        // servers
     }
 
     pub async fn notify_online(&self) {

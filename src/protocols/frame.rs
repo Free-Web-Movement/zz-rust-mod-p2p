@@ -237,7 +237,7 @@ pub async fn notify(frame: &P2PFrame, ctx: Arc<Mutex<Context>>) {
 
                         // 3. 现在你可以安全地解引用了
                         let guard = &mut *writer_guard;
-                        P2PFrame::send_bytes(guard, &bytes);
+                        P2PFrame::send_bytes(guard, &bytes).await
                     }
                 })
                 .await;

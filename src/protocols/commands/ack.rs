@@ -39,7 +39,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
     {
         let guard = psk.lock().await;
 
-        guard.establish_ends(
+        let _ = guard.establish_ends(
             ack.address.as_bytes().to_vec(),
             &ack.ephemeral_public_key.to_vec()
         ).await;
