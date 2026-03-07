@@ -5,7 +5,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::{node::Node, protocols::commands::message::send_text_message};
+use crate::{node::Node};
 
 
 
@@ -35,23 +35,23 @@ impl Cli {
 
             match command.as_str() {
                 "send" => {
-                    let receiver = match parts.next() {
-                        Some(a) => a,
-                        None => {
-                            println!("Usage: send <address> <message>");
-                            continue;
-                        }
-                    };
-                    let msg = match parts.next() {
-                        Some(m) => m,
-                        None => {
-                            println!("Usage: send <address> <message>");
-                            continue;
-                        }
-                    };
+                    // let receiver = match parts.next() {
+                    //     Some(a) => a,
+                    //     None => {
+                    //         println!("Usage: send <address> <message>");
+                    //         continue;
+                    //     }
+                    // };
+                    // let msg = match parts.next() {
+                    //     Some(m) => m,
+                    //     None => {
+                    //         println!("Usage: send <address> <message>");
+                    //         continue;
+                    //     }
+                    // };
 
-                    let node = self.node.clone();
-                    let recv_for_print = receiver.clone();
+                    // let node = self.node.clone();
+                    // let recv_for_print = receiver.clone();
 
                     tokio::spawn(async move {
                         // let n = node.lock().await;
@@ -66,61 +66,61 @@ impl Cli {
                 }
 
                 "connect" => {
-                    let ip = parts.next();
-                    let port_str = parts.next();
+                    // let ip = parts.next();
+                    // let port_str = parts.next();
 
-                    if let (Some(ip), Some(port_str)) = (ip, port_str) {
-                        let port: u16 = match port_str.parse() {
-                            Ok(p) => p,
-                            Err(_) => {
-                                println!("Invalid port: {}", port_str);
-                                continue;
-                            }
-                        };
+                    // if let (Some(ip), Some(port_str)) = (ip, port_str) {
+                        // let port: u16 = match port_str.parse() {
+                        //     Ok(p) => p,
+                        //     Err(_) => {
+                        //         println!("Invalid port: {}", port_str);
+                        //         continue;
+                        //     }
+                        // };
 
-                        let node = self.node.clone();
-                        tokio::spawn(async move {
-                            let n = node.lock().await;
-                            if let Some(context) = &n.context {
-                                let mut servers = context.servers.lock().await;
-                                match servers
-                                    .connect_to_node(ip.as_str(), port, context)
-                                    .await
-                                {
-                                    Ok(_) => println!("Connected to {}:{}", ip, port),
-                                    Err(e) => println!("Failed to connect: {:?}", e),
-                                }
-                            } else {
-                                println!("Servers not initialized");
-                            }
-                        });
-                    } else {
-                        println!("Usage: connect <ip> <port>");
-                    }
+                        // let node = self.node.clone();
+                        // tokio::spawn(async move {
+                        //     let n = node.lock().await;
+                        //     if let Some(context) = &n.context {
+                        //         let mut servers = context.servers.lock().await;
+                        //         match servers
+                        //             .connect_to_node(ip.as_str(), port, context)
+                        //             .await
+                        //         {
+                        //             Ok(_) => println!("Connected to {}:{}", ip, port),
+                        //             Err(e) => println!("Failed to connect: {:?}", e),
+                        //         }
+                        //     } else {
+                        //         println!("Servers not initialized");
+                        //     }
+                        // });
+                    // } else {
+                    //     println!("Usage: connect <ip> <port>");
+                    // }
                 }
 
                 "status" => {
                     let n = self.node.lock().await;
                     println!("Node address: {}", n.address);
 
-                    if let Some(context) = &n.context {
-                        let clients = context.clients.lock().await;
-                        println!("Connected clients:");
-                        for addr in clients.inner.keys() {
-                            println!(" - {}", addr);
-                        }
-                        for addr in clients.external.keys() {
-                            println!(" - {}", addr);
-                        }
+                    // if let Some(context) = &n.context {
+                    //     let clients = context.clients.lock().await;
+                    //     println!("Connected clients:");
+                    //     for addr in clients.inner.keys() {
+                    //         println!(" - {}", addr);
+                    //     }
+                    //     for addr in clients.external.keys() {
+                    //         println!(" - {}", addr);
+                    //     }
 
-                        let servers = context.servers.lock().await;
-                        println!("Connected servers:");
-                        if let Some(connected) = &servers.connected_servers {
-                            for s in connected.inner.iter().chain(connected.external.iter()) {
-                                println!(" - {}", s.record.endpoint);
-                            }
-                        }
-                    }
+                    //     let servers = context.servers.lock().await;
+                    //     println!("Connected servers:");
+                    //     if let Some(connected) = &servers.connected_servers {
+                    //         for s in connected.inner.iter().chain(connected.external.iter()) {
+                    //             println!(" - {}", s.record.endpoint);
+                    //         }
+                    //     }
+                    // }
                 }
 
                 "help" => {

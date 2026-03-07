@@ -1,16 +1,16 @@
 use aex::{
+    connection::context::{AexWriter, Context},
     crypto::session_key_manager::PairedSessionKey,
     tcp::types::{Codec, Frame},
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::{io::AsyncWrite, net::tcp::OwnedWriteHalf};
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 use zz_account::address::FreeWebMovementAddress;
 
-use crate::{context::Context, protocols::command::{Action, Entity}};
 use crate::protocols::command::P2PCommand;
+use crate::protocols::command::{Action, Entity};
 use bincode::{Decode, Encode};
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
@@ -168,7 +168,7 @@ impl Frame for P2PFrame {
 impl P2PFrame {
     pub async fn send<C: Codec>(
         address: &FreeWebMovementAddress,
-        writer: &mut (dyn AsyncWrite + Send + Unpin),
+        writer: &mut AexWriter,
         sub_command: &Option<C>,
         entity: Entity,
         action: Action,
@@ -204,57 +204,44 @@ impl P2PFrame {
         Ok(())
     }
 
-    pub async fn send_bytes(writer: &mut OwnedWriteHalf, bytes: &[u8]) {
+    pub async fn send_bytes(writer: &mut AexWriter, bytes: &[u8]) {
         if let Err(e) = writer.write_all(&bytes).await {
             eprintln!("Failed to send TCP bytes: {:?}", e);
         }
     }
 }
 
-pub async fn forward_frame(receiver: String, frame: &P2PFrame, context: Arc<Context>) {
+pub async fn notify(frame: &P2PFrame, ctx: Arc<Mutex<Context>>) {
     // ⚠️ 重要安全原则：
     // - 不解密
     // - 不反序列化 Command
     // - 不修改 Frame
     // - 只做字节级转发
 
-    // ===== 1️⃣ 查本地 clients =====
+    // ===== 1️⃣ 查本地 clients ====
     {
-        let clients = context.clients.lock().await;
+        {
+            let manager = {
+                let guard = ctx.lock().await;
+                guard.global.manager.clone()
+            };
+            let bytes = Codec::encode(frame);
+            manager
+                .forward(|entries| async {
+                    for entry in entries {
+                        // 1. 先把临时值固定到一个变量名上，延长它的生命周期
+                        let writer_arc = entry.writer.clone().unwrap();
 
-        // true = 包含直连 & 已认证连接
-        let conns = clients.get_connections(&receiver, true);
+                        // 2. 在这个长期变量上获取锁
+                        let mut writer_guard = writer_arc.lock().await;
 
-        if !conns.is_empty() {
-            let bytes = Codec::encode(&frame.clone());
-
-            for ct in conns {
-                // ⚠️ 只发 bytes，不传 Frame
-                let (_, writer) = ct;
-                let guard = &mut *writer.lock().await;
-                P2PFrame::send_bytes(guard, &bytes).await;
-            }
-
-            // 🚨 非常重要：找到就必须 return
-            // 否则会造成多路径重复转发
-            return;
-        }
-    }
-
-    // ===== 2️⃣ 查 servers，向其它服务器转发 =====
-    let servers_guard = context.servers.lock().await;
-    let bytes = Codec::encode(&frame.clone());
-
-    if let Some(servers) = &servers_guard.connected_servers {
-        let all = servers.inner.iter().chain(servers.external.iter());
-
-        for server in all {
-            // ⚠️ server.client_type 本质也是一条连接
-
-            let (_, writer) = &server.client_type;
-            let guard = &mut *writer.lock().await;
-            P2PFrame::send_bytes(guard, &bytes).await;
-        }
+                        // 3. 现在你可以安全地解引用了
+                        let guard = &mut *writer_guard;
+                        P2PFrame::send_bytes(guard, &bytes);
+                    }
+                })
+                .await;
+        };
     }
 }
 

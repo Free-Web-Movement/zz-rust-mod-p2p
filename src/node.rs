@@ -1,8 +1,9 @@
-use crate::handlers::tcp::TCPHandler;
+// use crate::handlers::tcp::TCPHandler;
 use crate::nodes::net_info::NetInfo;
 // use crate::protocols::registry::CommandHandlerRegistry;
-use crate::{context::Context, nodes::servers::Servers};
+use crate::{nodes::servers::Servers};
 use std::sync::Arc;
+use aex::connection::context::Context;
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress as Address;
 
@@ -23,8 +24,8 @@ pub struct Node {
     pub port: u16,        // Bound port of the node
     // pub stun_port: u16, // STUN service port
     // pub trun_port: u16, // TURN service port
-    pub context: Option<Arc<Context>>,
-    pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
+    pub context: Option<Arc<Mutex<Context>>>,
+    // pub tcp_handler: Option<Arc<Mutex<TCPHandler>>>,
     // pub udp_handler: Option<Arc<Mutex<UDPHandler>>>,
 }
 
@@ -43,7 +44,7 @@ impl Node {
             port,
             // stun_port: port + 1,
             // trun_port: port + 2,
-            tcp_handler: None,
+            // tcp_handler: None,
             context: None,
             net_info: None,
             storage: storage,
@@ -74,24 +75,24 @@ impl Node {
         let mut servers = self.init_storage_and_servers(port);
         servers.connect().await;
 
-        let context = Arc::new(Context::new(
-            ip.clone(),
-            port,
-            self.address.clone(),
-            servers.clone(),
-        ));
-        self.context = Some(context.clone());
+        // let context = Arc::new(Context::new(
+        //     ip.clone(),
+        //     port,
+        //     self.address.clone(),
+        //     servers.clone(),
+        // ));
+        // self.context = Some(context.clone());
 
-        servers
-            .notify_online(self.address.clone(), &context.clone())
-            .await
-            .unwrap();
+        // servers
+        //     .notify_online(self.address.clone(), &context.clone())
+        //     .await
+        //     .unwrap();
 
-        let tcp = TCPHandler::bind(context.clone())
-            .await
-            .unwrap()
-            .as_ref()
-            .clone();
+        // let tcp = TCPHandler::bind(context.clone())
+        //     .await
+        //     .unwrap()
+        //     .as_ref()
+        //     .clone();
         // let _udp = UDPHandler::bind(context.clone()).await.unwrap().as_ref().clone();
 
         // self.tcp_handler = Some(self.listen(tcp).await);
@@ -103,13 +104,13 @@ impl Node {
         // take ownership of the Arcs we hold and drop them so the underlying sockets
         // are closed when there are no remaining owners
 
-        match self.context.clone() {
-            Some(context) => {
-                context.token.cancel();
-            }
-            None => (),
-        }
-        self.tcp_handler.take();
+        // match self.context.clone() {
+        //     Some(context) => {
+        //         context.token.cancel();
+        //     }
+        //     None => (),
+        // }
+        // self.tcp_handler.take();
         // self.udp_handler.take();
 
         // self.stop_time = SystemTime::timestamp();
@@ -137,16 +138,16 @@ impl Node {
     pub async fn notify_online(&self) {
         // TODO: Implement notify_online logic
         println!("Notify online!");
-        let servers = &self.context.clone().unwrap().servers;
-        let servers = servers.lock().await;
-        let servers = servers.clone();
-        println!("Server found!");
-        let address = self.address.clone();
-        let context = self.context.clone().unwrap().clone();
-        tokio::spawn(async move {
-            println!("Server notifyed to {}!", address.clone());
-            let _ = servers.notify_online(address, &context).await;
-        });
+        // let servers = &self.context.clone().unwrap().servers;
+        // let servers = servers.lock().await;
+        // let servers = servers.clone();
+        // println!("Server found!");
+        // let address = self.address.clone();
+        // let context = self.context.clone().unwrap().clone();
+        // tokio::spawn(async move {
+        //     println!("Server notifyed to {}!", address.clone());
+        //     let _ = servers.notify_online(address, &context).await;
+        // });
     }
 }
 

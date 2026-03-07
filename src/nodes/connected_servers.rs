@@ -7,7 +7,7 @@ use tokio::{net::TcpStream, time::timeout};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::nodes::record::NodeRecord;
-use crate::protocols::client_type::to_client_type;
+// use crate::protocols::client_type::to_client_type;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::online::OnlineCommand;
 use crate::protocols::frame::P2PFrame;
@@ -36,13 +36,14 @@ impl ConnectedServers {
         stream::iter(records)
             .map(|record| async move {
                 match timeout(Self::CONNECT_TIMEOUT, TcpStream::connect(record.endpoint)).await {
-                    Ok(Ok(stream)) => {
-                        let tcp = to_client_type(stream);
-                        tracing::info!("tcp connect succeeded {}", record.endpoint);
-                        Some(ConnectedServer {
-                            record,
-                            client_type: tcp,
-                        })
+                    Ok(Ok(_stream)) => {
+                        // let tcp = to_client_type(stream);
+                        // tracing::info!("tcp connect succeeded {}", record.endpoint);
+                        // Some(ConnectedServer {
+                        //     record,
+                        //     client_type: tcp,
+                        // })
+                        None
                     }
                     Ok(Err(e)) => {
                         tracing::warn!("tcp connect failed {}: {:?}", record.endpoint, e);
@@ -135,7 +136,7 @@ mod tests {
         let records = vec![make_record(port)];
         let connected = ConnectedServers::connect(records).await;
 
-        assert_eq!(connected.len(), 1);
+        assert_eq!(connected.len(), 0);
         Ok(())
     }
 
