@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    nodes::record::{ NodeRecord, NodeRegistry },
+    record::{ NodeRecord, NodeRegistry },
     protocols::{ command::P2PCommand, frame::P2PFrame },
     stored_files::StoredFiles,
 };
@@ -175,6 +175,7 @@ impl Node {
             // 5. 放回注册表
             registry.nodes.insert(record);
         }
+        let _ = self.save_registries();
     }
 
     fn save_registries(&self) -> anyhow::Result<()> {

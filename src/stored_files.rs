@@ -8,7 +8,7 @@ use crate::{
         DEFAULT_APP_DIR_ADDRESS_JSON_FILE, DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE,
         DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE,
     },
-    nodes::record::NodeRecord,
+    record::NodeRecord,
 };
 
 #[derive(Debug, Clone)]

@@ -82,72 +82,9 @@ pub async fn send_text_message(
     Ok(())
 }
 
-// pub fn on_text_message(
-//     cmd: P2PCommand,
-//     frame: P2PFrame,
-//     context: Arc<Mutex<Context>>,
-//     _writer: Arc<Mutex<OwnedWriteHalf>>
-// ) -> BoxFuture<'static, ()> {
-//     Box::pin(async move {
-//         let from = &frame.body.address;
-
-//         // let encrypted = &cmd.data;
-
-//         println!("get encrypted bytes: {:?}", cmd.data);
-
-//         // 1️⃣ 使用 session_key 解密
-
-//         let psk = context.paired_session_keys.clone();
-
-//         let guard = &mut *psk.lock().await;
-
-//         let plaintext: Vec<u8> = guard
-//             .decrypt(&from.as_bytes().to_vec(), &cmd.data).await
-//             .expect("Wrong encrypted data!");
-
-//         println!("get plain text: {:?}", plaintext);
-
-//         // 2️⃣ bincode 解码
-//         let (msg, _) = match
-//             bincode::decode_from_slice::<MessageCommand, _>(&plaintext, bincode::config::standard())
-//         {
-//             Ok(v) => v,
-//             Err(e) => {
-//                 eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
-//                 return;
-//             }
-//         };
-
-//         println!("📨 {} → {} @ {}: {}", from, msg.receiver, msg.timestamp, msg.message);
-
-//         let receiver = msg.receiver.clone();
-
-//         // ===== 1️⃣ 如果 receiver 是自己 =====
-//         if receiver == context.address.to_string() {
-//             // ✔️ 消费消息
-//             // on_text_message(frame, context, client_type).await;
-
-//             // on_receive_message();
-//             println!("Message received!");
-//             return;
-//         }
-
-//         // 如果是作为服务器接收的消息，即地址不是节点地址时，
-//         // 要转发消息
-
-//         forward_frame(receiver, &frame, context).await;
-//     })
-// }
-
 pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     let from = &frame.body.address;
-
-    // let encrypted = &cmd.data;
-
     println!("get encrypted bytes: {:?}", cmd.data);
-
-    // 1️⃣ 使用 session_key 解密
-
     let psk = {
         let guard = ctx.lock().await;
         guard.global.paired_session_keys.clone().unwrap()
@@ -229,25 +166,4 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
     // 要转发消息
 
     // forward_frame(receiver, &frame, context).await;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use bincode::config;
-    #[test]
-    fn test_message_command_bincode_roundtrip() {
-        let cmd = MessageCommand {
-            receiver: "receiver-addr".to_string(),
-            timestamp: 123456789,
-            message: "hello world".to_string(),
-        };
-
-        let encoded = bincode::encode_to_vec(&cmd, config::standard()).unwrap();
-        let (decoded, _) =
-            bincode::decode_from_slice::<MessageCommand, _>(&encoded, config::standard()).unwrap();
-
-        assert_eq!(cmd, decoded);
-    }
 }
