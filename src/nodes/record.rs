@@ -1,8 +1,10 @@
 use aex::connection::protocol::Protocol;
+use aex::connection::types::ConnectionEntry;
 use aex::storage::Storage;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, hash::Hasher, net::SocketAddr};
+use chrono::{ DateTime, Utc };
+use serde::{ Deserialize, Serialize };
+use std::sync::Arc;
+use std::{ collections::HashSet, hash::Hasher, net::SocketAddr };
 
 use std::hash::Hash;
 
@@ -102,6 +104,28 @@ impl NodeRecord {
             self.is_available = false;
         }
     }
+
+    /// 从活跃连接中提取并更新元数据
+    pub async fn sync_metadata(&mut self, entry: &Arc<ConnectionEntry>) {
+        // 1. 同步最后活跃时间（AtomicU64 -> DateTime）
+        let last_active_secs = entry.last_seen.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(dt) = chrono::DateTime::from_timestamp(last_active_secs as i64, 0) {
+            self.last_seen = dt;
+        }
+
+        // 2. 同步节点 ID (如果有)
+        // 注意：ConnectionEntry 里的 node 是 Arc<RwLock<Option<Node>>>
+        let node_lock = entry.node.read().await;
+        if let Some(actual_node) = &*node_lock {
+            // 这里可以扩展 NodeRecord 字段，记录对方声明的 ID 或名称
+            // self.peer_id = Some(actual_node.id.clone()); 
+
+        }
+
+        // 3. 标记为可用
+        self.is_available = true;
+        self.update_status(true); 
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,8 +143,7 @@ impl NodeRegistry {
     /// 添加或更新节点
     pub fn upsert(&mut self, endpoint: SocketAddr, success: bool) {
         // 尝试从集合中取出已存在的记录
-        let mut record = self
-            .nodes
+        let mut record = self.nodes
             .take(&NodeRecord::new(endpoint))
             .unwrap_or_else(|| NodeRecord::new(endpoint));
 
