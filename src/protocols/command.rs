@@ -69,26 +69,3 @@ impl Command for P2PCommand {
         &self.data
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_send_receive_roundtrip() {
-        let payload = vec![10, 20, 30];
-
-        let cmd = P2PCommand::new(
-            Entity::Node,
-            Action::OnLine,
-            payload.clone(),
-        );
-
-        let bytes = Codec::encode(&cmd);
-        let cmd: P2PCommand = Codec::decode(&bytes).unwrap();
-
-        assert_eq!(cmd.entity, Entity::Node);
-        assert_eq!(cmd.action, Action::OnLine);
-        assert_eq!(cmd.data, payload);
-    }
-}

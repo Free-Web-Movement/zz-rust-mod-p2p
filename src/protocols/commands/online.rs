@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
-use aex::connection::context::{ AexWriter, Context };
+use aex::connection::context::{AexWriter, Context};
 use aex::connection::node::Node;
 use aex::tcp::types::Codec;
-use bincode::{ Decode, Encode };
-use serde::{ Deserialize, Serialize };
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::protocols::command::P2PCommand;
-use crate::protocols::command::{ Action, Entity };
+use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::OnlineAckCommand;
 use crate::protocols::frame::P2PFrame;
 
@@ -26,8 +26,7 @@ impl Codec for OnlineCommand {}
 pub async fn online_handler(
     ctx: Arc<Mutex<Context>>,
     frame: P2PFrame,
-    cmd: P2PCommand
-    // writer: &mut (dyn AsyncWrite + Send + Unpin),
+    cmd: P2PCommand, // writer: &mut (dyn AsyncWrite + Send + Unpin),
 ) {
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
@@ -36,7 +35,10 @@ pub async fn online_handler(
             return ();
         }
     };
-    println!("✅ Node Online: addr={}, nonce={}", frame.body.address, frame.body.nonce);
+    println!(
+        "✅ Node Online: addr={}, nonce={}",
+        frame.body.address, frame.body.nonce
+    );
 
     // ===== 1️⃣ OnlineCommand 解码 =====
 
@@ -55,8 +57,9 @@ pub async fn online_handler(
         guard
             .establish_begins(
                 frame.body.address.as_bytes().to_vec(),
-                &online.ephemeral_public_key.to_vec()
-            ).await
+                &online.ephemeral_public_key.to_vec(),
+            )
+            .await
             .unwrap()
             .unwrap()
     };
@@ -67,13 +70,13 @@ pub async fn online_handler(
     };
 
     let local_node = {
-              let ctx = ctx.lock().await;
+        let ctx = ctx.lock().await;
         ctx.global.local_node.clone()
     };
 
     let node = {
-      let guard = local_node.write().await;
-      guard.clone()
+        let guard = local_node.write().await;
+        guard.clone()
     };
 
     let ack = OnlineAckCommand {
@@ -106,8 +109,10 @@ pub async fn online_handler(
                 &Some(ack),
                 Entity::Node,
                 Action::OnLineAck,
-                None
-            ).await.expect("Error send online ack!");
+                None,
+            )
+            .await
+            .expect("Error send online ack!");
         } else {
             eprintln!("Cannot send OnlineAck: Writer is None for {}", address);
         }
@@ -117,7 +122,10 @@ pub async fn online_handler(
 
         match guard.writer.take() {
             Some(writer) => {
-                guard.global.manager.update(guard.addr, true, Arc::new(Mutex::new(writer)));
+                guard
+                    .global
+                    .manager
+                    .update(guard.addr, true, Arc::new(Mutex::new(Some(writer))));
                 return ();
             }
             None => {

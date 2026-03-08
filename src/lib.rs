@@ -3,3 +3,4 @@ pub mod node;
 pub mod protocols;
 pub mod nodes;
 pub mod cli;
+pub mod stored_files;

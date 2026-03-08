@@ -23,7 +23,7 @@ pub struct Servers {
 impl Servers {
     pub fn new(storage: Storage) -> Self {
         let address = match
-            storage.read::<FreeWebMovementAddress>(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string())
+            storage.read::<FreeWebMovementAddress>(&DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string())
         {
             Ok(Some(set)) => set,
             _ => FreeWebMovementAddress::random(),

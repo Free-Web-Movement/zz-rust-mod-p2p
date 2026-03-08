@@ -1,17 +1,15 @@
-use aex::{
-    connection::global::GlobalContext, server::HTTPServer, storage::Storage, tcp::router::Router,
-};
+use aex::{server::HTTPServer, storage::Storage, tcp::router::Router};
 // src/main.rs
 use clap::Parser;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
 use zz_p2p::{
-    cli::Cli, consts::DEFAULT_APP_DIR_ADDRESS_JSON_FILE, node::Node, protocols::{command::P2PCommand, frame::P2PFrame}
+    cli::Cli,
+    node::Node,
+    protocols::{command::P2PCommand, frame::P2PFrame, registry::register},
+    stored_files::StoredFiles,
 };
 
 use aex::tcp::types::Command;
-
-use zz_account::address::FreeWebMovementAddress as Address;
 
 #[derive(Parser, Debug)]
 #[command(name = "zzp2p")]
@@ -27,6 +25,15 @@ struct Opt {
 
     #[arg(long)]
     data_dir: Option<String>,
+
+    #[arg(long)]
+    address_file: Option<String>,
+
+    #[arg(long)]
+    inner_server_file: Option<String>,
+
+    #[arg(long)]
+    external_server_file: Option<String>,
 }
 
 #[tokio::main]
@@ -35,58 +42,34 @@ async fn main() -> anyhow::Result<()> {
 
     let storage = Storage::new(opt.data_dir.as_deref());
 
-    let address = if let Some(addr) = storage
-        .read(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string())
-        .unwrap()
-    {
-        tracing::info!("Using existing address: {}", &addr);
-        addr
-    } else {
-        let addr = Address::random();
-        tracing::info!("Generated new address: {}", &addr);
-        storage.save("address".to_string(), &addr).unwrap();
-        addr
-    };
+    let files = StoredFiles::new(
+        storage,
+        opt.address_file,
+        opt.inner_server_file,
+        opt.external_server_file,
+    );
+
+    // let address = files.address();
 
     let addr = format!("{}:{}", opt.ip.clone(), opt.port)
         .parse::<SocketAddr>()
         .unwrap();
 
-    let global = Arc::new(Mutex::new(GlobalContext::new(addr)));
-    let node = Arc::new(Mutex::new(Node::new(
-        opt.name.clone(),
-        address,
-        addr,
-        storage.clone(),
-        global.clone(),
-    )));
+    let node = Node::init(opt.name.clone(), files.clone(), addr);
 
-    let server = HTTPServer::new(addr);
+    let server = {
+        let guard = node.lock().await;
+        HTTPServer::new(addr, Some(guard.context.clone()))
+    };
 
-    let router = Router::new();
+    let mut router = Router::new();
+
+    register(&mut router);
 
     server
         .tcp(router)
         .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
         .await?;
-
-    // let node = Arc::new(Mutex::new(Node::new(
-    //     opt.name.clone(),
-    //     address,
-    //     opt.ip.clone(),
-    //     opt.port,
-    //     Some(storage),
-    // )));
-
-    // {
-    //     let node_clone = node.clone();
-    //     tokio::spawn(async move {
-    //         let mut n = node_clone.lock().await;
-    //         n.start().await;
-    //     });
-    // }
-
-    // println!("Node started at {}:{}", opt.ip, opt.port);
 
     let cli = Cli::new(node);
     cli.run().await?;

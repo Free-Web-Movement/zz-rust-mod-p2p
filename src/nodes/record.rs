@@ -141,7 +141,7 @@ impl NodeRegistry {
 
     /// 核心逻辑：从 Storage 中恢复数据，并执行启动时的失效检查
     pub fn load_from_storage(storage: &Storage, path: &str) -> Self {
-        let nodes = match storage.read::<HashSet<NodeRecord>>(path.to_string()) {
+        let nodes = match storage.read::<HashSet<NodeRecord>>(&path.to_string()) {
             Ok(Some(set)) => set,
             _ => HashSet::new(),
         };
@@ -170,6 +170,6 @@ impl NodeRegistry {
 
     /// 持久化到 Storage
     pub fn save_to_storage(&self, storage: &Storage, path: &str) -> anyhow::Result<()> {
-        storage.save(path.to_string(), &self.nodes)
+        storage.save(&path.to_string(), &self.nodes)
     }
 }

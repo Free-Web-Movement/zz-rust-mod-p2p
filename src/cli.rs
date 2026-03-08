@@ -101,7 +101,7 @@ impl Cli {
 
                 "status" => {
                     let n = self.node.lock().await;
-                    println!("Node address: {}", n.id);
+                    println!("Node address: {}", n.files.clone().address());
 
                     // if let Some(context) = &n.context {
                     //     let clients = context.clients.lock().await;

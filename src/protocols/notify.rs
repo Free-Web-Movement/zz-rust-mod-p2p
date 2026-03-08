@@ -35,10 +35,13 @@ pub async fn notify_online(ctx: Arc<Mutex<Context>>, cmd: OnlineCommand) {
                     // 3. 现在你可以安全地解引用了
                     let guard = &mut *writer_guard;
                     // P2PFrame::send_bytes(guard, &bytes);
-
+                        let writer = guard
+                            .as_mut()
+                            .ok_or_else(|| anyhow::anyhow!("writer missing"))
+                            .unwrap();
                     P2PFrame::send::<OnlineCommand>(
                         &address,
-                        guard,
+                        writer,
                         &Some(cmd.clone()),
                         Entity::Node,
                         Action::OnLine,
@@ -76,10 +79,13 @@ pub async fn notify_offline(ctx: Arc<Mutex<Context>>, cmd: OfflineCommand) {
                     // 3. 现在你可以安全地解引用了
                     let guard = &mut *writer_guard;
                     // P2PFrame::send_bytes(guard, &bytes);
-
+                        let writer = guard
+                            .as_mut()
+                            .ok_or_else(|| anyhow::anyhow!("writer missing"))
+                            .unwrap();
                     P2PFrame::send::<OfflineCommand>(
                         &address,
-                        guard,
+                        writer,
                         &Some(cmd.clone()),
                         Entity::Node,
                         Action::OffLine,
