@@ -5,9 +5,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::{node::Node};
-
-
+use crate::{node::Node, protocols::commands::message::send_text_message};
 
 pub struct Cli {
     node: Arc<Mutex<Node>>,
@@ -35,33 +33,31 @@ impl Cli {
 
             match command.as_str() {
                 "send" => {
-                    // let receiver = match parts.next() {
-                    //     Some(a) => a,
-                    //     None => {
-                    //         println!("Usage: send <address> <message>");
-                    //         continue;
-                    //     }
-                    // };
-                    // let msg = match parts.next() {
-                    //     Some(m) => m,
-                    //     None => {
-                    //         println!("Usage: send <address> <message>");
-                    //         continue;
-                    //     }
-                    // };
+                    let receiver = match parts.next() {
+                        Some(a) => a,
+                        None => {
+                            println!("Usage: send <address> <message>");
+                            continue;
+                        }
+                    };
+                    let msg = match parts.next() {
+                        Some(m) => m,
+                        None => {
+                            println!("Usage: send <address> <message>");
+                            continue;
+                        }
+                    };
 
-                    // let node = self.node.clone();
+                    let node = self.node.clone();
                     // let recv_for_print = receiver.clone();
 
                     tokio::spawn(async move {
-                        // let n = node.lock().await;
-                        // if let Err(e) =
-                        //     // send_text_message(receiver, n.context.clone().unwrap(), &msg).await
-                        // {
-                        //     println!("Failed to send message: {:?}", e);
-                        // } else {
-                        //     println!("Message sent to {}", recv_for_print);
-                        // }
+                        let n = node.lock().await;
+                        let g = n.context.manager.notify(&receiver.as_bytes(), |entries| async {
+                            for entry in entries {
+                                let _ = send_text_message(receiver.clone(), entry.context.clone().unwrap(), &msg).await;
+                            }
+                        });
                     });
                 }
 
@@ -70,30 +66,30 @@ impl Cli {
                     // let port_str = parts.next();
 
                     // if let (Some(ip), Some(port_str)) = (ip, port_str) {
-                        // let port: u16 = match port_str.parse() {
-                        //     Ok(p) => p,
-                        //     Err(_) => {
-                        //         println!("Invalid port: {}", port_str);
-                        //         continue;
-                        //     }
-                        // };
+                    // let port: u16 = match port_str.parse() {
+                    //     Ok(p) => p,
+                    //     Err(_) => {
+                    //         println!("Invalid port: {}", port_str);
+                    //         continue;
+                    //     }
+                    // };
 
-                        // let node = self.node.clone();
-                        // tokio::spawn(async move {
-                        //     let n = node.lock().await;
-                        //     if let Some(context) = &n.context {
-                        //         let mut servers = context.servers.lock().await;
-                        //         match servers
-                        //             .connect_to_node(ip.as_str(), port, context)
-                        //             .await
-                        //         {
-                        //             Ok(_) => println!("Connected to {}:{}", ip, port),
-                        //             Err(e) => println!("Failed to connect: {:?}", e),
-                        //         }
-                        //     } else {
-                        //         println!("Servers not initialized");
-                        //     }
-                        // });
+                    // let node = self.node.clone();
+                    // tokio::spawn(async move {
+                    //     let n = node.lock().await;
+                    //     if let Some(context) = &n.context {
+                    //         let mut servers = context.servers.lock().await;
+                    //         match servers
+                    //             .connect_to_node(ip.as_str(), port, context)
+                    //             .await
+                    //         {
+                    //             Ok(_) => println!("Connected to {}:{}", ip, port),
+                    //             Err(e) => println!("Failed to connect: {:?}", e),
+                    //         }
+                    //     } else {
+                    //         println!("Servers not initialized");
+                    //     }
+                    // });
                     // } else {
                     //     println!("Usage: connect <ip> <port>");
                     // }
@@ -103,24 +99,7 @@ impl Cli {
                     let n = self.node.lock().await;
                     println!("Node address: {}", n.files.clone().address());
 
-                    // if let Some(context) = &n.context {
-                    //     let clients = context.clients.lock().await;
-                    //     println!("Connected clients:");
-                    //     for addr in clients.inner.keys() {
-                    //         println!(" - {}", addr);
-                    //     }
-                    //     for addr in clients.external.keys() {
-                    //         println!(" - {}", addr);
-                    //     }
-
-                    //     let servers = context.servers.lock().await;
-                    //     println!("Connected servers:");
-                    //     if let Some(connected) = &servers.connected_servers {
-                    //         for s in connected.inner.iter().chain(connected.external.iter()) {
-                    //             println!(" - {}", s.record.endpoint);
-                    //         }
-                    //     }
-                    // }
+                    n.context.manager.status();
                 }
 
                 "help" => {

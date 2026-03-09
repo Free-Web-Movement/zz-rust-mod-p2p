@@ -118,6 +118,7 @@ pub async fn online_handler(
         }
     }
     {
+        let cloned = ctx.clone();
         let mut guard = ctx.lock().await;
 
         match guard.writer.take() {
@@ -125,7 +126,7 @@ pub async fn online_handler(
                 guard
                     .global
                     .manager
-                    .update(guard.addr, true, Arc::new(Mutex::new(Some(writer))));
+                    .update(guard.addr, true, Some(cloned), Arc::new(Mutex::new(Some(writer))));
                 return ();
             }
             None => {
