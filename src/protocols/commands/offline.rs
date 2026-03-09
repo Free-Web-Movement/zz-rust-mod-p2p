@@ -19,7 +19,7 @@ pub struct OfflineCommand {
 // ⚡ 实现 CommandCodec，移除 to_bytes/from_bytes
 impl Codec for OfflineCommand {}
 
-pub async fn onffline_handler(
+pub async fn offline_handler(
     ctx: Arc<Mutex<Context>>,
     frame: P2PFrame,
     _cmd: P2PCommand,
