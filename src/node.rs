@@ -3,8 +3,7 @@ use aex::{
         context::TypeMapExt,
         global::GlobalContext,
         types::{ ConnectionEntry, NetworkScope },
-    },
-    tcp::{ router::Router, types::Command },
+    }, crypto::session_key_manager::PairedSessionKey, tcp::{ router::Router, types::Command }
 };
 use chrono::Utc;
 use std::{ net::SocketAddr, sync::Arc };
@@ -112,7 +111,8 @@ impl Node {
     pub async fn stop(&mut self) {}
 
     pub fn init(name: String, files: StoredFiles, addr: SocketAddr) -> Arc<Mutex<Self>> {
-        let global = Arc::new(GlobalContext::new(addr));
+        let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
+        let global = Arc::new(GlobalContext::new(addr, Some(psk)));
         let node = Arc::new(Mutex::new(Node::new(name, files, addr, global.clone())));
         node
     }
