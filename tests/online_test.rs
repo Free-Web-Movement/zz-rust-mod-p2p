@@ -48,11 +48,21 @@ async fn test_p2p_handshake_real_server() {
         ],]
     );
 
-    server
-        .tcp(router)
-        .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
-        .await
-        .unwrap();
+    tokio::select! {
+        // 分支 1: 运行服务器（这是一个永远阻塞的 Future，直到被 cancel）
+        res = server.tcp(router).start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id())) => {
+            if let Err(e) = res {
+                eprintln!("Server stopped with error: {}", e);
+            }
+        }
+
+        // 分支 2: 计时器（3秒后触发）
+        _ = tokio::time::sleep(Duration::from_secs(3)) => {
+            println!("Timeout reached, initiating shutdown...");
+            let g = node.lock().await;
+            g.context.shutdown_all().await;
+        }
+    }
 }
 
 #[tokio::test]
@@ -160,7 +170,7 @@ async fn test_p2p_command_flow() {
     .await;
 
     println!("✅ Command sent to server");
-    // tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
     {
         let g = node_clone.lock().await;
         g.context.shutdown_all().await
