@@ -2,17 +2,19 @@ use aex::{
     connection::{
         context::TypeMapExt,
         global::GlobalContext,
-        types::{ ConnectionEntry, NetworkScope },
-    }, crypto::session_key_manager::PairedSessionKey, tcp::{ router::Router, types::Command }
+        types::{ConnectionEntry, NetworkScope},
+    },
+    crypto::session_key_manager::PairedSessionKey,
+    tcp::{router::Router, types::Command},
 };
 use chrono::Utc;
-use std::{ net::SocketAddr, sync::Arc };
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
-    record::{ NodeRecord, NodeRegistry },
-    protocols::{ command::P2PCommand, frame::P2PFrame },
+    protocols::{command::P2PCommand, frame::P2PFrame},
+    record::{NodeRecord, NodeRegistry},
     stored_files::StoredFiles,
 };
 
@@ -22,7 +24,7 @@ pub struct Node {
     pub inner: NodeRegistry,
     pub external: NodeRegistry,
     pub files: StoredFiles, // Unique network address of the node, also id for the node
-    pub name: String, // User defined name for the node, no need to be unique
+    pub name: String,       // User defined name for the node, no need to be unique
     pub addr: SocketAddr,
     pub context: Arc<GlobalContext>, // global context
 }
@@ -32,17 +34,13 @@ impl Node {
         name: String,
         files: StoredFiles,
         addr: SocketAddr,
-        context: Arc<GlobalContext>
+        context: Arc<GlobalContext>,
     ) -> Self {
         let id = files.clone().address();
-        let inner = NodeRegistry::load_from_storage(
-            &files.storage,
-            &files.clone().inner_server_file
-        );
-        let external = NodeRegistry::load_from_storage(
-            &files.storage,
-            &files.clone().external_server_file
-        );
+        let inner =
+            NodeRegistry::load_from_storage(&files.storage, &files.clone().inner_server_file);
+        let external =
+            NodeRegistry::load_from_storage(&files.storage, &files.clone().external_server_file);
         Self {
             name,
             id,
@@ -69,42 +67,21 @@ impl Node {
             let gc = global.clone();
 
             // 这里的闭包必须是 move，以确保内部变量的所有权被转移到异步任务中
-            let _ = manager.connect(endpoint.clone(), move |r, w, _token| {
-                // 再次克隆引用以进入 async move 块
-                let rc_inner = rc.clone();
-                let gc_inner = gc.clone();
-                let ep_inner = endpoint.clone();
+            let _ = manager
+                .connect(endpoint.clone(), gc, move |ctx, _token| {
+                    // 再次克隆引用以进入 async move 块
+                    let rc_inner = rc.clone();
+                    let ctx = ctx.clone();
+                    async move {
+                        // 1. 获取
 
-                async move {
-                    // 1. 获取锁
-                    let mut r_guard = r.lock().await;
-                    let mut w_guard = w.lock().await;
-
-                    // 2. 取出 reader / writer
-                    let mut reader_opt = r_guard.take();
-                    let mut writer_opt = w_guard.take();
-
-                    // 3. 释放锁（非常重要）
-                    drop(r_guard);
-                    drop(w_guard);
-
-                    // 4. 调用 router
-                    let _ = rc_inner.handle::<P2PFrame, P2PCommand>(
-                        ep_inner,
-                        gc_inner,
-                        &mut reader_opt,
-                        &mut writer_opt,
-                        Arc::new(|c: &P2PCommand| c.id())
-                    ).await;
-
-                    // 5. 放回 reader / writer
-                    let mut r_guard = r.lock().await;
-                    let mut w_guard = w.lock().await;
-
-                    *r_guard = reader_opt;
-                    *w_guard = writer_opt;
-                }
-            }).await;
+                        // 4. 调用 router
+                        let _ = rc_inner
+                            .handle::<P2PFrame, P2PCommand>(ctx, Arc::new(|c: &P2PCommand| c.id()))
+                            .await;
+                    }
+                })
+                .await;
         }
     }
 
@@ -120,7 +97,7 @@ impl Node {
     /// 核心功能：深度同步活跃连接的元数据到注册表
     pub async fn sync_from_connections(
         &mut self,
-        connections: &dashmap::DashMap<SocketAddr, Arc<ConnectionEntry>>
+        connections: &dashmap::DashMap<SocketAddr, Arc<ConnectionEntry>>,
     ) {
         // 获取当前时间戳用于更新 last_seen
         let now_utc = Utc::now();
@@ -139,7 +116,8 @@ impl Node {
 
             // 2. 获取或创建 NodeRecord
             // 使用 take 取出以修改（因为 HashSet 元素具有不可变性限制）
-            let mut record = registry.nodes
+            let mut record = registry
+                .nodes
                 .take(&NodeRecord::new(addr))
                 .unwrap_or_else(|| NodeRecord::new(addr));
 
@@ -179,8 +157,10 @@ impl Node {
     }
 
     fn save_registries(&self) -> anyhow::Result<()> {
-        self.inner.save_to_storage(&self.files.storage, &self.files.inner_server_file)?;
-        self.external.save_to_storage(&self.files.storage, &self.files.external_server_file)?;
+        self.inner
+            .save_to_storage(&self.files.storage, &self.files.inner_server_file)?;
+        self.external
+            .save_to_storage(&self.files.storage, &self.files.external_server_file)?;
         Ok(())
     }
 }

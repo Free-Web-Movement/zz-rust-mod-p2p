@@ -56,23 +56,20 @@ pub async fn send_text_message(
         .forward(|entries| async move {
             for entry in entries {
                 {
-                    if let Some(writer_arc) = &entry.writer {
-                        let writer_lock = writer_arc.clone();
-                        let mut writer = writer_lock.lock().await;
-                        let writer = writer
-                            .as_mut()
-                            .ok_or_else(|| anyhow::anyhow!("writer missing"))
-                            .unwrap();
-                        P2PFrame::send(
-                            &address,
-                            &mut *writer,
-                            &Some(command.clone()),
-                            Entity::Message,
-                            Action::SendText,
-                            psk.clone(),
-                        )
-                        .await
-                        .expect("Error Send Message!");
+                    if let Some(ctx) = &entry.context {
+                        let mut guard = ctx.lock().await;
+                        if let Some(writer) = &mut guard.writer {
+                            P2PFrame::send(
+                                &address,
+                                &mut *writer,
+                                &Some(command.clone()),
+                                Entity::Message,
+                                Action::SendText,
+                                psk.clone(),
+                            )
+                            .await
+                            .expect("Error Send Message!");
+                        }
                     }
                 }
             }
@@ -139,24 +136,39 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
         .forward(|entries| async move {
             for entry in entries {
                 {
-                    if let Some(writer_arc) = &entry.writer {
-                        let writer_lock = writer_arc.clone();
-                        let mut writer = writer_lock.lock().await;
-                        let writer = writer
-                            .as_mut()
-                            .ok_or_else(|| anyhow::anyhow!("writer missing"))
-                            .unwrap();
-                        P2PFrame::send(
-                            &address,
-                            &mut *writer,
-                            &Some(message.clone()),
-                            Entity::Message,
-                            Action::SendText,
-                            Some(psk.clone()),
-                        )
-                        .await
-                        .expect("Error Send Message!");
+                    if let Some(ctx) = &entry.context {
+                        let mut guard = ctx.lock().await;
+                        if let Some(writer) = &mut guard.writer {
+                            P2PFrame::send(
+                                &address,
+                                &mut *writer,
+                                &Some(message.clone()),
+                                Entity::Message,
+                                Action::SendText,
+                                Some(psk.clone()),
+                            )
+                            .await
+                            .expect("Error Send Message!");
+                        }
                     }
+                    // if let Some(writer_arc) = &entry.writer {
+                    //     let writer_lock = writer_arc.clone();
+                    //     let mut writer = writer_lock.lock().await;
+                    //     let writer = writer
+                    //         .as_mut()
+                    //         .ok_or_else(|| anyhow::anyhow!("writer missing"))
+                    //         .unwrap();
+                    //     P2PFrame::send(
+                    //         &address,
+                    //         &mut *writer,
+                    //         &Some(message.clone()),
+                    //         Entity::Message,
+                    //         Action::SendText,
+                    //         Some(psk.clone()),
+                    //     )
+                    //     .await
+                    //     .expect("Error Send Message!");
+                    // }
                 }
             }
         })

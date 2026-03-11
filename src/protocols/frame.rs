@@ -229,19 +229,13 @@ pub async fn notify(frame: &P2PFrame, ctx: Arc<Mutex<Context>>) {
             manager
                 .forward(|entries| async {
                     for entry in entries {
-                        // 1. 先把临时值固定到一个变量名上，延长它的生命周期
-                        let writer_arc = entry.writer.clone().unwrap();
-
-                        // 2. 在这个长期变量上获取锁
-                        let mut writer_guard = writer_arc.lock().await;
-
-                        // 3. 现在你可以安全地解引用了
-                        let guard = &mut *writer_guard;
-                        let writer = guard
-                            .as_mut()
-                            .ok_or_else(|| anyhow::anyhow!("writer missing"))
-                            .unwrap();
-                        P2PFrame::send_bytes(writer, &bytes).await
+                        if let Some(ctx) = &entry.context {
+                            let mut guard = ctx.lock().await;
+                            if let Some(writer) = &mut guard.writer {
+                                P2PFrame::send_bytes(writer, &bytes).await
+                            }
+                        }
+                        continue;
                     }
                 })
                 .await;

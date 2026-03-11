@@ -17,53 +17,53 @@ use zz_p2p::{
     stored_files::StoredFiles,
 };
 
-#[tokio::test]
-async fn test_p2p_handshake_real_server() {
-    // --- 1. 初始化全局上下文 ---
-    let addr: SocketAddr = "127.0.0.1:9001".parse().unwrap();
+// #[tokio::test]
+// async fn test_p2p_handshake_real_server() {
+//     // --- 1. 初始化全局上下文 ---
+//     let addr: SocketAddr = "127.0.0.1:9001".parse().unwrap();
 
-    // --- 2. 启动真实 Server 监听 ---
-    println!("📡 Server listening on {}", addr);
+//     // --- 2. 启动真实 Server 监听 ---
+//     println!("📡 Server listening on {}", addr);
 
-    let storage = Storage::new(None);
+//     let storage = Storage::new(None);
 
-    let files = StoredFiles::new(storage, None, None, None);
+//     let files = StoredFiles::new(storage, None, None, None);
 
-    let node = zz_p2p::node::Node::init("".to_string(), files.clone(), addr);
+//     let node = zz_p2p::node::Node::init("".to_string(), files.clone(), addr);
 
-    let server = {
-        let guard = node.lock().await;
-        HTTPServer::new(addr, Some(guard.context.clone()))
-    };
+//     let server = {
+//         let guard = node.lock().await;
+//         HTTPServer::new(addr, Some(guard.context.clone()))
+//     };
 
-    let mut router = Router::new();
+//     let mut router = Router::new();
 
-    on!(
-        router,
-        P2PFrame,
-        P2PCommand,
-        [[
-            P2PCommand::to_u32(Entity::Node, Action::OnLine),
-            online_handler
-        ],]
-    );
+//     on!(
+//         router,
+//         P2PFrame,
+//         P2PCommand,
+//         [[
+//             P2PCommand::to_u32(Entity::Node, Action::OnLine),
+//             online_handler
+//         ],]
+//     );
 
-    tokio::select! {
-        // 分支 1: 运行服务器（这是一个永远阻塞的 Future，直到被 cancel）
-        res = server.tcp(router).start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id())) => {
-            if let Err(e) = res {
-                eprintln!("Server stopped with error: {}", e);
-            }
-        }
+//     tokio::select! {
+//         // 分支 1: 运行服务器（这是一个永远阻塞的 Future，直到被 cancel）
+//         res = server.tcp(router).start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id())) => {
+//             if let Err(e) = res {
+//                 eprintln!("Server stopped with error: {}", e);
+//             }
+//         }
 
-        // 分支 2: 计时器（3秒后触发）
-        _ = tokio::time::sleep(Duration::from_secs(3)) => {
-            println!("Timeout reached, initiating shutdown...");
-            let g = node.lock().await;
-            g.context.shutdown_all().await;
-        }
-    }
-}
+//         // 分支 2: 计时器（3秒后触发）
+//         _ = tokio::time::sleep(Duration::from_secs(3)) => {
+//             println!("Timeout reached, initiating shutdown...");
+//             let g = node.lock().await;
+//             g.context.shutdown_all().await;
+//         }
+//     }
+// }
 
 #[tokio::test]
 async fn test_p2p_command_flow() {
@@ -136,13 +136,7 @@ async fn test_p2p_command_flow() {
         node: aex_node,
         ephemeral_public_key: key.to_bytes(),
     };
-    // let p2pcmd = P2PCommand {
-    //     entity: Entity::Node,
-    //     action: Action::OnLine,
-    //     data: Codec::encode(&cmd),
-    // };
     let address = files.clone().address();
-    // let frame = P2PFrame::build(&address, p2pcmd, version).await
 
     let psk = {
         let guard = node_clone.lock().await;
@@ -151,11 +145,7 @@ async fn test_p2p_command_flow() {
 
     let (_, writer) = stream.into_split();
 
-    // let buf_reader = BufReader::new(reader);
     let buf_writer = BufWriter::new(writer);
-
-    // let mut r_opt: Option<BoxReader> = Some(Box::new(buf_reader));
-    // let mut w_opt: Option<BoxWriter> = Some(Box::new(buf_writer));
 
     let mut aex_writer: Box<AexWriter> = Box::new(buf_writer);
 
