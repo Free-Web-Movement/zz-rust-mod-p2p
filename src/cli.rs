@@ -1,19 +1,63 @@
-// src/cli.rs
-use std::{net::SocketAddr, sync::Arc};
+use futures::future::BoxFuture;
+use std::{collections::HashMap, sync::Arc};
 use tokio::{
     io::{self, AsyncBufReadExt, BufReader},
     sync::Mutex,
 };
 
-use crate::{node::Node, protocols::commands::message::send_text_message};
+use crate::{
+    clis::{connect, help, send, status},
+    node::Node,
+};
+
+// 定义处理函数的类型：接收 Node 引用和剩余参数列表
+pub type CliHandler =
+    Box<dyn Fn(Arc<Mutex<Node>>, Vec<String>) -> BoxFuture<'static, ()> + Send + Sync>;
 
 pub struct Cli {
     node: Arc<Mutex<Node>>,
+    commands: HashMap<String, CliHandler>,
 }
 
 impl Cli {
     pub fn new(node: Arc<Mutex<Node>>) -> Self {
-        Self { node }
+        let mut cli = Self {
+            node,
+            commands: HashMap::new(),
+        };
+        cli.register_builtins();
+        cli
+    }
+
+    /// 注册命令处理函数
+    pub fn register<F, Fut>(&mut self, name: &str, handler: F)
+    where
+        // F 是一个函数，它接收 Node 和 Args，返回 Fut
+        F: Fn(Arc<Mutex<Node>>, Vec<String>) -> Fut + Send + Sync + 'static,
+        // Fut 是这个函数返回的异步任务
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        // 在内部手动包装成 BoxFuture
+        let boxed_handler = Box::new(move |node: Arc<Mutex<Node>>, args: Vec<String>| {
+            let fut = handler(node, args);
+            Box::pin(fut) as BoxFuture<'static, ()>
+        });
+
+        self.commands.insert(name.to_string(), boxed_handler);
+    }
+
+    fn register_builtins(&mut self) {
+        // --- 注册 send 命令 ---
+        self.register("send", send::handle);
+
+        // --- 注册 connect 命令 ---
+        self.register("connect", connect::handle);
+
+        // --- 注册 status 命令 ---
+        self.register("status", status::handle);
+
+        // --- 注册 help 命令 ---
+        self.register("help", help::handle);
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -23,113 +67,26 @@ impl Cli {
         let mut reader = BufReader::new(stdin).lines();
 
         while let Some(line) = reader.next_line().await? {
-            let line = line.trim().to_string();
+            let line = line.trim();
             if line.is_empty() {
                 continue;
             }
 
-            let mut parts = line.splitn(3, ' ').map(str::to_string);
-            let command = parts.next().unwrap();
+            let mut parts: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
+            let command_name = parts.remove(0);
 
-            match command.as_str() {
-                "send" => {
-                    let receiver = match parts.next() {
-                        Some(a) => a,
-                        None => {
-                            println!("Usage: send <address> <message>");
-                            continue;
-                        }
-                    };
-                    let msg = match parts.next() {
-                        Some(m) => m,
-                        None => {
-                            println!("Usage: send <address> <message>");
-                            continue;
-                        }
-                    };
+            if command_name == "exit" {
+                println!("Exiting...");
+                break;
+            }
 
-                    let node = self.node.clone();
-
-                    tokio::spawn(async move {
-                        let n = node.lock().await;
-                        let g = n
-                            .context
-                            .manager
-                            .notify(&receiver.as_bytes(), |entries| async {
-                                for entry in entries {
-                                    let _ = send_text_message(
-                                        receiver.clone(),
-                                        entry.context.clone().unwrap(),
-                                        &msg,
-                                    )
-                                    .await;
-                                }
-                            });
-                    });
-                }
-
-                "connect" => {
-                    let ip = parts.next();
-                    let port_str = parts.next();
-
-                    if let (Some(ip), Some(port_str)) = (ip, port_str) {
-                        let port: u16 = match port_str.parse() {
-                            Ok(p) => p,
-                            Err(_) => {
-                                println!("Invalid port: {}", port_str);
-                                continue;
-                            }
-                        };
-
-                        let addr = format!("{}:{}", ip, port).parse::<SocketAddr>()?;
-
-                        let node = self.node.clone();
-                        tokio::spawn(async move {
-                            let n = node.lock().await;
-                            match n
-                                .context
-                                .manager
-                                .connect(addr, n.context.clone(), |ctx, t| async {})
-                                .await
-                            {
-                                Ok(_) => println!("Connected to {}:{}", ip, port),
-                                Err(e) => println!("Failed to connect: {:?}", e),
-                            }
-                        });
-                    } else {
-                        println!("Usage: connect <ip> <port>");
-                    }
-                }
-
-                "status" => {
-                    let n = self.node.lock().await;
-                    println!("Node address: {}", n.files.clone().address());
-
-                    n.context.manager.status();
-                }
-
-                "help" => {
-                    println!("Commands:");
-                    println!(" send <address> <message>   - send text message");
-                    println!(" connect <ip> <port>        - connect to a new node");
-                    println!(" status                     - show connected clients and servers");
-                    println!(" exit                       - exit the program");
-                }
-
-                "exit" => {
-                    println!("Exiting...");
-                    break;
-                }
-
-                _ => {
-                    println!(
-                        "Unknown command: '{}', type 'help' for available commands",
-                        command
-                    );
-                }
+            if let Some(handler) = self.commands.get(&command_name) {
+                // 执行注册的处理函数
+                handler(self.node.clone(), parts).await;
+            } else {
+                println!("Unknown command: '{}', type 'help' for help", command_name);
             }
         }
-
         Ok(())
     }
 }

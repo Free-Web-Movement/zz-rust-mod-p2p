@@ -116,7 +116,7 @@ impl NodeRecord {
         // 2. 同步节点 ID (如果有)
         // 注意：ConnectionEntry 里的 node 是 Arc<RwLock<Option<Node>>>
         let node_lock = entry.node.read().await;
-        if let Some(actual_node) = &*node_lock {
+        if let Some(_actual_node) = &*node_lock {
             // 这里可以扩展 NodeRecord 字段，记录对方声明的 ID 或名称
             // self.peer_id = Some(actual_node.id.clone()); 
 
