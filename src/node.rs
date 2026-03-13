@@ -5,6 +5,7 @@ use aex::{
         types::{ConnectionEntry, NetworkScope},
     },
     crypto::session_key_manager::PairedSessionKey,
+    server::Server,
     tcp::{router::Router, types::Command},
 };
 use chrono::Utc;
@@ -18,7 +19,6 @@ use crate::{
     stored_files::StoredFiles,
 };
 
-
 // 用于保存节点的所有信息
 // 用于当前程序的基本信息共享
 
@@ -31,6 +31,7 @@ pub struct Node {
     pub name: String,       // User defined name for the node, no need to be unique
     pub addr: SocketAddr,
     pub context: Arc<GlobalContext>, // global context
+    pub server: Option<Server>,
 }
 
 impl Node {
@@ -53,6 +54,7 @@ impl Node {
             files,
             addr,
             context,
+            server: None,
         }
     }
 
@@ -96,6 +98,10 @@ impl Node {
         let global = Arc::new(GlobalContext::new(addr, Some(psk)));
         let node = Arc::new(Mutex::new(Node::new(name, files, addr, global.clone())));
         node
+    }
+
+    pub fn set_server(&mut self, server: Option<Server>) {
+        self.server = server;
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表

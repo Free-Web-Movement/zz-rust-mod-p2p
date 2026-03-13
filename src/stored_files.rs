@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, env::args};
 
 use aex::storage::Storage;
 use zz_account::address::FreeWebMovementAddress;
@@ -26,6 +26,10 @@ impl StoredFiles {
         inner_server_file: Option<String>,
         external_server_file: Option<String>,
     ) -> Self {
+
+        println!("{:?}", args());
+        println!("{:?}", args());
+        println!("{:?}", args());
         Self {
             storage,
             address_file: address_file.unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string()),
@@ -37,6 +41,8 @@ impl StoredFiles {
     }
 
     pub fn address(self) -> FreeWebMovementAddress {
+                println!("{:?}", &self.address_file);
+
         if let Some(addr) = self.storage.read(&self.address_file).unwrap() {
             tracing::info!("Using existing address: {}", &addr);
             addr
@@ -53,6 +59,7 @@ impl StoredFiles {
         if !is_inner {
             path = &self.external_server_file;
         }
+        println!("reading nodes from {}", path);
         match self.storage.read::<HashSet<NodeRecord>>(path) {
             Ok(Some(set)) => set,
             _ => {
