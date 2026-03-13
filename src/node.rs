@@ -18,6 +18,10 @@ use crate::{
     stored_files::StoredFiles,
 };
 
+
+// 用于保存节点的所有信息
+// 用于当前程序的基本信息共享
+
 #[derive(Clone)]
 pub struct Node {
     pub id: FreeWebMovementAddress,
