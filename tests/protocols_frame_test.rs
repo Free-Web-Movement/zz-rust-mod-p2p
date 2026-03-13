@@ -4,17 +4,15 @@ mod tests {
 
     use aex::{
         connection::{
-            context::{AexReader, AexWriter, BoxReader, BoxWriter, Context},
-            global::{self, GlobalContext},
+            context::{AexWriter, BoxWriter, Context},
+            global::GlobalContext,
             node::Node,
             types::{ConnectionEntry, NetworkScope},
         },
         tcp::types::{Codec, Frame},
     };
-    use anyhow::Error;
-    use chrono::Utc;
     use tokio::{
-        io::{AsyncReadExt, BufReader, duplex, split},
+        io::AsyncReadExt,
         sync::Mutex,
     };
     use tokio_util::sync::CancellationToken;
