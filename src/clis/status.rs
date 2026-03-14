@@ -1,10 +1,13 @@
-use crate::node::Node;
+use aex::{connection::global::GlobalContext, storage::Storage};
+use zz_account::address::FreeWebMovementAddress;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
-pub async fn handle(node: Arc<Mutex<Node>>, _: Vec<String>) {
-    let n = node.lock().await;
-    println!("Node address: {}", n.files.clone().address());
-    let status = n.context.manager.status();
+use crate::io_storage::IOStorage;
+
+pub async fn handle(_args: Vec<String>, context: Arc<GlobalContext>) {
+    let storage = context.get::<Arc<Storage>>().await.unwrap();
+    let io_storage = context.get::<IOStorage>().await.unwrap();
+    println!("Node address: {}", io_storage.read::<FreeWebMovementAddress>("address", (*storage).clone()).await.unwrap());
+    let status = context.manager.status();
     println!("Status: {:?}", status);
 }

@@ -1,8 +1,7 @@
-use crate::node::Node;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use aex::connection::global::GlobalContext;
 
-pub async fn handle(_: Arc<Mutex<Node>>, _: Vec<String>) {
+pub async fn handle(_args: Vec<String>, _context: Arc<GlobalContext>) {
     println!("Commands:");
     println!(" send <address> <message>   - send text message");
     println!(" connect <ip> <port>        - connect to a new node");

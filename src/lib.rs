@@ -4,4 +4,4 @@ pub mod consts;
 pub mod node;
 pub mod protocols;
 pub mod record;
-pub mod stored_files;
+pub mod io_storage;

@@ -1,8 +1,7 @@
-use crate::node::Node;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
+use aex::connection::global::GlobalContext;
 
-pub async fn handle(node: Arc<Mutex<Node>>, args: Vec<String>) {
+pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     if args.len() < 2 {
         println!("Usage: connect <ip> <port>");
         return;
@@ -10,11 +9,7 @@ pub async fn handle(node: Arc<Mutex<Node>>, args: Vec<String>) {
     let addr_str = format!("{}:{}", args[0], args[1]);
     match addr_str.parse::<SocketAddr>() {
         Ok(addr) => {
-            let n = node.lock().await;
-            let context = n.context.clone();
-            match n
-                .context
-                .manager
+            match context.clone().manager
                 .connect(addr, context, move |_ctx, _t| async move {
                     println!("Connected to {}!", addr);
                 })

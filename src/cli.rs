@@ -1,28 +1,53 @@
+use aex::connection::global::GlobalContext;
+use clap::Parser;
 use futures::future::BoxFuture;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     io::{self, AsyncBufReadExt, BufReader},
-    sync::Mutex,
 };
 
 use crate::{
     clis::{connect, help, send, status},
-    node::Node,
 };
 
 // 定义处理函数的类型：接收 Node 引用和剩余参数列表
 pub type CliHandler =
-    Box<dyn Fn(Arc<Mutex<Node>>, Vec<String>) -> BoxFuture<'static, ()> + Send + Sync>;
+    Box<dyn Fn(Vec<String>, Arc<GlobalContext>) -> BoxFuture<'static, ()> + Send + Sync>;
 
 pub struct Cli {
-    node: Arc<Mutex<Node>>,
     commands: HashMap<String, CliHandler>,
 }
 
+
+#[derive(Parser, Debug, Default)]
+#[command(name = "zzp2p")]
+pub struct Opt {
+    #[arg(long, default_value = "zz-p2p-node")]
+    pub name: String,
+
+    #[arg(long, default_value = "0.0.0.0")]
+    pub ip: String,
+
+    #[arg(long, default_value_t = 9000)]
+    pub port: u16,
+
+    #[arg(long)]
+    pub data_dir: Option<String>,
+
+    #[arg(long)]
+    pub address_file: Option<String>,
+
+    #[arg(long)]
+    pub inner_server_file: Option<String>,
+
+    #[arg(long)]
+    pub external_server_file: Option<String>,
+}
+
 impl Cli {
-    pub fn new(node: Arc<Mutex<Node>>) -> Self {
+    pub fn new() -> Self {
         let mut cli = Self {
-            node,
+            // node,
             commands: HashMap::new(),
         };
         cli.register_builtins();
@@ -33,13 +58,13 @@ impl Cli {
     pub fn register<F, Fut>(&mut self, name: &str, handler: F)
     where
         // F 是一个函数，它接收 Node 和 Args，返回 Fut
-        F: Fn(Arc<Mutex<Node>>, Vec<String>) -> Fut + Send + Sync + 'static,
+        F: Fn(Vec<String>, Arc<GlobalContext>) -> Fut + Send + Sync + 'static,
         // Fut 是这个函数返回的异步任务
         Fut: Future<Output = ()> + Send + 'static,
     {
         // 在内部手动包装成 BoxFuture
-        let boxed_handler = Box::new(move |node: Arc<Mutex<Node>>, args: Vec<String>| {
-            let fut = handler(node, args);
+        let boxed_handler = Box::new(move |args: Vec<String>, ctx: Arc<GlobalContext>| {
+            let fut = handler(args, ctx);
             Box::pin(fut) as BoxFuture<'static, ()>
         });
 
@@ -60,7 +85,7 @@ impl Cli {
         self.register("help", help::handle);
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&self, ctx: Arc<GlobalContext>) -> anyhow::Result<()> {
         println!("Type 'help' for commands.");
 
         let stdin = io::stdin();
@@ -82,7 +107,7 @@ impl Cli {
 
             if let Some(handler) = self.commands.get(&command_name) {
                 // 执行注册的处理函数
-                handler(self.node.clone(), parts).await;
+                handler(parts, ctx.clone()).await;
             } else {
                 println!("Unknown command: '{}', type 'help' for help", command_name);
             }

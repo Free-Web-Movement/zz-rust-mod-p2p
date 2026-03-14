@@ -1,10 +1,9 @@
 use aex::connection::protocol::Protocol;
 use aex::connection::types::ConnectionEntry;
-use aex::storage::Storage;
-use chrono::{ DateTime, Utc };
-use serde::{ Deserialize, Serialize };
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::{ collections::HashSet, hash::Hasher, net::SocketAddr };
+use std::{collections::HashSet, hash::Hasher, net::SocketAddr};
 
 use std::hash::Hash;
 
@@ -118,13 +117,12 @@ impl NodeRecord {
         let node_lock = entry.node.read().await;
         if let Some(_actual_node) = &*node_lock {
             // 这里可以扩展 NodeRecord 字段，记录对方声明的 ID 或名称
-            // self.peer_id = Some(actual_node.id.clone()); 
-
+            // self.peer_id = Some(actual_node.id.clone());
         }
 
         // 3. 标记为可用
         self.is_available = true;
-        self.update_status(true); 
+        self.update_status(true);
     }
 }
 
@@ -134,16 +132,18 @@ pub struct NodeRegistry {
 }
 
 impl NodeRegistry {
-    pub fn new() -> Self {
-        Self {
-            nodes: HashSet::new(),
-        }
+    pub fn new(nodes: HashSet<NodeRecord>) -> Self {
+        let mut registry = Self { nodes };
+        // 关键需求：启动时计算并标记 5 天以上的失效节点
+        registry.on_startup_maintenance();
+        registry
     }
 
     /// 添加或更新节点
     pub fn upsert(&mut self, endpoint: SocketAddr, success: bool) {
         // 尝试从集合中取出已存在的记录
-        let mut record = self.nodes
+        let mut record = self
+            .nodes
             .take(&NodeRecord::new(endpoint))
             .unwrap_or_else(|| NodeRecord::new(endpoint));
 
@@ -163,17 +163,17 @@ impl NodeRegistry {
     }
 
     /// 核心逻辑：从 Storage 中恢复数据，并执行启动时的失效检查
-    pub fn load_from_storage(storage: &Storage, path: &str) -> Self {
-        let nodes = match storage.read::<HashSet<NodeRecord>>(&path.to_string()) {
-            Ok(Some(set)) => set,
-            _ => HashSet::new(),
-        };
+    // pub fn load_from_storage(storage: &Storage, path: &str) -> Self {
+    //     // let nodes = match storage.read::<HashSet<NodeRecord>>(&path.to_string()) {
+    //     //     Ok(Some(set)) => set,
+    //     //     _ => HashSet::new(),
+    //     // };
 
-        let mut registry = Self { nodes };
-        // 关键需求：启动时计算并标记 5 天以上的失效节点
-        registry.on_startup_maintenance();
-        registry
-    }
+    //     let mut registry = Self { nodes };
+    //     // 关键需求：启动时计算并标记 5 天以上的失效节点
+    //     registry.on_startup_maintenance();
+    //     registry
+    // }
 
     /// 执行启动维护：标记逻辑
     pub fn on_startup_maintenance(&mut self) {
@@ -191,8 +191,8 @@ impl NodeRegistry {
         }
     }
 
-    /// 持久化到 Storage
-    pub fn save_to_storage(&self, storage: &Storage, path: &str) -> anyhow::Result<()> {
-        storage.save(&path.to_string(), &self.nodes)
-    }
+    // /// 持久化到 Storage
+    // pub fn save_to_storage(&self, storage: &Storage, path: &str) -> anyhow::Result<()> {
+    //     storage.save(&path.to_string(), &self.nodes)
+    // }
 }

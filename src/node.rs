@@ -5,18 +5,21 @@ use aex::{
         types::{ConnectionEntry, NetworkScope},
     },
     crypto::session_key_manager::PairedSessionKey,
-    server::Server,
+    server::{HTTPServer, Server},
+    storage::Storage,
     tcp::{router::Router, types::Command},
 };
 use chrono::Utc;
-use std::{net::SocketAddr, sync::Arc};
+use clap::Parser;
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
+    cli::{Cli, Opt},
+    io_storage::{IOStorage, io_stroage_init},
     protocols::{command::P2PCommand, frame::P2PFrame},
     record::{NodeRecord, NodeRegistry},
-    stored_files::StoredFiles,
 };
 
 // 用于保存节点的所有信息
@@ -27,34 +30,50 @@ pub struct Node {
     pub id: FreeWebMovementAddress,
     pub inner: NodeRegistry,
     pub external: NodeRegistry,
-    pub files: StoredFiles, // Unique network address of the node, also id for the node
-    pub name: String,       // User defined name for the node, no need to be unique
+    pub storage: Arc<Storage>,
+    pub io_storage: IOStorage, // Unique network address of the node, also id for the node
+    pub name: String,          // User defined name for the node, no need to be unique
     pub addr: SocketAddr,
     pub context: Arc<GlobalContext>, // global context
-    pub server: Option<Server>,
+    pub server: Server,
+    pub cli: Arc<Cli>,
 }
 
 impl Node {
-    pub fn new(
+    pub async fn new(
         name: String,
-        files: StoredFiles,
+        storage: Arc<Storage>,
+        io_storage: IOStorage,
         addr: SocketAddr,
         context: Arc<GlobalContext>,
+        server: Server,
+        cli: Arc<Cli>,
     ) -> Self {
-        let id = files.clone().address();
-        let inner =
-            NodeRegistry::load_from_storage(&files.storage, &files.clone().inner_server_file);
-        let external =
-            NodeRegistry::load_from_storage(&files.storage, &files.clone().external_server_file);
+        let id = io_storage
+            .read::<FreeWebMovementAddress>("address", (*storage).clone())
+            .await
+            .unwrap();
+        let inner_nodes = io_storage
+            .read::<HashSet<NodeRecord>>("inner_server", (*storage).clone())
+            .await
+            .unwrap();
+        let external_nodes = io_storage
+            .read::<HashSet<NodeRecord>>("external_server", (*storage).clone())
+            .await
+            .unwrap();
+        let inner = NodeRegistry::new(inner_nodes);
+        let external = NodeRegistry::new(external_nodes);
         Self {
             name,
             id,
             inner,
             external,
-            files,
+            storage,
+            io_storage,
             addr,
             context,
-            server: None,
+            server,
+            cli,
         }
     }
 
@@ -93,15 +112,56 @@ impl Node {
 
     pub async fn stop(&mut self) {}
 
-    pub fn init(name: String, files: StoredFiles, addr: SocketAddr) -> Arc<Mutex<Self>> {
+    pub async fn init(opt:Opt) -> Self {
+
+        let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));
+        let io_storage = io_stroage_init(&opt, storage.clone());
+
+        // let address = files.address();
+
+        let addr = format!("{}:{}", opt.ip.clone(), opt.port)
+            .parse::<SocketAddr>()
+            .unwrap();
+
+        // let node = Node::init(opt.name.clone(), files.clone(), addr);
+
+        // name = opt., files: StoredFiles, addr: SocketAddr
+
+        // register(&mut router);
+
+        // .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
+        // .await?;
+
+        // cli.run().await?;
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
         let global = Arc::new(GlobalContext::new(addr, Some(psk)));
-        let node = Arc::new(Mutex::new(Node::new(name, files, addr, global.clone())));
-        node
+        let cli = Cli::new();
+
+        let server = {
+            // let guard = node.lock().await;
+            HTTPServer::new(addr, Some(global.clone()))
+        };
+
+        let router = Router::new();
+        server.tcp(router);
+        Node::new(
+            opt.name,
+            storage,
+            io_storage,
+            addr,
+            global.clone(),
+            server,
+            Arc::new(cli),
+        )
+        .await
     }
 
-    pub fn set_server(&mut self, server: Option<Server>) {
-        self.server = server;
+    pub async fn start(&mut self) {
+        self.server
+            .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
+            .await
+            .unwrap();
+        let _ = self.cli.clone().run(self.context.clone()).await;
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表
@@ -166,11 +226,17 @@ impl Node {
         let _ = self.save_registries();
     }
 
-    fn save_registries(&self) -> anyhow::Result<()> {
-        self.inner
-            .save_to_storage(&self.files.storage, &self.files.inner_server_file)?;
-        self.external
-            .save_to_storage(&self.files.storage, &self.files.external_server_file)?;
+    async fn  save_registries(&self) -> anyhow::Result<()> {
+        self.io_storage.save::<HashSet<NodeRecord>>(
+            &self.inner.nodes,
+            "inner_server",
+            &self.storage.clone(),
+        ).await;
+        self.io_storage.save::<HashSet<NodeRecord>>(
+            &self.external.nodes,
+            "external_server",
+            &self.storage.clone(),
+        ).await;
         Ok(())
     }
 }

@@ -8,13 +8,13 @@ use aex::{
     tcp::{router::Router, types::Command},
 };
 use tokio::{io::BufWriter, net::TcpStream};
+use zz_account::address::FreeWebMovementAddress;
 use zz_p2p::{
-    protocols::{
+    cli::Opt, io_storage::io_stroage_init, protocols::{
         command::{Action, Entity, P2PCommand},
         commands::online::{OnlineCommand, online_handler},
         frame::P2PFrame,
-    },
-    stored_files::StoredFiles,
+    }
 };
 
 // #[tokio::test]
@@ -69,17 +69,26 @@ use zz_p2p::{
 async fn test_p2p_command_flow() {
     let version: u8 = 1;
     let addr: SocketAddr = "127.0.0.1:9002".parse().unwrap();
-    let storage = Storage::new(None);
-    let files = StoredFiles::new(storage, None, None, None);
-    let node = zz_p2p::node::Node::init("".to_string(), files.clone(), addr);
+    let storage = Arc::new(Storage::new(None));
+    // let opt = Opt::parse_from(["zzp2p", "--port", "9002"]);
+    let opt = Opt {
+        name: "test-node".to_string(),
+        ip: "127.0.0.1".to_string(),
+        port: 9002,
+        data_dir: Some("/tmp/p2p_test".to_string()),
+        ..Default::default() // 假设你加了 #[derive(Default)]
+    };
+    // let opt = Opt::default();
+    let io_storage = io_stroage_init(&opt, storage.clone());
+    // let files = StoredFiles::new(storage, None, None, None);
+    let node = Arc::new(zz_p2p::node::Node::init(opt).await);
     let node_clone = node.clone();
 
     // --- 1. 启动服务器 (使用你的代码逻辑，但放在后台运行) ---
     // 注意：实际测试中，server.start() 通常会阻塞，需要 tokio::spawn
     tokio::spawn(async move {
         let server = {
-            let guard = node.lock().await;
-            HTTPServer::new(addr, Some(guard.context.clone()))
+            HTTPServer::new(addr, Some(node_clone.clone().context.clone()))
         };
 
         let mut router = Router::new();
@@ -119,8 +128,7 @@ async fn test_p2p_command_flow() {
     // 构造一个 "Online" 命令的 Frame
     // 这里的具体构造方式取决于 P2PFrame 的实现
     let psk = {
-        let guard = node_clone.lock().await;
-        let g = guard.context.clone();
+        let g = node.clone().context.clone();
         g.paired_session_keys.clone().unwrap()
     };
 
@@ -136,11 +144,10 @@ async fn test_p2p_command_flow() {
         node: aex_node,
         ephemeral_public_key: key.to_bytes(),
     };
-    let address = files.clone().address();
+    // let address = files.clone().address();
 
     let psk = {
-        let guard = node_clone.lock().await;
-        guard.context.clone().paired_session_keys.clone()
+        node.clone().context.clone().paired_session_keys.clone()
     };
 
     let (_, writer) = stream.into_split();
@@ -148,6 +155,8 @@ async fn test_p2p_command_flow() {
     let buf_writer = BufWriter::new(writer);
 
     let mut aex_writer: Box<AexWriter> = Box::new(buf_writer);
+
+    let address = io_storage.read::<FreeWebMovementAddress>("address", (*storage).clone()).await.unwrap();
 
     let _ = P2PFrame::send::<OnlineCommand>(
         &address,
@@ -162,7 +171,6 @@ async fn test_p2p_command_flow() {
     println!("✅ Command sent to server");
     tokio::time::sleep(Duration::from_secs(3)).await;
     {
-        let g = node_clone.lock().await;
-        g.context.shutdown_all().await
+        node.clone().context.shutdown_all().await
     }
 }
