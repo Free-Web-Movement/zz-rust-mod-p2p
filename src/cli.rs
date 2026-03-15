@@ -2,22 +2,17 @@ use aex::connection::global::GlobalContext;
 use clap::Parser;
 use futures::future::BoxFuture;
 use std::{collections::HashMap, sync::Arc};
-use tokio::{
-    io::{self, AsyncBufReadExt, BufReader},
-};
+use tokio::io::AsyncBufReadExt;
 
-use crate::{
-    clis::{connect, help, send, status},
-};
+use crate::clis::{connect, help, send, status};
 
 // 定义处理函数的类型：接收 Node 引用和剩余参数列表
 pub type CliHandler =
     Box<dyn Fn(Vec<String>, Arc<GlobalContext>) -> BoxFuture<'static, ()> + Send + Sync>;
 
 pub struct Cli {
-    commands: HashMap<String, CliHandler>,
+    pub commands: HashMap<String, CliHandler>,
 }
-
 
 #[derive(Parser, Debug, Default)]
 #[command(name = "zzp2p")]
@@ -85,13 +80,16 @@ impl Cli {
         self.register("help", help::handle);
     }
 
-    pub async fn run(&self, ctx: Arc<GlobalContext>) -> anyhow::Result<()> {
+    pub async fn run<R>(&self, reader: R, ctx: Arc<GlobalContext>) -> anyhow::Result<()>
+    where
+        R: tokio::io::AsyncBufRead + Unpin,
+    {
         println!("Type 'help' for commands.");
 
-        let stdin = io::stdin();
-        let mut reader = BufReader::new(stdin).lines();
+        // let stdin = io::stdin();
+        let mut lines = reader.lines();
 
-        while let Some(line) = reader.next_line().await? {
+        while let Some(line) = lines.next_line().await? {
             let line = line.trim();
             if line.is_empty() {
                 continue;

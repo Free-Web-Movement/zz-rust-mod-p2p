@@ -144,12 +144,15 @@ impl Node {
         .await
     }
 
-    pub async fn start(&mut self) {
+    pub async fn start<R>(&mut self, reader: R) 
+        where
+        R: tokio::io::AsyncBufRead + Unpin,
+    {
         self.server
             .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
             .await
             .unwrap();
-        let _ = self.cli.clone().run(self.context.clone()).await;
+        let _ = self.cli.clone().run(reader, self.context.clone()).await;
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表
