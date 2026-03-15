@@ -16,6 +16,8 @@ use crate::{
     record::NodeRecord,
 };
 
+use crate::storage;
+
 pub async fn read<T, F1, F2>(storage: Storage, file: &String, f1: F1, f2: F2) -> T
 where
     T: for<'de> serde::Deserialize<'de> + serde::Serialize,
@@ -89,59 +91,86 @@ impl IOStorage {
     {
         match self.get::<T>(key) {
             Some(v) => {
-                let _ = storage.save::<T>( &v.file, t);
-            },
-            None => {
+                let _ = storage.save::<T>(&v.file, t);
             }
+            None => {}
         }
     }
 }
 
 pub fn io_stroage_init(opt: &Opt, storage: Arc<Storage>) -> IOStorage {
-    let arc_storage = storage.clone();
-    let arc_storage1 = storage.clone();
-    let arc_storage2 = storage.clone();
-    let mut io_storage = IOStorage::default();
-    io_storage.insert(
-        "address".to_string(),
-        opt
-            .address_file
-            .clone()
-            .unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string()),
-        Box::new(move |v| {
-            tracing::info!("Using existing address: {}", v);
-        }),
-        Box::new(move |file: &String| {
-            let addr = FreeWebMovementAddress::random();
-            tracing::info!("Generated new address: {}", &addr);
-            arc_storage.clone().save(&file, &addr).unwrap();
-            addr
-        }),
-    );
-    io_storage.insert(
-        "inner_server".to_string(),
-        opt
-            .inner_server_file
-            .clone()
-            .unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE.to_string()),
-        Box::new(|_v: &HashSet<NodeRecord>| {}),
-        Box::new(move |file| {
-            let v = HashSet::new();
-            arc_storage1.clone().save(&file, &v).unwrap();
-            v
-        }),
-    );
-    io_storage.insert(
-        "external_server".to_string(),
-        opt.external_server_file
-            .clone()
-            .unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE.to_string()),
-        Box::new(|_v: &HashSet<NodeRecord>| {}),
-        Box::new(move |file| {
-            let v = HashSet::new();
-            arc_storage2.clone().save(&file, &v).unwrap();
-            v
-        }),
-    );
-    io_storage
+
+
+    let mut ios = IOStorage::default();
+
+    storage!(ios, storage, [
+        (
+            "address",
+            opt.address_file.clone().unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.into()),
+            FreeWebMovementAddress,
+            |v| tracing::info!("Using address: {}", v),
+            FreeWebMovementAddress::random()
+        ),
+        (
+            "inner_server",
+            opt.inner_server_file.clone().unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE.into()),
+            HashSet<NodeRecord>,
+            |_| {},
+            HashSet::new()
+        ),
+        (
+            "external_server",
+            opt.external_server_file.clone().unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE.into()),
+            HashSet<NodeRecord>,
+            |_| {},
+            HashSet::new()
+        ),
+    ]);
+
+    // let arc_storage = storage.clone();
+    // let arc_storage1 = storage.clone();
+    // let arc_storage2 = storage.clone();
+    // let mut io_storage = IOStorage::default();
+
+    // io_storage.insert(
+    //     "address".to_string(),
+    //     opt.address_file
+    //         .clone()
+    //         .unwrap_or(DEFAULT_APP_DIR_ADDRESS_JSON_FILE.to_string()),
+    //     Box::new(move |v| {
+    //         tracing::info!("Using existing address: {}", v);
+    //     }),
+    //     Box::new(move |file: &String| {
+    //         let addr = FreeWebMovementAddress::random();
+    //         tracing::info!("Generated new address: {}", &addr);
+    //         arc_storage.clone().save(&file, &addr).unwrap();
+    //         addr
+    //     }),
+    // );
+    // io_storage.insert(
+    //     "inner_server".to_string(),
+    //     opt.inner_server_file
+    //         .clone()
+    //         .unwrap_or(DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE.to_string()),
+    //     Box::new(|_v: &HashSet<NodeRecord>| {}),
+    //     Box::new(move |file| {
+    //         let v = HashSet::new();
+    //         arc_storage1.clone().save(&file, &v).unwrap();
+    //         v
+    //     }),
+    // );
+    // io_storage.insert(
+    //     "external_server".to_string(),
+    //     opt.external_server_file
+    //         .clone()
+    //         .unwrap_or(DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE.to_string()),
+    //     Box::new(|_v: &HashSet<NodeRecord>| {}),
+    //     Box::new(move |file| {
+    //         let v = HashSet::new();
+    //         arc_storage2.clone().save(&file, &v).unwrap();
+    //         v
+    //     }),
+    // );
+    // io_storage
+    ios
 }

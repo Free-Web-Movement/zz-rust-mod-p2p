@@ -5,3 +5,4 @@ pub mod node;
 pub mod protocols;
 pub mod record;
 pub mod io_storage;
+pub mod macros;
