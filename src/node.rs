@@ -122,23 +122,11 @@ impl Node {
         let addr = format!("{}:{}", opt.ip.clone(), opt.port)
             .parse::<SocketAddr>()
             .unwrap();
-
-        // let node = Node::init(opt.name.clone(), files.clone(), addr);
-
-        // name = opt., files: StoredFiles, addr: SocketAddr
-
-        // register(&mut router);
-
-        // .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
-        // .await?;
-
-        // cli.run().await?;
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
         let global = Arc::new(GlobalContext::new(addr, Some(psk)));
         let cli = Cli::new();
 
         let server = {
-            // let guard = node.lock().await;
             HTTPServer::new(addr, Some(global.clone()))
         };
 
