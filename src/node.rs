@@ -10,7 +10,6 @@ use aex::{
     tcp::{router::Router, types::Command},
 };
 use chrono::Utc;
-use clap::Parser;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
@@ -112,8 +111,7 @@ impl Node {
 
     pub async fn stop(&mut self) {}
 
-    pub async fn init(opt:Opt) -> Self {
-
+    pub async fn init(opt: Opt) -> Self {
         let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));
         let io_storage = io_stroage_init(&opt, storage.clone());
 
@@ -124,11 +122,12 @@ impl Node {
             .unwrap();
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
         let global = Arc::new(GlobalContext::new(addr, Some(psk)));
+
+        global.set(storage.clone()).await;
+        global.set(io_storage.clone()).await;
         let cli = Cli::new();
 
-        let server = {
-            HTTPServer::new(addr, Some(global.clone()))
-        };
+        let server = { HTTPServer::new(addr, Some(global.clone())) };
 
         let router = Router::new();
         server.tcp(router);
@@ -144,15 +143,33 @@ impl Node {
         .await
     }
 
-    pub async fn start<R>(&mut self, reader: R) 
-        where
+    pub async fn start<R>(&mut self, reader: R)
+    where
         R: tokio::io::AsyncBufRead + Unpin,
     {
-        self.server
-            .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
-            .await
-            .unwrap();
-        let _ = self.cli.clone().run(reader, self.context.clone()).await;
+        // 1. 克隆需要的资源
+        let server = self.server.clone();
+        let cli = self.cli.clone();
+        let ctx = self.context.clone();
+
+        // 2. 启动 Server (后台运行)
+        // 使用 tokio::spawn 确保 server 不会阻塞主线程对 CLI 的处理
+        let server_handle = tokio::spawn(async move {
+            if let Err(e) = server
+                .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
+                .await
+            {
+                eprintln!("Server error: {:?}", e);
+            }
+        });
+
+        // 3. 启动 CLI (前台运行)
+        // CLI 的退出（输入 exit）将决定 start 函数的结束
+        tracing::info!("CLI started. Type 'help' for commands.");
+        let _ = cli.run(reader, ctx).await;
+
+        // 4. (可选) 当 CLI 退出后，可以尝试关闭或等待 server
+        server_handle.abort(); // 如果希望立即停止 server
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表
@@ -217,17 +234,17 @@ impl Node {
         let _ = self.save_registries();
     }
 
-    async fn  save_registries(&self) -> anyhow::Result<()> {
-        self.io_storage.save::<HashSet<NodeRecord>>(
-            &self.inner.nodes,
-            "inner_server",
-            &self.storage.clone(),
-        ).await;
-        self.io_storage.save::<HashSet<NodeRecord>>(
-            &self.external.nodes,
-            "external_server",
-            &self.storage.clone(),
-        ).await;
+    async fn save_registries(&self) -> anyhow::Result<()> {
+        self.io_storage
+            .save::<HashSet<NodeRecord>>(&self.inner.nodes, "inner_server", &self.storage.clone())
+            .await;
+        self.io_storage
+            .save::<HashSet<NodeRecord>>(
+                &self.external.nodes,
+                "external_server",
+                &self.storage.clone(),
+            )
+            .await;
         Ok(())
     }
 }
