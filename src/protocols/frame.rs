@@ -205,16 +205,14 @@ impl P2PFrame {
         let frame = P2PFrame::build(&address, command, 1).await.unwrap();
 
         let bytes = Codec::encode(&frame);
-        let len = bytes.len() as u32;
 
         let mut guard = ctx.lock().await;
         if let Some(ref mut writer) = guard.writer {
-            if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
-                eprintln!("Failed to send length: {:?}", e);
-            }
             if let Err(e) = writer.write_all(&bytes).await {
                 eprintln!("Failed to send data: {:?}", e);
             }
+
+            let _ = writer.flush().await;
         }
         Ok(())
     }

@@ -19,4 +19,5 @@ pub fn register(router: &mut Router) {
         [P2PCommand::to_u32(Entity::Node, Action::OnLineAck), onlineack_handler],
         [P2PCommand::to_u32(Entity::Message, Action::SendText), message_handler],
     ]);
+    println!("{:?}", router.handlers);
 }

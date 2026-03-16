@@ -1,13 +1,11 @@
 use aex::connection::{global::GlobalContext, node::Node};
 use std::{net::SocketAddr, sync::Arc};
 
-use crate::
-    protocols::{
-        command::{Action, Entity},
-        commands::online::OnlineCommand,
-        frame::P2PFrame,
-    }
-;
+use crate::protocols::{
+    command::{Action, Entity},
+    commands::online::OnlineCommand,
+    frame::P2PFrame,
+};
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     if args.len() < 2 {
@@ -24,9 +22,8 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                     println!("Connected to {}!", addr);
 
                     {
-                        let guard = ctx.lock().await;
-
                         let psk = {
+                            let guard = ctx.lock().await;
                             let g = guard.global.clone();
                             g.paired_session_keys.clone().unwrap()
                         };
@@ -49,9 +46,11 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                             &Some(cmd),
                             Entity::Node,
                             Action::OnLine,
-                            false
+                            false,
                         )
-                        .await.expect("Online Command Sending Failed!");
+                        .await
+                        .expect("Online Command Sending Failed!");
+                        println!("message send!");
                     }
                 })
                 .await

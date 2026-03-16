@@ -28,6 +28,7 @@ pub async fn online_handler(
     frame: P2PFrame,
     cmd: P2PCommand, // writer: &mut (dyn AsyncWrite + Send + Unpin),
 ) {
+    println!("inside online handler!");
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
         Err(e) => {
