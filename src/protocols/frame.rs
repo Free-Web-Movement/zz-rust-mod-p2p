@@ -1,6 +1,5 @@
 use aex::{
     connection::context::{AexWriter, Context},
-    crypto::session_key_manager::PairedSessionKey,
     tcp::types::{Codec, Frame},
 };
 use rand::Rng;
@@ -167,39 +166,55 @@ impl Frame for P2PFrame {
 
 impl P2PFrame {
     pub async fn send<C: Codec>(
-        address: &FreeWebMovementAddress,
-        writer: &mut AexWriter,
-        sub_command: &Option<C>,
+        ctx: Arc<Mutex<Context>>,
+        command: &Option<C>,
         entity: Entity,
         action: Action,
-        paired_session_key: Option<Arc<Mutex<PairedSessionKey>>>,
+        is_encrypt: bool,
     ) -> anyhow::Result<()> {
-        let data = match sub_command {
+        let data = match command {
             Some(cmd) => Codec::encode(cmd),
             None => vec![],
         };
 
-        let bytes = match paired_session_key {
-            Some(psk) => {
-                let encode = psk.lock().await;
-                encode
-                    .encrypt(&address.to_string().as_bytes().to_vec(), &data)
-                    .await?
+        let gctx = {
+            let guard = ctx.lock().await;
+            guard.global.clone()
+        };
+
+        let gpsk = gctx.clone().paired_session_keys.clone();
+
+        let address = gctx.get::<FreeWebMovementAddress>().await.unwrap();
+
+        let bytes = if is_encrypt {
+            match gpsk {
+                Some(psk) => {
+                    let encode = psk.lock().await;
+                    encode
+                        .encrypt(&address.to_string().as_bytes().to_vec(), &data)
+                        .await?
+                }
+                None => data,
             }
-            None => data,
+        } else {
+            data
         };
 
         let command = P2PCommand::new(entity, action, bytes);
 
-        let frame = P2PFrame::build(address, command, 1).await.unwrap();
+        let frame = P2PFrame::build(&address, command, 1).await.unwrap();
 
         let bytes = Codec::encode(&frame);
         let len = bytes.len() as u32;
-        if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
-            eprintln!("Failed to send TCP bytes: {:?}", e);
-        }
-        if let Err(e) = writer.write_all(&bytes).await {
-            eprintln!("Failed to send TCP bytes: {:?}", e);
+
+        let mut guard = ctx.lock().await;
+        if let Some(ref mut writer) = guard.writer {
+            if let Err(e) = writer.write_all(&len.to_be_bytes()).await {
+                eprintln!("Failed to send length: {:?}", e);
+            }
+            if let Err(e) = writer.write_all(&bytes).await {
+                eprintln!("Failed to send data: {:?}", e);
+            }
         }
         Ok(())
     }
@@ -209,36 +224,38 @@ impl P2PFrame {
             eprintln!("Failed to send TCP bytes: {:?}", e);
         }
     }
-}
 
-pub async fn notify(frame: &P2PFrame, ctx: Arc<Mutex<Context>>) {
-    // ⚠️ 重要安全原则：
-    // - 不解密
-    // - 不反序列化 Command
-    // - 不修改 Frame
-    // - 只做字节级转发
+    pub async fn notify(&self, ctx: Arc<Mutex<Context>>) {
+        // ⚠️ 重要安全原则：
+        // - 不解密
+        // - 不反序列化 Command
+        // - 不修改 Frame
+        // - 只做字节级转发
 
-    // ===== 1️⃣ 查本地 clients ====
-    {
+        // ===== 1️⃣ 查本地 clients ====
         {
-            let manager = {
-                let guard = ctx.lock().await;
-                guard.global.manager.clone()
-            };
-            let bytes = Codec::encode(frame);
-            manager
-                .forward(|entries| async {
-                    for entry in entries {
-                        if let Some(ctx) = &entry.context {
-                            let mut guard = ctx.lock().await;
-                            if let Some(writer) = &mut guard.writer {
-                                P2PFrame::send_bytes(writer, &bytes).await
+            {
+                let manager = {
+                    let guard = ctx.lock().await;
+                    guard.global.manager.clone()
+                };
+
+                let frame: &P2PFrame = self;
+                let bytes = Codec::encode(frame);
+                manager
+                    .forward(|entries| async {
+                        for entry in entries {
+                            if let Some(ctx) = &entry.context {
+                                let mut guard = ctx.lock().await;
+                                if let Some(writer) = &mut guard.writer {
+                                    P2PFrame::send_bytes(writer, &bytes).await
+                                }
                             }
+                            continue;
                         }
-                        continue;
-                    }
-                })
-                .await;
-        };
+                    })
+                    .await;
+            };
+        }
     }
 }

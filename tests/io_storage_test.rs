@@ -26,7 +26,7 @@ mod tests {
         
         // 第一次读取：因为文件不存在，f2 会生成一个随机地址
         let first_addr: FreeWebMovementAddress = io_storage_v1
-            .read::<FreeWebMovementAddress>("address", (*storage).clone())
+            .read::<FreeWebMovementAddress>("address")
             .await
             .unwrap();
 
@@ -43,7 +43,7 @@ mod tests {
 
         // 第二次读取：此时文件已存在，逻辑应该走 f1（读取文件）
         let second_addr: FreeWebMovementAddress = io_storage_v2
-            .read::<FreeWebMovementAddress>("address", (*storage).clone())
+            .read::<FreeWebMovementAddress>("address")
             .await
             .unwrap();
 
@@ -80,7 +80,7 @@ mod tests {
 
             // 读取 inner_server，预期触发 f2 生成空 HashSet
             let inner: HashSet<NodeRecord> = io_storage
-                .read::<HashSet<NodeRecord>>("inner_server", (*storage).clone())
+                .read::<HashSet<NodeRecord>>("inner_server")
                 .await
                 .unwrap();
             
@@ -92,10 +92,10 @@ mod tests {
             let record = NodeRecord::new(endpoint);
             new_set.insert(record.clone());
             
-            io_storage.save(&new_set, "inner_server", &storage).await;
+            io_storage.save(&new_set, "inner_server").await;
             println!("Stage 1: Saved 1 record to inner_server");
 
-            io_storage.save(&new_set, "inner_server-1", &storage).await;
+            io_storage.save(&new_set, "inner_server-1").await;
 
         }
 
@@ -108,7 +108,7 @@ mod tests {
 
             // 再次读取 inner_server
             let inner_reloaded: HashSet<NodeRecord> = io_storage_v2
-                .read::<HashSet<NodeRecord>>("inner_server", (*storage).clone())
+                .read::<HashSet<NodeRecord>>("inner_server")
                 .await
                 .unwrap();
 
@@ -123,7 +123,7 @@ mod tests {
         {
             let io_storage = io_stroage_init(&opt, storage.clone());
             let external: HashSet<NodeRecord> = io_storage
-                .read::<HashSet<NodeRecord>>("external_server", (*storage).clone())
+                .read::<HashSet<NodeRecord>>("external_server")
                 .await
                 .unwrap();
             

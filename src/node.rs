@@ -16,8 +16,8 @@ use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     cli::{Cli, Opt},
-    io_storage::{IOStorage, io_stroage_init},
-    protocols::{command::P2PCommand, frame::P2PFrame},
+    io_storage::{IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_stroage_init},
+    protocols::{command::P2PCommand, frame::P2PFrame, registry::register},
     record::{NodeRecord, NodeRegistry},
 };
 
@@ -29,7 +29,7 @@ pub struct Node {
     pub id: FreeWebMovementAddress,
     pub inner: NodeRegistry,
     pub external: NodeRegistry,
-    pub storage: Arc<Storage>,
+    // pub storage: Arc<Storage>,
     pub io_storage: IOStorage, // Unique network address of the node, also id for the node
     pub name: String,          // User defined name for the node, no need to be unique
     pub addr: SocketAddr,
@@ -41,7 +41,7 @@ pub struct Node {
 impl Node {
     pub async fn new(
         name: String,
-        storage: Arc<Storage>,
+        // storage: Arc<Storage>,
         io_storage: IOStorage,
         addr: SocketAddr,
         context: Arc<GlobalContext>,
@@ -49,15 +49,15 @@ impl Node {
         cli: Arc<Cli>,
     ) -> Self {
         let id = io_storage
-            .read::<FreeWebMovementAddress>("address", (*storage).clone())
+            .read::<FreeWebMovementAddress>(STORAGE_ADDRESS, )
             .await
             .unwrap();
         let inner_nodes = io_storage
-            .read::<HashSet<NodeRecord>>("inner_server", (*storage).clone())
+            .read::<HashSet<NodeRecord>>(STORAGE_INNER_SERVER, )
             .await
             .unwrap();
         let external_nodes = io_storage
-            .read::<HashSet<NodeRecord>>("external_server", (*storage).clone())
+            .read::<HashSet<NodeRecord>>(STORAGE_EXTERNAL_SERVER)
             .await
             .unwrap();
         let inner = NodeRegistry::new(inner_nodes);
@@ -67,7 +67,6 @@ impl Node {
             id,
             inner,
             external,
-            storage,
             io_storage,
             addr,
             context,
@@ -123,17 +122,27 @@ impl Node {
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
         let global = Arc::new(GlobalContext::new(addr, Some(psk)));
 
+        let address: FreeWebMovementAddress = io_storage
+            .read::<FreeWebMovementAddress>(&STORAGE_ADDRESS)
+            .await
+            .unwrap();
+
+        // 设置本地项目的全局变量
+
+        global.set(address).await;
         global.set(storage.clone()).await;
         global.set(io_storage.clone()).await;
         let cli = Cli::new();
 
         let server = { HTTPServer::new(addr, Some(global.clone())) };
 
-        let router = Router::new();
+        let mut router = Router::new();
+
+        register(&mut router);
         server.tcp(router);
         Node::new(
             opt.name,
-            storage,
+            // storage,
             io_storage,
             addr,
             global.clone(),
@@ -236,13 +245,12 @@ impl Node {
 
     async fn save_registries(&self) -> anyhow::Result<()> {
         self.io_storage
-            .save::<HashSet<NodeRecord>>(&self.inner.nodes, "inner_server", &self.storage.clone())
+            .save::<HashSet<NodeRecord>>(&self.inner.nodes, STORAGE_INNER_SERVER)
             .await;
         self.io_storage
             .save::<HashSet<NodeRecord>>(
                 &self.external.nodes,
-                "external_server",
-                &self.storage.clone(),
+                STORAGE_EXTERNAL_SERVER,
             )
             .await;
         Ok(())

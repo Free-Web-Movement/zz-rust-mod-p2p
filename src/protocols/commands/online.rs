@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aex::connection::context::{AexWriter, Context};
+use aex::connection::context::Context;
 use aex::connection::node::Node;
 use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
@@ -88,35 +88,18 @@ pub async fn online_handler(
 
     println!("send ack session_id : {:?}", ack.session_id);
     println!("send ack: {:?}", Codec::encode(&ack));
-    // let writer = ctx.writer;
-    // ctx.global.manager.add(ctx.addr, writer, handle, true);
-    // 假设 ctx.writer 是 &mut Option<Box<dyn AsyncWrite...>>
-    {
-        let mut guard = ctx.lock().await;
 
-        // 1. 先安全地处理 Option
-        if let Some(writer_mutex) = guard.writer.as_mut() {
-            // 2. 获取 Mutex 锁并存入变量，延长其生命周期
+    // 4. 执行异步发送
+    P2PFrame::send::<OnlineAckCommand>(
+        ctx.clone(),
+        &Some(ack),
+        Entity::Node,
+        Action::OnLineAck,
+        false,
+    )
+    .await
+    .expect("Error send online ack!");
 
-            // 3. 获取 Box 内部的 &mut dyn AsyncWrite
-            // 这里的 writer_lock 是 MutexGuard，解引用后得到 Box，再解引用得到 trait object
-            let writer: &mut AexWriter = writer_mutex.as_mut();
-
-            // 4. 执行异步发送
-            P2PFrame::send::<OnlineAckCommand>(
-                &address,
-                writer,
-                &Some(ack),
-                Entity::Node,
-                Action::OnLineAck,
-                None,
-            )
-            .await
-            .expect("Error send online ack!");
-        } else {
-            eprintln!("Cannot send OnlineAck: Writer is None for {}", address);
-        }
-    }
     {
         let cloned = ctx.clone();
         let guard = ctx.lock().await;

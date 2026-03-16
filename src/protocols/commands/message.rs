@@ -33,20 +33,6 @@ pub async fn send_text_message(
         message: message.to_string(),
     };
 
-    let address = {
-        let guard = ctx.lock().await;
-        let opt_address: Option<FreeWebMovementAddress> = guard
-            .get()
-            .await
-            .expect("FreeWebMovementAddress must be set!");
-        opt_address.unwrap()
-    };
-    let psk = {
-        let guard = ctx.lock().await;
-        let global = guard.global.clone();
-        global.paired_session_keys.clone()
-    };
-
     let manager = {
         let guard = ctx.lock().await;
         guard.global.manager.clone()
@@ -57,19 +43,15 @@ pub async fn send_text_message(
             for entry in entries {
                 {
                     if let Some(ctx) = &entry.context {
-                        let mut guard = ctx.lock().await;
-                        if let Some(writer) = &mut guard.writer {
-                            P2PFrame::send(
-                                &address,
-                                &mut *writer,
-                                &Some(command.clone()),
-                                Entity::Message,
-                                Action::SendText,
-                                psk.clone(),
-                            )
-                            .await
-                            .expect("Error Send Message!");
-                        }
+                        P2PFrame::send(
+                            ctx.clone(),
+                            &Some(command.clone()),
+                            Entity::Message,
+                            Action::SendText,
+                            true
+                        )
+                        .await
+                        .expect("Error Send Message!");
                     }
                 }
             }
@@ -137,38 +119,17 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             for entry in entries {
                 {
                     if let Some(ctx) = &entry.context {
-                        let mut guard = ctx.lock().await;
-                        if let Some(writer) = &mut guard.writer {
-                            P2PFrame::send(
-                                &address,
-                                &mut *writer,
-                                &Some(message.clone()),
-                                Entity::Message,
-                                Action::SendText,
-                                Some(psk.clone()),
-                            )
-                            .await
-                            .expect("Error Send Message!");
-                        }
+                    
+                        P2PFrame::send(
+                            ctx.clone(),
+                            &Some(message.clone()),
+                            Entity::Message,
+                            Action::SendText,
+                            true
+                        )
+                        .await
+                        .expect("Error Send Message!");
                     }
-                    // if let Some(writer_arc) = &entry.writer {
-                    //     let writer_lock = writer_arc.clone();
-                    //     let mut writer = writer_lock.lock().await;
-                    //     let writer = writer
-                    //         .as_mut()
-                    //         .ok_or_else(|| anyhow::anyhow!("writer missing"))
-                    //         .unwrap();
-                    //     P2PFrame::send(
-                    //         &address,
-                    //         &mut *writer,
-                    //         &Some(message.clone()),
-                    //         Entity::Message,
-                    //         Action::SendText,
-                    //         Some(psk.clone()),
-                    //     )
-                    //     .await
-                    //     .expect("Error Send Message!");
-                    // }
                 }
             }
         })

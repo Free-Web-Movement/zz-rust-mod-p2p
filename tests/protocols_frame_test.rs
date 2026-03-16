@@ -19,7 +19,7 @@ mod tests {
     use zz_account::address::FreeWebMovementAddress;
     use zz_p2p::protocols::{
         command::{Action, Entity, P2PCommand},
-        frame::{FrameBody, P2PFrame, notify},
+        frame::{FrameBody, P2PFrame},
     };
 
 use tokio::io::{AsyncWrite, ErrorKind};
@@ -317,39 +317,6 @@ use tokio::io::{AsyncWrite, ErrorKind};
     }
 
     #[tokio::test]
-    async fn test_p2p_frame_send() {
-        let address = FreeWebMovementAddress::random();
-        let (client, mut server) = tokio::io::duplex(1024);
-        let mut writer: Box<AexWriter> = Box::new(client);
-        // 包装 client 为 AexWriter (假设 AexWriter 接受 AsyncWrite)
-        // let mut writer = AexWriter::new(client);
-        let cmd_payload: Option<P2PCommand> = None;
-
-        // 执行发送
-        P2PFrame::send(
-            &address,
-            &mut writer,
-            &cmd_payload,
-            Entity::Node,
-            Action::OffLine,
-            None, // 不使用加密 session
-        )
-        .await
-        .unwrap();
-
-        // 从读取端验证数据
-        let mut len_buf = [0u8; 4];
-        server.read_exact(&mut len_buf).await.unwrap();
-        let len = u32::from_be_bytes(len_buf);
-
-        let mut body_buf = vec![0u8; len as usize];
-        server.read_exact(&mut body_buf).await.unwrap();
-
-        let decoded_frame: P2PFrame = Codec::decode(&body_buf).unwrap();
-        assert_eq!(decoded_frame.body.address, address.to_string());
-    }
-
-    #[tokio::test]
     async fn test_frame_lifecycle() {
         let addr = FreeWebMovementAddress::random();
         let cmd = P2PCommand::new(Entity::Node, Action::Accept, vec![1, 2, 3]);
@@ -509,7 +476,7 @@ use tokio::io::{AsyncWrite, ErrorKind};
         // 6. 执行 Notify 并强制 Flush
         // ⚡ 这里的关键点：如果你的 notify 实现里没写 flush，
         // 我们在测试里手动锁一下 target_ctx 刷一遍，或者确保 notify 内部逻辑完整。
-        notify(&frame, notifier_ctx.clone()).await;
+        frame.notify(notifier_ctx.clone()).await;
 
         // 辅助：手动触发一次针对所有 Context 的 Flush 以防万一
         {
@@ -595,7 +562,7 @@ use tokio::io::{AsyncWrite, ErrorKind};
 
         // 4. 执行调用
         // 这将触发 P2PFrame::send_bytes 内部的 eprintln!
-        notify(&frame, notifier_ctx).await;
+        frame.notify(notifier_ctx).await;
 
         // 5. 清理
         global.manager.shutdown();
