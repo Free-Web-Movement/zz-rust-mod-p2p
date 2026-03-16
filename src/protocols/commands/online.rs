@@ -67,7 +67,7 @@ pub async fn online_handler(
 
     let address: FreeWebMovementAddress = {
         let ctx = ctx.lock().await;
-        ctx.get().await.expect("Expect Address be set!")
+        ctx.global.get().await.expect("Expect Address be set!")
     };
 
     let local_node = {
