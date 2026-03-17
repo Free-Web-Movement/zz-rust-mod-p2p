@@ -1,5 +1,5 @@
+use aex::connection::entry::ConnectionEntry;
 use aex::connection::protocol::Protocol;
-use aex::connection::types::ConnectionEntry;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

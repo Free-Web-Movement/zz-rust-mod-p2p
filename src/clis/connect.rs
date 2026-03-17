@@ -1,8 +1,8 @@
-use aex::connection::{global::GlobalContext, node::Node};
+use aex::{connection::{global::GlobalContext, node::Node}, tcp::types::Command};
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::protocols::{
-    command::{Action, Entity},
+    command::{Action, Entity, P2PCommand},
     commands::online::OnlineCommand,
     frame::P2PFrame,
 };
@@ -18,7 +18,7 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
             match context
                 .clone()
                 .manager
-                .connect(addr, context, move |ctx, _t| async move {
+                .connect::<P2PFrame, P2PCommand, _, _>(addr, context, move |ctx| async move {
                     println!("Connected to {}!", addr);
 
                     {
@@ -52,7 +52,9 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                         .expect("Online Command Sending Failed!");
                         println!("message send!");
                     }
-                })
+                },
+                Arc::new(|cmd: &P2PCommand| { cmd.id() })
+            )
                 .await
             {
                 Ok(_) => println!("Connection attempt started..."),

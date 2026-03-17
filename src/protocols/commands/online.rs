@@ -100,10 +100,13 @@ pub async fn online_handler(
     )
     .await
     .expect("Error send online ack!");
+    println!("end of current online!");
 
     {
         let cloned = ctx.clone();
         let guard = ctx.lock().await;
         guard.global.manager.update(guard.addr, true, Some(cloned));
     }
+
+    println!("end of online!");
 }

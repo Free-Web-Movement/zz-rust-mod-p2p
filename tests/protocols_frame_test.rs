@@ -4,10 +4,7 @@ mod tests {
 
     use aex::{
         connection::{
-            context::{AexWriter, BoxWriter, Context},
-            global::GlobalContext,
-            node::Node,
-            types::{ConnectionEntry, NetworkScope},
+            context::{AexWriter, BoxWriter, Context}, entry::ConnectionEntry, global::GlobalContext, node::Node, scope::NetworkScope
         },
         tcp::types::{Codec, Frame},
     };
