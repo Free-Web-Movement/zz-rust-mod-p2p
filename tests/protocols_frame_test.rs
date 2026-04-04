@@ -4,14 +4,15 @@ mod tests {
 
     use aex::{
         connection::{
-            context::{AexWriter, BoxWriter, Context}, entry::ConnectionEntry, global::GlobalContext, node::Node, scope::NetworkScope
+            context::{AexWriter, BoxWriter, Context},
+            entry::ConnectionEntry,
+            global::GlobalContext,
+            node::Node,
+            scope::NetworkScope,
         },
         tcp::types::{Codec, Frame},
     };
-    use tokio::{
-        io::AsyncReadExt,
-        sync::Mutex,
-    };
+    use tokio::{io::AsyncReadExt, sync::Mutex};
     use tokio_util::sync::CancellationToken;
     use zz_account::address::FreeWebMovementAddress;
     use zz_p2p::protocols::{
@@ -19,7 +20,7 @@ mod tests {
         frame::{FrameBody, P2PFrame},
     };
 
-use tokio::io::{AsyncWrite, ErrorKind};
+    use tokio::io::{AsyncWrite, ErrorKind};
 
     struct AlwaysFailWriter;
 
@@ -30,14 +31,23 @@ use tokio::io::{AsyncWrite, ErrorKind};
             _buf: &[u8],
         ) -> Poll<Result<usize, tokio::io::Error>> {
             // 直接返回错误，触发 eprintln!
-            Poll::Ready(Err(tokio::io::Error::new(ErrorKind::Other, "Mock IO Error")))
+            Poll::Ready(Err(tokio::io::Error::new(
+                ErrorKind::Other,
+                "Mock IO Error",
+            )))
         }
 
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Result<(), tokio::io::Error>> {
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<(), tokio::io::Error>> {
             Poll::Ready(Ok(()))
         }
 
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Result<(), tokio::io::Error>> {
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<Result<(), tokio::io::Error>> {
             Poll::Ready(Ok(()))
         }
     }

@@ -19,11 +19,7 @@ pub struct OfflineCommand {
 // ⚡ 实现 CommandCodec，移除 to_bytes/from_bytes
 impl Codec for OfflineCommand {}
 
-pub async fn offline_handler(
-    ctx: Arc<Mutex<Context>>,
-    frame: P2PFrame,
-    _cmd: P2PCommand,
-) {
+pub async fn offline_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, _cmd: P2PCommand) {
     // 处理 Node Offline 命令的逻辑
     println!(
         "Node Offline Command Received: addr={}, nonce={}",

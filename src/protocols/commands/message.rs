@@ -48,7 +48,7 @@ pub async fn send_text_message(
                             &Some(command.clone()),
                             Entity::Message,
                             Action::SendText,
-                            true
+                            true,
                         )
                         .await
                         .expect("Error Send Message!");
@@ -119,13 +119,12 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             for entry in entries {
                 {
                     if let Some(ctx) = &entry.context {
-                    
                         P2PFrame::send(
                             ctx.clone(),
                             &Some(message.clone()),
                             Entity::Message,
                             Action::SendText,
-                            true
+                            true,
                         )
                         .await
                         .expect("Error Send Message!");

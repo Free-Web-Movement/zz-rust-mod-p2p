@@ -10,7 +10,10 @@ mod tests {
             atomic::{AtomicUsize, Ordering},
         },
     };
-    use zz_p2p::{cli::{Cli, Opt}, clis::{connect, help, send, status}};
+    use zz_p2p::{
+        cli::{Cli, Opt},
+        clis::{connect, help, send, status},
+    };
 
     // 辅助函数：创建一个 Mock 的 GlobalContext
     // 假设 GlobalContext 至少实现了 Default，或者你可以根据实际情况构造
@@ -199,7 +202,5 @@ mod tests {
         assert_eq!(opt.address_file, Some("addr.json".to_string()));
         assert_eq!(opt.inner_server_file, Some("inner.json".to_string()));
         assert_eq!(opt.external_server_file, Some("ext.json".to_string()));
-
-
     }
 }

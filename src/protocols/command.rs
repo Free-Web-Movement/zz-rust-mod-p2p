@@ -2,7 +2,6 @@ use aex::tcp::types::{Codec, Command};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Entity {
     Node = 1,
@@ -36,7 +35,6 @@ pub enum Action {
     Reject,
 }
 
-
 #[derive(Clone, PartialEq, Serialize, Deserialize, Encode, Decode, Debug)]
 pub struct P2PCommand {
     pub entity: Entity,
@@ -51,7 +49,7 @@ impl P2PCommand {
         Self {
             entity,
             action,
-            data
+            data,
         }
     }
 
@@ -64,7 +62,7 @@ impl Command for P2PCommand {
     fn id(&self) -> u32 {
         P2PCommand::to_u32(self.entity, self.action)
     }
-    
+
     fn data(&self) -> &Vec<u8> {
         &self.data
     }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{protocols::commands::message::send_text_message};
+use crate::protocols::commands::message::send_text_message;
 use aex::connection::global::GlobalContext;
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
@@ -12,7 +12,8 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     let msg = args[1].clone();
 
     let receiver_clone = receiver.clone();
-    context.manager
+    context
+        .manager
         .notify(receiver.as_bytes(), |entries| async move {
             for entry in entries {
                 let _ = send_text_message(

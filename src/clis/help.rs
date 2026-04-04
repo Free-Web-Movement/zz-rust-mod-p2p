@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use aex::connection::global::GlobalContext;
+use std::sync::Arc;
 
 pub async fn handle(_args: Vec<String>, _context: Arc<GlobalContext>) {
     println!("Commands:");
