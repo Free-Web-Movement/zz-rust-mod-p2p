@@ -1,11 +1,12 @@
 use aex::{
     connection::{
-        context::TypeMapExt, entry::ConnectionEntry, global::GlobalContext, scope::NetworkScope,
+        context::TypeMapExt, entry::ConnectionEntry, global::GlobalContext,
+        heartbeat::HeartbeatConfig, scope::NetworkScope,
     },
     crypto::session_key_manager::PairedSessionKey,
     server::{HTTPServer, Server},
     storage::Storage,
-    tcp::{router::Router, types::Command},
+    tcp::router::Router as TcpRouter,
 };
 use chrono::Utc;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
@@ -18,7 +19,7 @@ use crate::{
         IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_stroage_init,
     },
     protocols::{command::P2PCommand, frame::P2PFrame, registry::register},
-    record::{NodeRecord, NodeRegistry},
+    record::{self, NodeRecord, NodeRegistry},
 };
 
 // 用于保存节点的所有信息
@@ -76,41 +77,25 @@ impl Node {
     }
 
     pub async fn connect(&mut self) {
-        // 获取 Router 的 Arc 引用
-        let router: Arc<Router> = self.context.routers.get_value().unwrap();
-        let global = self.context.clone();
         let manager = self.context.manager.clone();
+        let global = self.context.clone();
+        
+        let nodes: Vec<record::NodeRecord> = self.inner.nodes.iter().cloned().collect();
 
-        // 克隆节点列表以避免在循环中借用 self
-        let nodes = self.inner.nodes.clone();
+        for record in nodes {
+            let endpoint = record.endpoint;
+            let g = global.clone();
 
-        for entry in nodes {
-            let endpoint = entry.endpoint.clone();
-            let rc = router.clone();
-            let gc = global.clone();
-
-            // 这里的闭包必须是 move，以确保内部变量的所有权被转移到异步任务中
             let _ = manager
                 .connect::<P2PFrame, P2PCommand, _, _>(
-                    endpoint.clone(),
-                    gc,
-                    move |ctx| {
-                        // 再次克隆引用以进入 async move 块
-                        let rc_inner = rc.clone();
-                        let ctx = ctx.clone();
-                        async move {
-                            // 1. 获取
-
-                            // 4. 调用 router
-                            let _ = rc_inner
-                                .handle::<P2PFrame, P2PCommand>(
-                                    ctx,
-                                    Arc::new(|c: &P2PCommand| c.id()),
-                                )
-                                .await;
-                        }
+                    endpoint,
+                    g,
+                    move |_ctx| {
+                        Box::pin(async move {
+                            // Connection handler will be dispatched through router
+                        })
                     },
-                    Arc::new(|cmd: &P2PCommand| cmd.id()),
+                    Some(10),
                 )
                 .await;
         }
@@ -122,20 +107,30 @@ impl Node {
         let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));
         let io_storage = io_stroage_init(&opt, storage.clone());
 
-        // let address = files.address();
-
         let addr = format!("{}:{}", opt.ip.clone(), opt.port)
             .parse::<SocketAddr>()
             .unwrap();
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
-        let global = Arc::new(GlobalContext::new(addr, Some(psk)));
+        
+        let heartbeat_config = HeartbeatConfig::new()
+            .with_interval(30)
+            .with_timeout(10)
+            .on_timeout(|peer_addr| {
+                tracing::warn!("Connection timeout: {}", peer_addr);
+            })
+            .on_latency(|peer_addr, latency| {
+                tracing::debug!("Latency for {}: {}ms", peer_addr, latency);
+            });
+        
+        let mut global = GlobalContext::new(addr, Some(psk));
+        global.heartbeat_config = heartbeat_config.clone();
+        
+        let global = Arc::new(global);
 
         let address: FreeWebMovementAddress = io_storage
             .read::<FreeWebMovementAddress>(&STORAGE_ADDRESS)
             .await
             .unwrap();
-
-        // 设置本地项目的全局变量
 
         global.set(address.clone()).await;
 
@@ -145,15 +140,15 @@ impl Node {
         global.set(io_storage.clone()).await;
         let cli = Cli::new();
 
-        let server = { HTTPServer::new(addr, Some(global.clone())) };
+        let server = HTTPServer::new(addr, Some(global.clone()));
 
-        let mut router = Router::new();
+        let router = TcpRouter::<P2PFrame, P2PCommand>::new();
 
-        register(&mut router);
-        server.tcp(router);
+        let router = register(router);
+        let server = server.tcp(router);
+        
         Node::new(
             opt.name,
-            // storage,
             io_storage,
             addr,
             global.clone(),
@@ -175,10 +170,7 @@ impl Node {
         // 2. 启动 Server (后台运行)
         // 使用 tokio::spawn 确保 server 不会阻塞主线程对 CLI 的处理
         let server_handle = tokio::spawn(async move {
-            if let Err(e) = server
-                .start::<P2PFrame, P2PCommand>(Arc::new(|c| c.id()))
-                .await
-            {
+            if let Err(e) = server.start_with_protocols::<P2PFrame, P2PCommand>().await {
                 eprintln!("Server error: {:?}", e);
             }
         });

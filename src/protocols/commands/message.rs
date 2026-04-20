@@ -98,7 +98,7 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
 
     let address: FreeWebMovementAddress = {
         let guard = ctx.lock().await;
-        guard.get().await.unwrap()
+        guard.get::<FreeWebMovementAddress>().unwrap()
     };
     if receiver == address.to_string() {
         // ✔️ 消费消息

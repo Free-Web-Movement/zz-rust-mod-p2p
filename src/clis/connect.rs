@@ -18,16 +18,17 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     let addr_str = format!("{}:{}", args[0], args[1]);
     match addr_str.parse::<SocketAddr>() {
         Ok(addr) => {
-            match context
-                .clone()
-                .manager
+            let manager = context.manager.clone();
+            let global = context.clone();
+            match manager
                 .connect::<P2PFrame, P2PCommand, _, _>(
                     addr,
-                    context,
-                    move |ctx| async move {
-                        println!("Connected to {}!", addr);
+                    global.clone(),
+                    move |ctx| {
+                        let peer = addr;
+                        Box::pin(async move {
+                            println!("Connected to {}!", peer);
 
-                        {
                             let psk = {
                                 let guard = ctx.lock().await;
                                 let g = guard.global.clone();
@@ -40,7 +41,7 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                                 guard.create(false).await
                             };
 
-                            let aex_node = Node::from_system(addr.port(), id.clone(), 1);
+                            let aex_node = Node::from_system(peer.port(), id.clone(), 1);
 
                             let cmd = OnlineCommand {
                                 session_id: id,
@@ -57,9 +58,9 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                             .await
                             .expect("Online Command Sending Failed!");
                             println!("message send!");
-                        }
+                        })
                     },
-                    Arc::new(|cmd: &P2PCommand| cmd.id()),
+                    Some(10),
                 )
                 .await
             {
