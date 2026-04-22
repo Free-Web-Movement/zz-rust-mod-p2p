@@ -1,6 +1,5 @@
 use aex::{
     connection::{global::GlobalContext, node::Node},
-    tcp::types::Command,
 };
 use std::{net::SocketAddr, sync::Arc};
 

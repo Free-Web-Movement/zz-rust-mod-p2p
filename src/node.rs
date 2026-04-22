@@ -1,6 +1,6 @@
 use aex::{
     connection::{
-        context::TypeMapExt, entry::ConnectionEntry, global::GlobalContext,
+        entry::ConnectionEntry, global::GlobalContext,
         heartbeat::HeartbeatConfig, scope::NetworkScope,
     },
     crypto::session_key_manager::PairedSessionKey,

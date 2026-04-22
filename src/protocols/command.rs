@@ -26,6 +26,7 @@ pub enum Action {
 
     //Witness Actions
     Tick,
+    TickAck,
     Check,
 
     //Telephone Actions

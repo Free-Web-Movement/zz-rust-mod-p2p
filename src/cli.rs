@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncBufReadExt;
 
-use crate::clis::{connect, help, send, status};
+use crate::clis::{connect, help, info, peers, send, status};
 
 // 定义处理函数的类型：接收 Node 引用和剩余参数列表
 pub type CliHandler =
@@ -78,6 +78,12 @@ impl Cli {
 
         // --- 注册 help 命令 ---
         self.register("help", help::handle);
+
+        // --- 注册 peers 命令 ---
+        self.register("peers", peers::handle);
+
+        // --- 注册 info 命令 ---
+        self.register("info", info::handle);
     }
 
     pub async fn run<R>(&self, reader: R, ctx: Arc<GlobalContext>) -> anyhow::Result<()>

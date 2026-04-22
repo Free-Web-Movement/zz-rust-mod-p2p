@@ -1,5 +1,4 @@
 use aex::tcp::router::Router as TcpRouter;
-use aex::tcp::types::Command;
 use futures::future::BoxFuture;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -10,11 +9,12 @@ use crate::protocols::{
     command::{Action, Entity, P2PCommand},
     commands::{
         ack::onlineack_handler, message::message_handler, offline::offline_handler,
-        online::online_handler,
+        online::online_handler, tick::tick_handler,
     },
     frame::P2PFrame,
 };
 
+#[allow(dead_code)]
 type P2PDoer = Box<
     dyn Fn(Arc<Mutex<Context>>, P2PFrame, P2PCommand) -> BoxFuture<'static, anyhow::Result<bool>>
         + Send
@@ -71,6 +71,18 @@ pub fn register(mut router: TcpRouter<P2PFrame, P2PCommand>) -> TcpRouter<P2PFra
             let c = cmd.clone();
             Box::pin(async move {
                 message_handler(ctx, _frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Witness, Action::Tick),
+        Box::new(|ctx, frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                tick_handler(ctx, frame, c).await;
                 Ok(true)
             })
         }),
