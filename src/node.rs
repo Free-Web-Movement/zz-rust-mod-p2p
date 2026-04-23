@@ -255,4 +255,24 @@ impl Node {
             .await;
         Ok(())
     }
+    pub async fn connect_to(&self, peer_addr: &str) {
+        let manager = self.context.manager.clone();
+        let global = self.context.clone();
+
+        let endpoint = peer_addr.parse::<SocketAddr>().unwrap();
+        let _ = manager
+            .connect::<P2PFrame, P2PCommand, _, _>(
+                endpoint,
+                global,
+                move |_ctx| {
+                    Box::pin(async move {})
+                },
+                Some(10),
+            )
+            .await;
+
+        tracing::info!("Connecting to peer: {}", peer_addr);
+    }
+
+
 }
