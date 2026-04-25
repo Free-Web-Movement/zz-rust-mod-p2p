@@ -7,6 +7,7 @@ use aex::{
     server::{HTTPServer, Server},
     storage::Storage,
     tcp::router::Router as TcpRouter,
+    unified::UnifiedServer,
 };
 use chrono::Utc;
 use futures::future::FutureExt;
@@ -26,7 +27,7 @@ use crate::{
     record::{self, NodeRecord, NodeRegistry},
 };
 
-pub type WebHandler = Arc<dyn Fn(&mut aex::connection::context::Context) -> futures::future::BoxFuture<'static, bool> + Send + Sync>;
+pub type WebHandler = Arc<dyn Fn(&mut aex::connection::context::Context) -> futures::future::BoxFuture<'_, bool> + Send + Sync>;
 
 // 用于保存节点的所有信息
 // 用于当前程序的基本信息共享
@@ -190,96 +191,41 @@ impl Node {
         server_handle.abort(); // 如果希望立即停止 server
     }
 
-    pub async fn start_with_web<R>(self, reader: R, web_handler: WebHandler)
+pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
     where
-        R: tokio::io::AsyncBufRead + Unpin,
+        R: tokio::io::AsyncBufRead + Unpin + Send + 'static,
     {
-        let server = self.server.clone();
-        let cli = self.cli.clone();
-        let ctx = self.context.clone();
         let addr = self.addr;
-        let manager = self.context.manager.clone();
-        let global = self.context.clone();
-        let http_handler = web_handler.clone();
+        let globals = self.context.clone();
+        let handler = Arc::new(web_handler);
 
-        let http_handle = tokio::spawn(async move {
-            let listener = match TcpListener::bind(addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    tracing::error!("Failed to bind: {}", e);
-                    return;
-                }
-            };
-            tracing::info!("Unified server started on {}", addr);
+        let unified = UnifiedServer::new(addr, globals)
+            .http_router({
+                let mut router = aex::http::router::Router::new(
+                    aex::http::router::NodeType::Static("root".into())
+                );
+                let h = handler.clone();
+                let h = handler.clone();
+                let executor: std::sync::Arc<dyn for<'a> std::ops::Fn(&'a mut aex::connection::context::Context) -> futures::future::BoxFuture<'a, bool> + Send + Sync> = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
+                    let hh = h.clone();
+                    async move { hh(ctx).await }.boxed()
+                });
+                router.get("/", executor).register();
+                router
+            })
+            .p2p_handler(Arc::new(move |socket, peer_addr| {
+                let global = self.context.clone();
+                tokio::spawn(async move {
+                    let pipeline = ConnectionEntry::default_pipeline::<P2PFrame, P2PCommand>(peer_addr, true);
+                    let (conn_token, abort_handle, entry_ctx) = ConnectionEntry::start::<_, _>(
+                        global.manager.cancel_token.clone(), socket, peer_addr, global.clone(), pipeline,
+                    );
+                    global.manager.add(peer_addr, abort_handle, conn_token, true, Some(entry_ctx));
+                });
+            }));
 
-            loop {
-                tokio::select! {
-                    result = listener.accept() => {
-                        let (socket, peer_addr) = match result {
-                            Ok(r) => r,
-                            Err(e) => {
-                                tracing::warn!("Accept error: {}", e);
-                                continue;
-                            }
-                        };
-                        
-                        let handler = http_handler.clone();
-                        let mgr = manager.clone();
-                        let g = global.clone();
-                        let mut socket = socket;
-                        
-                        tokio::spawn(async move {
-                            let mut peek_buf = [0u8; 24];
-                            let n = match socket.read(&mut peek_buf).await {
-                                Ok(n) => n,
-                                Err(_) => return,
-                            };
-                            if n == 0 { return; }
-                            
-                            let is_http = peek_buf.starts_with(b"GET ")
-                                || peek_buf.starts_with(b"POST ")
-                                || peek_buf.starts_with(b"PUT ")
-                                || peek_buf.starts_with(b"DELETE ")
-                                || peek_buf.starts_with(b"PATCH ")
-                                || peek_buf.starts_with(b"HEAD ")
-                                || peek_buf.starts_with(b"OPTIONS ");
-                            
-                            if is_http {
-                                let (reader, writer) = socket.into_split();
-                                let cursor = Cursor::new(peek_buf[..n].to_vec());
-                                let reader = Box::pin(cursor.chain(reader));
-                                let reader = BufReader::new(reader);
-                                let writer = Box::new(BufWriter::new(writer)) as Box<dyn tokio::io::AsyncWrite + Send + Sync + Unpin>;
-                                let boxed_reader: Box<dyn tokio::io::AsyncBufRead + Send + Sync + Unpin> = Box::new(reader);
-                                
-                                let mut ctx = aex::connection::context::Context::new(
-                                    Some(boxed_reader), Some(writer), g, peer_addr,
-                                );
-                                
-                                let handler = handler.clone();
-                                let mut ctx = ctx;
-                                let result = handler(&mut ctx).await;
-                                if result {
-                                    let _ = ctx.res().send_response().await;
-                                } else {
-                                    let _ = ctx.res().send_failure().await;
-                                }
-                            } else {
-                                let pipeline = ConnectionEntry::default_pipeline::<P2PFrame, P2PCommand>(peer_addr, true);
-                                let (conn_token, abort_handle, entry_ctx) = ConnectionEntry::start::<_, _>(
-                                    mgr.cancel_token.clone(), socket, peer_addr, g, pipeline,
-                                );
-                                mgr.add(peer_addr, abort_handle, conn_token, true, Some(entry_ctx));
-                            }
-                        });
-                    }
-                }
-            }
-        });
-
-        tracing::info!("CLI started. Type 'help' for commands.");
-        let _ = cli.run(reader, ctx).await;
-        http_handle.abort();
+        tracing::info!("Server running. Press Ctrl+C to stop.");
+        unified.start().await;
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表
