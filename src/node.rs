@@ -213,7 +213,7 @@ pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
                 router.get("/", executor).register();
                 router
             })
-            .p2p_handler(Arc::new(move |socket, peer_addr| {
+            .tcp_handler(Arc::new(move |socket, peer_addr| {
                 let global = self.context.clone();
                 tokio::spawn(async move {
                     let pipeline = ConnectionEntry::default_pipeline::<P2PFrame, P2PCommand>(peer_addr, true);
