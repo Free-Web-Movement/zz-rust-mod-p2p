@@ -205,24 +205,13 @@ pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
                     aex::http::router::NodeType::Static("root".into())
                 );
                 let h = handler.clone();
-                let h = handler.clone();
                 let executor: std::sync::Arc<dyn for<'a> std::ops::Fn(&'a mut aex::connection::context::Context) -> futures::future::BoxFuture<'a, bool> + Send + Sync> = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
                     let hh = h.clone();
                     async move { hh(ctx).await }.boxed()
                 });
                 router.get("/", executor).register();
                 router
-            })
-            .tcp_handler(Arc::new(move |socket, peer_addr| {
-                let global = self.context.clone();
-                tokio::spawn(async move {
-                    let pipeline = ConnectionEntry::default_pipeline::<P2PFrame, P2PCommand>(peer_addr, true);
-                    let (conn_token, abort_handle, entry_ctx) = ConnectionEntry::start::<_, _>(
-                        global.manager.cancel_token.clone(), socket, peer_addr, global.clone(), pipeline,
-                    );
-                    global.manager.add(peer_addr, abort_handle, conn_token, true, Some(entry_ctx));
-                });
-            }));
+            });
 
         tracing::info!("Server running. Press Ctrl+C to stop.");
         unified.start().await;
