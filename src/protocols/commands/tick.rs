@@ -19,11 +19,7 @@ pub struct TickCommand {
 
 impl Codec for TickCommand {}
 
-pub async fn tick_handler(
-    ctx: Arc<Mutex<Context>>,
-    frame: P2PFrame,
-    cmd: P2PCommand,
-) {
+pub async fn tick_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     let tick: TickCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
         Err(e) => {
@@ -51,7 +47,8 @@ pub async fn tick_handler(
         Entity::Node,
         Action::TickAck,
         false,
-    ).await;
+    )
+    .await;
 }
 
 pub async fn send_tick(
@@ -66,14 +63,14 @@ pub async fn send_tick(
         challenge: vec![],
     };
 
-    P2PFrame::send::<TickCommand>(
-        ctx.clone(),
-        &Some(tick),
-        Entity::Node,
-        Action::Tick,
-        false,
-    ).await?;
+    P2PFrame::send::<TickCommand>(ctx.clone(), &Some(tick), Entity::Node, Action::Tick, false)
+        .await?;
 
-    tracing::info!("Sent Tick to {}: daily_epoch={}, slot={}", receiver, daily_epoch, slot);
+    tracing::info!(
+        "Sent Tick to {}: daily_epoch={}, slot={}",
+        receiver,
+        daily_epoch,
+        slot
+    );
     Ok(())
 }

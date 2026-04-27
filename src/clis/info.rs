@@ -6,7 +6,7 @@ use crate::io_storage::IOStorage;
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     let verbose = args.iter().any(|a| a == "-v" || a == "--verbose");
-    
+
     let io_storage = match context.get::<IOStorage>().await {
         Some(ios) => ios,
         None => {
@@ -26,10 +26,13 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     println!("=== Node Information ===");
     println!("Address: {}", address);
     println!("Local: {}", context.addr);
-    
+
     if verbose {
         let status = context.manager.status();
-        println!("Total connections: {}", status.total_clients + status.total_servers);
+        println!(
+            "Total connections: {}",
+            status.total_clients + status.total_servers
+        );
         println!("Manager status: {:?}", status);
     }
 }

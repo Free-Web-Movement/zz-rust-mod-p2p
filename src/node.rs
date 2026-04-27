@@ -1,7 +1,7 @@
 use aex::{
     connection::{
-        entry::ConnectionEntry, global::GlobalContext,
-        heartbeat::HeartbeatConfig, scope::NetworkScope,
+        entry::ConnectionEntry, global::GlobalContext, heartbeat::HeartbeatConfig,
+        scope::NetworkScope,
     },
     crypto::session_key_manager::PairedSessionKey,
     server::{HTTPServer, Server},
@@ -12,10 +12,7 @@ use aex::{
 use chrono::Utc;
 use futures::future::FutureExt;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
-use tokio::io::{AsyncReadExt, BufReader, BufWriter};
-use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use std::io::Cursor;
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
@@ -27,7 +24,11 @@ use crate::{
     record::{self, NodeRecord, NodeRegistry},
 };
 
-pub type WebHandler = Arc<dyn Fn(&mut aex::connection::context::Context) -> futures::future::BoxFuture<'_, bool> + Send + Sync>;
+pub type WebHandler = Arc<
+    dyn Fn(&mut aex::connection::context::Context) -> futures::future::BoxFuture<'_, bool>
+        + Send
+        + Sync,
+>;
 
 // 用于保存节点的所有信息
 // 用于当前程序的基本信息共享
@@ -86,7 +87,7 @@ impl Node {
     pub async fn connect(&mut self) {
         let manager = self.context.manager.clone();
         let global = self.context.clone();
-        
+
         let nodes: Vec<record::NodeRecord> = self.inner.nodes.iter().cloned().collect();
 
         for record in nodes {
@@ -118,7 +119,7 @@ impl Node {
             .parse::<SocketAddr>()
             .unwrap();
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
-        
+
         let heartbeat_config = HeartbeatConfig::new()
             .with_interval(30)
             .with_timeout(10)
@@ -128,10 +129,10 @@ impl Node {
             .on_latency(|peer_addr, latency| {
                 tracing::debug!("Latency for {}: {}ms", peer_addr, latency);
             });
-        
+
         let mut global = GlobalContext::new(addr, Some(psk));
         global.heartbeat_config = heartbeat_config.clone();
-        
+
         let global = Arc::new(global);
 
         let address: FreeWebMovementAddress = io_storage
@@ -153,7 +154,7 @@ impl Node {
 
         let router = register(router);
         let server = server.tcp(router);
-        
+
         Node::new(
             opt.name,
             io_storage,
@@ -191,7 +192,7 @@ impl Node {
         server_handle.abort(); // 如果希望立即停止 server
     }
 
-pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
+    pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
     where
         R: tokio::io::AsyncBufRead + Unpin + Send + 'static,
     {
@@ -199,22 +200,27 @@ pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
         let globals = self.context.clone();
         let handler = Arc::new(web_handler);
 
-        let unified = UnifiedServer::new(addr, globals)
-            .http_router({
-                let mut router = aex::http::router::Router::new(
-                    aex::http::router::NodeType::Static("root".into())
-                );
-                let h = handler.clone();
-                let executor: std::sync::Arc<dyn for<'a> std::ops::Fn(&'a mut aex::connection::context::Context) -> futures::future::BoxFuture<'a, bool> + Send + Sync> = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
-                    let hh = h.clone();
-                    async move { hh(ctx).await }.boxed()
-                });
-                router.get("/", executor).register();
-                router
+        let unified = UnifiedServer::new(addr, globals).http_router({
+            let mut router =
+                aex::http::router::Router::new(aex::http::router::NodeType::Static("root".into()));
+            let h = handler.clone();
+            let executor: std::sync::Arc<
+                dyn for<'a> std::ops::Fn(
+                        &'a mut aex::connection::context::Context,
+                    )
+                        -> futures::future::BoxFuture<'a, bool>
+                    + Send
+                    + Sync,
+            > = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
+                let hh = h.clone();
+                async move { hh(ctx).await }.boxed()
             });
+            router.get("/", executor).register();
+            router
+        });
 
         tracing::info!("Server running. Press Ctrl+C to stop.");
-        unified.start().await;
+        let _ = unified.start().await;
     }
 
     /// 核心功能：深度同步活跃连接的元数据到注册表
@@ -297,15 +303,11 @@ pub async fn start_with_web<R>(self, _reader: R, web_handler: WebHandler)
             .connect::<P2PFrame, P2PCommand, _, _>(
                 endpoint,
                 global,
-                move |_ctx| {
-                    Box::pin(async move {})
-                },
+                move |_ctx| Box::pin(async move {}),
                 Some(10),
             )
             .await;
 
         tracing::info!("Connecting to peer: {}", peer_addr);
     }
-
-
 }

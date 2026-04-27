@@ -1,6 +1,4 @@
-use aex::{
-    connection::{global::GlobalContext, node::Node},
-};
+use aex::connection::{global::GlobalContext, node::Node};
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::protocols::{

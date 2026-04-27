@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 pub async fn handle(_args: Vec<String>, context: Arc<GlobalContext>) {
     let status = context.manager.status();
-    
+
     println!("=== Connection Status ===");
     println!("Total IPs: {}", status.total_ips);
     println!("Intranet connections: {}", status.intranet_conns);
