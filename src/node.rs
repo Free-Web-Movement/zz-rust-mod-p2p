@@ -155,7 +155,7 @@ impl Node {
         let router = register(router);
         let server = server.tcp(router);
 
-        Node::new(
+        let mut node = Node::new(
             opt.name,
             io_storage,
             addr,
@@ -163,7 +163,14 @@ impl Node {
             server,
             Arc::new(cli),
         )
-        .await
+        .await;
+
+        if opt.test {
+            node.inner.upsert(addr, true);
+            tracing::info!("Test mode: added self {} to inner seeds", addr);
+        }
+
+        node
     }
 
     pub async fn start<R>(&mut self, reader: R)

@@ -37,6 +37,9 @@ pub struct Opt {
 
     #[arg(long)]
     pub external_server_file: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    pub test: bool,
 }
 
 impl Cli {
