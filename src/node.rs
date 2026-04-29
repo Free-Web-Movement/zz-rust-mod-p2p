@@ -166,8 +166,8 @@ impl Node {
         .await;
 
         if opt.test {
-            node.inner.upsert(addr, true);
-            tracing::info!("Test mode: added self {} to inner seeds", addr);
+            // Don't save to registry, will be shown dynamically via manager
+            tracing::info!("Test mode: node {} ready (displayed via manager)", opt.port);
         }
 
         node
@@ -301,20 +301,31 @@ impl Node {
             .await;
         Ok(())
     }
-    pub async fn connect_to(&self, peer_addr: &str) {
+    pub async fn connect_to(&mut self, peer_addr: &str) -> Result<(), String> {
+        let endpoint = peer_addr.parse::<SocketAddr>().map_err(|e| e.to_string())?;
+        
+        // Add to both inner and external seeds
+        self.inner.upsert(endpoint, true);
+        self.external.upsert(endpoint, true);
+        
         let manager = self.context.manager.clone();
         let global = self.context.clone();
 
-        let endpoint = peer_addr.parse::<SocketAddr>().unwrap();
-        let _ = manager
+        manager
             .connect::<P2PFrame, P2PCommand, _, _>(
                 endpoint,
                 global,
                 move |_ctx| Box::pin(async move {}),
                 Some(10),
             )
-            .await;
+            .await
+            .map_err(|e| e.to_string())?;
 
         tracing::info!("Connecting to peer: {}", peer_addr);
+        
+        // Save to storage
+        let _ = self.save_registries().await;
+        
+        Ok(())
     }
 }

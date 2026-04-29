@@ -13,12 +13,13 @@ pub enum Entity {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Action {
-    //Node Actions
+//Node Actions
     OnLine = 1,
     OnLineAck,
     OffLine,
     Ack,
     Update,
+    NodeSync,
 
     //Message Actions
     SendText,

@@ -3,7 +3,8 @@ use std::{net::SocketAddr, sync::Arc};
 
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::online::OnlineCommand,
+    commands::ack::SeedsCommand,
+    commands::online::{get_all_ips, OnlineCommand},
     frame::P2PFrame,
 };
 
@@ -39,11 +40,14 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                             };
 
                             let aex_node = Node::from_system(peer.port(), id.clone(), 1);
+                            let announced_ips = get_all_ips();
 
                             let cmd = OnlineCommand {
                                 session_id: id,
                                 node: aex_node,
                                 ephemeral_public_key: key.to_bytes(),
+                                announced_ips,
+                                seeds: None,
                             };
                             P2PFrame::send::<OnlineCommand>(
                                 ctx.clone(),
