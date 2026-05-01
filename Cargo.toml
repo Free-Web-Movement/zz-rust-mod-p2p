@@ -35,10 +35,11 @@ tracing = "0.1.44"
 chacha20poly1305 = "0.10.1"
 x25519-dalek = "2.0.1"
 hkdf = "0.12.4"
-uuid = "1.19.0"
-sha2 = "0.10.9"
+uuid = { version = "1.19.0", features = ["v4"] }
+sha2 = { version = "0.10.9", features = ["std"] }
 tracing-subscriber = { version = "0.3.22", features = ["fmt", "ansi", "env-filter"] }
 lazy_static = "1.5.0"
+once_cell = "1.21.0"
 
 zz-account = { path = "../zz-rust-mod-account" }
 aex =  { path = "../aex" }

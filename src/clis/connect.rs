@@ -3,7 +3,6 @@ use std::{net::SocketAddr, sync::Arc};
 
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::ack::SeedsCommand,
     commands::online::{get_all_ips, OnlineCommand},
     frame::P2PFrame,
 };

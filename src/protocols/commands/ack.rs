@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use aex::{
-    connection::{context::Context, manager::ConnectionManager, node::Node},
+    connection::{context::Context, node::Node},
     tcp::types::Codec,
 };
 use bincode::{Decode, Encode};
@@ -28,7 +28,7 @@ impl SeedRecord {
     }
 
     pub fn hash(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha256::default();
         hasher.update(&self.address);
         hasher.update(&self.first_seen.to_le_bytes());
         hasher.finalize().into()
@@ -43,7 +43,7 @@ pub struct SeedsCommand {
 
 impl SeedsCommand {
     pub fn new(seeds: Vec<SeedRecord>) -> Self {
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha256::default();
         let mut sorted = seeds.clone();
         sorted.sort_by(|a, b| a.address.cmp(&b.address));
         for seed in &sorted {
@@ -55,7 +55,7 @@ impl SeedsCommand {
     }
 
     pub fn verify(&self) -> bool {
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha256::default();
         let mut sorted = self.seeds.clone();
         sorted.sort_by(|a, b| a.address.cmp(&b.address));
         for seed in &sorted {

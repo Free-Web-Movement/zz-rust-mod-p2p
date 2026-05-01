@@ -1,13 +1,10 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use aex::connection::context::Context;
-use aex::connection::manager::ConnectionManager;
 use aex::connection::node::Node;
 use aex::tcp::types::Codec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
@@ -163,6 +160,22 @@ pub async fn online_handler(
     }
 
     println!("end of online!");
+
+    // 双方握手后都向对端发起 node sync，确保双向同步
+    let ctx_for_peer_sync = ctx.clone();
+    let peer_addr = frame.body.address.clone();
+    tokio::spawn(async move {
+        // 延迟一点，让 ack 先完成
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tracing::info!("🔄 Triggering node sync with peer {} after online handshake...", peer_addr);
+        if let Err(e) = crate::protocols::commands::node_sync::request_node_sync(
+            ctx_for_peer_sync,
+            peer_addr,
+            "full".to_string(),
+        ).await {
+            eprintln!("❌ Failed to trigger node sync: {}", e);
+        }
+    });
 }
 
 pub fn get_all_ips() -> Vec<String> {
@@ -170,9 +183,9 @@ pub fn get_all_ips() -> Vec<String> {
     let output = Command::new("ip")
         .args(&["route", "get", "1.1.1.1"])
         .output();
-    
+
     let mut ips = vec![];
-    
+
     if let Ok(output) = output {
         if let Ok(ip_str) = String::from_utf8(output.stdout) {
             for line in ip_str.lines() {
@@ -185,7 +198,7 @@ pub fn get_all_ips() -> Vec<String> {
             }
         }
     }
-    
+
     // Fallback
     if ips.is_empty() {
         if let Ok(output) = Command::new("ip").arg("addr").output() {
@@ -206,6 +219,6 @@ pub fn get_all_ips() -> Vec<String> {
             }
         }
     }
-    
+
     ips
 }

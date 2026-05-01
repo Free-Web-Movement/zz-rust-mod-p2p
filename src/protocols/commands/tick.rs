@@ -95,10 +95,10 @@ async fn build_tick_command(ctx: Arc<Mutex<Context>>, daily_epoch: u64, slot: u6
         .map(|addr| SeedRecord::new(addr.to_string()))
         .collect();
 
-    let pre_hash = if seed_records.is_empty() {
-        [0u8; 32]
-    } else {
-        let mut hasher = Sha256::new();
+     let pre_hash = if seed_records.is_empty() {
+         [0u8; 32]
+     } else {
+         let mut hasher = Sha256::default();
         for addr in &entries {
             hasher.update(addr.to_string().as_bytes());
         }
@@ -232,7 +232,7 @@ async fn build_witness_hash(
         let manager = guard.global.manager.clone();
         let entries = manager.get_all_entries();
         
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha256::default();
         hasher.update(&pre_hash);
         for addr in &entries {
             hasher.update(addr.to_string().as_bytes());

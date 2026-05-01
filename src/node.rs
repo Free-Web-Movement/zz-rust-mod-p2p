@@ -155,7 +155,7 @@ impl Node {
         let router = register(router);
         let server = server.tcp(router);
 
-        let mut node = Node::new(
+        let node = Node::new(
             opt.name,
             io_storage,
             addr,

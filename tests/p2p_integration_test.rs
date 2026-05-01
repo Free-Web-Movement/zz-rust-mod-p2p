@@ -31,11 +31,7 @@ async fn test_p2p_command_encoding() {
 #[tokio::test]
 async fn test_online_command_encoding() {
     let node = AexNode::from_system(8080, vec![1u8; 32], 1);
-    let online_cmd = OnlineCommand {
-        session_id: vec![1, 2, 3, 4],
-        node,
-        ephemeral_public_key: [0u8; 32],
-    };
+    let online_cmd = OnlineCommand {session_id:vec![1,2,3,4],node, ephemeral_public_key:[0u8;32], announced_ips: vec![], seeds: vec![] };
 
     let encoded = Codec::encode(&online_cmd);
     assert!(!encoded.is_empty());
@@ -199,11 +195,7 @@ async fn test_command_is_trusted() {
 #[tokio::test]
 async fn test_online_command_all_fields() {
     let node = AexNode::from_system(9000, vec![0u8; 32], 1);
-    let online_cmd = OnlineCommand {
-        session_id: vec![1, 2, 3, 4, 5],
-        node: node.clone(),
-        ephemeral_public_key: [1u8; 32],
-    };
+    let online_cmd = OnlineCommand {session_id:vec![1,2,3,4,5],node:node.clone(),ephemeral_public_key:[1u8;32], announced_ips: todo!(), seeds: todo!() };
 
     let encoded = Codec::encode(&online_cmd);
     let decoded: OnlineCommand = Codec::decode(&encoded).unwrap();

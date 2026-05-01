@@ -1,10 +1,9 @@
 use aex::connection::{global::GlobalContext, node::Node};
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use sha2::{Digest, Sha256};
 
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::ack::SeedRecord,
     commands::online::{get_all_ips, OnlineCommand},
     frame::P2PFrame,
 };
@@ -130,7 +129,7 @@ async fn connect_to_peer_sync(
 }
 
 fn compute_witness_hash(seeds: &[String]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha256::default();
     for seed in seeds {
         hasher.update(seed.as_bytes());
     }
