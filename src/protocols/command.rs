@@ -13,24 +13,26 @@ pub enum Entity {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, Encode, Decode)]
 pub enum Action {
-//Node Actions
+    // Node Actions
     OnLine = 1,
     OnLineAck,
     OffLine,
     Ack,
     Update,
     NodeSync,
+    NodeSyncRequest,   // 节点数据同步请求
+    NodeSyncResponse,  // 节点数据同步响应
 
-    //Message Actions
+    // Message Actions
     SendText,
     SendBinary,
 
-    //Witness Actions
+    // Witness Actions
     Tick,
     TickAck,
     Check,
 
-    //Telephone Actions
+    // Telephone Actions
     Call,
     HangUp,
     Accept,
