@@ -295,7 +295,7 @@ pub async fn send_tick(
     receiver: &str,
     daily_epoch: u64,
     slot: u64,
-    pre_hash: [u8; 32],
+    _pre_hash: [u8; 32],
 ) -> anyhow::Result<()> {
     let tick = build_tick_command(ctx.clone(), daily_epoch, slot).await;
 
