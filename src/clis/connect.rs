@@ -6,6 +6,7 @@ use crate::protocols::{
     commands::online::{get_all_ips, OnlineCommand},
     frame::P2PFrame,
 };
+use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     if args.len() < 2 {
@@ -23,6 +24,7 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                     global.clone(),
                     move |ctx| {
                         let peer = addr;
+                        let ctx_for_seeds = ctx.clone();
                         Box::pin(async move {
                             println!("Connected to {}!", peer);
 
@@ -41,12 +43,31 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                             let aex_node = Node::from_system(peer.port(), id.clone(), 1);
                             let announced_ips = get_all_ips();
 
+                            // Build seeds to send: current connected peers + self
+                            let seeds_to_send = {
+                                let guard = ctx_for_seeds.lock().await;
+                                let connected: Vec<String> = guard.global.manager.get_all_entries()
+                                    .iter()
+                                    .map(|a| a.to_string())
+                                    .collect();
+                                let self_addr = guard.global.addr.to_string();
+                                drop(guard);
+
+                                let mut all_seeds: Vec<SeedRecord> = connected
+                                    .iter()
+                                    .filter(|s| *s != &self_addr)
+                                    .map(|addr| SeedRecord::new(addr.clone()))
+                                    .collect();
+                                all_seeds.push(SeedRecord::new(self_addr.clone()));
+                                SeedsCommand::new(all_seeds)
+                            };
+
                             let cmd = OnlineCommand {
                                 session_id: id,
                                 node: aex_node,
                                 ephemeral_public_key: key.to_bytes(),
                                 announced_ips,
-                                seeds: None,
+                                seeds: Some(seeds_to_send),
                             };
                             P2PFrame::send::<OnlineCommand>(
                                 ctx.clone(),

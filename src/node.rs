@@ -21,6 +21,7 @@ use crate::{
         IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_stroage_init,
     },
     protocols::{command::P2PCommand, frame::P2PFrame, registry::register},
+    protocols::commands::seed_sync::{SeedSet, SeedInfo},
     record::{self, NodeRecord, NodeRegistry},
 };
 
@@ -155,7 +156,33 @@ impl Node {
         let router = register(router);
         let server = server.tcp(router);
 
-        let node = Node::new(
+        // Register self as seed in GlobalContext SeedSet (must be intranet or public IP)
+        let node_name = opt.name.clone();
+        let all_ips = aex::connection::node::Node::system_ips();
+        let self_ip = all_ips
+            .iter()
+            .filter(|(scope, ip)| !ip.is_loopback() && !ip.is_unspecified())
+            .map(|(_, ip)| ip.to_string())
+            .next()
+            .unwrap_or_default();
+
+        if self_ip.is_empty() {
+            tracing::warn!("⚠️ No valid seed IP found (no intranet or public IP available)");
+        } else {
+            let is_intranet = self_ip.starts_with("192.168.") || self_ip.starts_with("10.") || self_ip.starts_with("172.");
+            let seed_port = addr.port();
+            let self_seed = SeedInfo::new(
+                self_ip.clone(),
+                seed_port,
+                node_name,
+                is_intranet,
+            );
+            let initial_seed_set = SeedSet::new(vec![self_seed], 0);
+            global.set(initial_seed_set).await;
+            tracing::info!("🌱 Registered self seed: {}:{}", self_ip, seed_port);
+        }
+
+        let mut node = Node::new(
             opt.name,
             io_storage,
             addr,
@@ -165,8 +192,24 @@ impl Node {
         )
         .await;
 
+        // Save CLI seeds to Context for tick sync cycle
+        if let Some(ref seeds_str) = opt.seeds {
+            let seed_addrs: Vec<SocketAddr> = seeds_str
+                .split(',')
+                .filter_map(|s| s.trim().parse::<SocketAddr>().ok())
+                .collect();
+
+            global.set(seed_addrs.clone()).await;
+
+            for addr in &seed_addrs {
+                node.inner.upsert(*addr, true);
+                node.external.upsert(*addr, true);
+                tracing::info!("Adding seed: {}", addr);
+            }
+            let _ = node.save_registries().await;
+        }
+
         if opt.test {
-            // Don't save to registry, will be shown dynamically via manager
             tracing::info!("Test mode: node {} ready (displayed via manager)", opt.port);
         }
 
@@ -207,24 +250,34 @@ impl Node {
         let globals = self.context.clone();
         let handler = Arc::new(web_handler);
 
-        let unified = UnifiedServer::new(addr, globals).http_router({
-            let mut router =
-                aex::http::router::Router::new(aex::http::router::NodeType::Static("root".into()));
-            let h = handler.clone();
-            let executor: std::sync::Arc<
-                dyn for<'a> std::ops::Fn(
-                        &'a mut aex::connection::context::Context,
-                    )
-                        -> futures::future::BoxFuture<'a, bool>
-                    + Send
-                    + Sync,
-            > = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
-                let hh = h.clone();
-                async move { hh(ctx).await }.boxed()
-            });
-            router.get("/", executor).register();
-            router
-        });
+        let tcp_router = Arc::new(register(TcpRouter::<P2PFrame, P2PCommand>::new()));
+
+        let unified = UnifiedServer::new(addr, globals)
+            .http_router({
+                let mut router =
+                    aex::http::router::Router::new(aex::http::router::NodeType::Static("root".into()));
+                let h = handler.clone();
+                let executor: std::sync::Arc<
+                    dyn for<'a> std::ops::Fn(
+                            &'a mut aex::connection::context::Context,
+                        )
+                            -> futures::future::BoxFuture<'a, bool>
+                        + Send
+                        + Sync,
+                > = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
+                    let hh = h.clone();
+                    async move { hh(ctx).await }.boxed()
+                });
+                router.get("/", executor).register();
+                router
+            })
+            .tcp_handler(Arc::new(move |ctx| {
+                let router = tcp_router.clone();
+                let ctx = Arc::new(Mutex::new(ctx));
+                tokio::spawn(async move {
+                    let _ = router.handle(ctx).await;
+                })
+            }));
 
         tracing::info!("Server running. Press Ctrl+C to stop.");
         let _ = unified.start().await;

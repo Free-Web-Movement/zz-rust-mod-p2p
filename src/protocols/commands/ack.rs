@@ -179,18 +179,38 @@ async fn connect_to_new_peer(ctx: Arc<Mutex<Context>>, addr: SocketAddr) -> Resu
         guard.global.paired_session_keys.clone().unwrap()
     };
     
+    let ctx_for_seeds = ctx.clone();
     let (id, key) = {
         let guard = psk.lock().await;
         guard.create(false).await
     };
     
+    // Build seeds to send
+    let seeds_to_send = {
+        let guard = ctx_for_seeds.lock().await;
+        let connected: Vec<String> = guard.global.manager.get_all_entries()
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        let self_addr = guard.global.addr.to_string();
+        drop(guard);
+
+        let mut all_seeds: Vec<SeedRecord> = connected
+            .iter()
+            .filter(|s| *s != &self_addr)
+            .map(|a| SeedRecord::new(a.clone()))
+            .collect();
+        all_seeds.push(SeedRecord::new(self_addr));
+        SeedsCommand::new(all_seeds)
+    };
+
     let aex_node = Node::from_system(addr.port(), id.clone(), 1);
     let cmd = OnlineCommand {
         session_id: id,
         node: aex_node,
         ephemeral_public_key: key.to_bytes(),
         announced_ips: vec![],
-        seeds: None,
+        seeds: Some(seeds_to_send),
     };
     
     P2PFrame::send::<OnlineCommand>(

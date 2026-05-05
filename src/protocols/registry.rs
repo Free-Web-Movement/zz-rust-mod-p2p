@@ -9,7 +9,7 @@ use crate::protocols::{
     command::{Action, Entity, P2PCommand},
     commands::{
         ack::onlineack_handler, message::message_handler, node_sync::{node_sync_handler, node_sync_response_handler}, offline::offline_handler,
-        online::online_handler, tick::tick_handler,
+        online::online_handler, seed_sync::{seed_sync_commit_handler, seed_sync_request_handler, seed_sync_response_handler}, tick::tick_handler,
     },
     frame::P2PFrame,
 };
@@ -108,6 +108,42 @@ pub fn register(mut router: TcpRouter<P2PFrame, P2PCommand>) -> TcpRouter<P2PFra
             let c = cmd.clone();
             Box::pin(async move {
                 node_sync_response_handler(ctx, _frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Node, Action::SeedSyncRequest),
+        Box::new(|ctx, _frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                seed_sync_request_handler(ctx, _frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Node, Action::SeedSyncResponse),
+        Box::new(|ctx, _frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                seed_sync_response_handler(ctx, _frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Node, Action::SeedSyncCommit),
+        Box::new(|ctx, _frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                seed_sync_commit_handler(ctx, _frame, c).await;
                 Ok(true)
             })
         }),

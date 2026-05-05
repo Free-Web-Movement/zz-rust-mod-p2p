@@ -20,8 +20,13 @@ pub enum Action {
     Ack,
     Update,
     NodeSync,
-    NodeSyncRequest,   // 节点数据同步请求
-    NodeSyncResponse,  // 节点数据同步响应
+    NodeSyncRequest,
+    NodeSyncResponse,
+
+    // Seed Sync Actions
+    SeedSyncRequest,
+    SeedSyncResponse,
+    SeedSyncCommit,
 
     // Message Actions
     SendText,
