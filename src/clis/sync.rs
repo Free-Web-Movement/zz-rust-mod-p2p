@@ -2,7 +2,7 @@ use aex::connection::{global::GlobalContext, node::Node as AexNode, scope::Netwo
 use std::{net::SocketAddr, sync::Arc};
 use sha2::{Digest, Sha256};
 
-use crate::node::Node as P2pNode;
+use crate::node::{self, Node as P2pNode};
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
     commands::online::{get_all_ips, OnlineCommand},
@@ -15,7 +15,7 @@ pub const SYNC_INTERVAL_MS: u64 = 200;
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     let target_addrs: Vec<SocketAddr> = if args.is_empty() {
-        context.manager.get_all_entries()
+        node::filter_entries(context.manager.get_all_entries())
     } else {
         args.iter().filter_map(|a| a.parse::<SocketAddr>().ok()).collect()
     };
@@ -74,11 +74,11 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
 }
 
 fn is_connected(ctx: &Arc<GlobalContext>, addr: SocketAddr) -> bool {
-    ctx.manager.get_all_entries().contains(&addr)
+    node::filter_entries(ctx.manager.get_all_entries()).contains(&addr)
 }
 
 fn get_connected_seeds(ctx: &Arc<GlobalContext>) -> Vec<String> {
-    let mut addrs: Vec<String> = ctx.manager.get_all_entries()
+    let mut addrs: Vec<String> = node::filter_entries(ctx.manager.get_all_entries())
         .iter()
         .map(|a| a.to_string())
         .collect();

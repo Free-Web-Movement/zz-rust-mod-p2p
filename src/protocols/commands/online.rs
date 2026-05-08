@@ -115,11 +115,6 @@ pub async fn online_handler(
         return;
     }
 
-    let peer_addr = {
-        let guard = ctx.lock().await;
-        guard.addr
-    };
-
     let psk = {
         let ctx = ctx.lock().await;
         ctx.global.paired_session_keys.clone().unwrap()
@@ -229,6 +224,7 @@ pub async fn online_handler(
     }
 
     // 对称握手：作为 inbound 端，向对端发起出站连接（回连）
+    // 但如果已有连接（任何方向），跳过以避免连接数膨胀
     let peer_addr = {
         let guard = ctx.lock().await;
         guard.addr
@@ -237,77 +233,66 @@ pub async fn online_handler(
         let guard = ctx.lock().await;
         guard.global.clone()
     };
+    let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
+    let already_connected = gctx.manager.connections.get(&(peer_addr.ip(), scope))
+        .map(|bi_conn| bi_conn.servers.contains_key(&peer_addr) || bi_conn.clients.contains_key(&peer_addr))
+        .unwrap_or(false);
 
-    let psk = gctx.paired_session_keys.clone().unwrap();
-    let (id, key) = {
-        let guard = psk.lock().await;
-        guard.create(false).await
-    };
-
-    let (intranet_ips, wan_ips) = get_all_ips();
-    tracing::info!("Announcing intranet IPs (inbound reply): {:?}", intranet_ips);
-    tracing::info!("Announcing wan IPs (inbound reply): {:?}", wan_ips);
-
-    let seeds_to_send = {
-        let node = gctx.get::<Arc<P2pNode>>().await;
-        let seed_records = if let Some(node) = node {
-            let all_seeds: Vec<SeedRecord> = node.registry
-                .get_all_seeds()
-                .into_iter()
-                .map(|(s, na)| SeedRecord::new(s.to_string(), na))
-                .collect();
-            SeedsCommand::new(all_seeds)
-        } else {
-            SeedsCommand::new(vec![])
+    if already_connected {
+        tracing::info!("↩️ Skip return connection to {} (already connected)", peer_addr);
+    } else {
+        let psk = gctx.paired_session_keys.clone().unwrap();
+        let (_id, _key) = {
+            let guard = psk.lock().await;
+            guard.create(false).await
         };
-        Some(seed_records)
-    };
 
-    let local_node = {
-        let guard = gctx.local_node.write().await;
-        guard.clone()
-    };
+        let local_node = {
+            let guard = gctx.local_node.write().await;
+            guard.clone()
+        };
 
-    let return_cmd = Arc::new(OnlineCommand {
-        session_id: id,
-        node: local_node,
-        ephemeral_public_key: key.to_bytes(),
-        intranet_ips,
-        wan_ips,
-        seeds: seeds_to_send,
-    });
+        let return_cmd = Arc::new(OnlineCommand {
+            session_id: vec![],
+            node: local_node,
+            ephemeral_public_key: [0u8; 32],
+            intranet_ips: vec![],
+            wan_ips: vec![],
+            seeds: None,
+        });
 
-    let cmd_clone = return_cmd.clone();
-    let gctx_clone = gctx.clone();
-    tokio::spawn(async move {
-        match gctx_clone.manager.clone().connect::<P2PFrame, P2PCommand, _, _>(
-            peer_addr,
-            gctx_clone.clone(),
-            move |new_ctx| {
-                let cmd = cmd_clone.clone();
-                let g = gctx_clone.clone();
-                Box::pin(async move {
-                    if let Err(e) = P2PFrame::send::<OnlineCommand>(
-                        new_ctx.clone(),
-                        &Some((*cmd).clone()),
-                        Entity::Node,
-                        Action::OnLine,
-                        false,
-                    ).await {
-                        tracing::error!("❌ Failed to send return OnlineCommand: {:?}", e);
-                        return;
-                    }
-                    if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&g.routers) {
-                        let _ = router.handle(new_ctx).await;
-                    }
-                })
-            },
-            Some(10),
-        ).await {
-            Ok(_) => tracing::info!("✅ Return connection established to {}", peer_addr),
-            Err(_) => tracing::info!("↩️ Return connection already exists to {}", peer_addr),
-        }
-    });
+        let cmd_clone = return_cmd.clone();
+        let gctx_clone = gctx.clone();
+        tokio::spawn(async move {
+            match gctx_clone.manager.clone().connect::<P2PFrame, P2PCommand, _, _>(
+                peer_addr,
+                gctx_clone.clone(),
+                move |new_ctx| {
+                    let cmd = cmd_clone.clone();
+                    let g = gctx_clone.clone();
+                    Box::pin(async move {
+                        if let Err(e) = P2PFrame::send::<OnlineCommand>(
+                            new_ctx.clone(),
+                            &Some((*cmd).clone()),
+                            Entity::Node,
+                            Action::OnLine,
+                            false,
+                        ).await {
+                            tracing::error!("❌ Failed to send return OnlineCommand: {:?}", e);
+                            return;
+                        }
+                        if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&g.routers) {
+                            let _ = router.handle(new_ctx).await;
+                        }
+                    })
+                },
+                Some(10),
+            ).await {
+                Ok(_) => tracing::info!("✅ Return connection established to {}", peer_addr),
+                Err(_) => tracing::info!("↩️ Return connection already exists to {}", peer_addr),
+            }
+        });
+    }
 
     // Broadcast new peer to existing peers (mesh propagation)
     {

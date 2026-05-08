@@ -146,6 +146,7 @@ pub fn derive_seed_set_from_registry(reg: &NodeRegistry) -> SeedSet {
     let seeds: Vec<SeedInfo> = reg
         .get_all_seeds()
         .into_iter()
+        .filter(|(addr, _)| addr.port() != 0)
         .map(|(addr, node_addr)| {
             let is_intranet =
                 matches!(addr.ip(), std::net::IpAddr::V4(v4) if v4.is_private());

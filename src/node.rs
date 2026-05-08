@@ -476,3 +476,15 @@ impl Node {
         Ok(())
     }
 }
+
+pub fn is_public_ip(ip: &std::net::IpAddr) -> bool {
+    !ip.is_loopback() && !ip.is_unspecified()
+}
+
+pub fn is_public_addr(addr: &SocketAddr) -> bool {
+    is_public_ip(&addr.ip())
+}
+
+pub fn filter_entries(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    addrs.into_iter().filter(is_public_addr).collect()
+}
