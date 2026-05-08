@@ -56,6 +56,9 @@ async fn send_online_command(
         session_id: session_id.clone(),
         node,
         ephemeral_public_key: key.to_bytes(),
+        intranet_ips: vec![],
+        wan_ips: vec![],
+        seeds: None,
     };
 
     let cmd = P2PCommand::new(Entity::Node, Action::OnLine, Codec::encode(&online_cmd));

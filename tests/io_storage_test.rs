@@ -4,7 +4,7 @@ mod tests {
     use std::{collections::HashSet, net::SocketAddr, sync::Arc};
     use tempfile::tempdir;
     use zz_account::address::FreeWebMovementAddress;
-    use zz_p2p::{cli::Opt, io_storage::io_stroage_init, record::NodeRecord};
+    use zz_p2p::{cli::Opt, io_storage::io_storage_init, record::NodeRecord};
 
     #[tokio::test]
     async fn test_io_storage_init_persistence() {
@@ -22,7 +22,7 @@ mod tests {
         let mut opt_v1 = Opt::default();
         opt_v1.address_file = Some(file_path_str.clone()); // 传入自定义路径
 
-        let io_storage_v1 = io_stroage_init(&opt_v1, storage.clone());
+        let io_storage_v1 = io_storage_init(&opt_v1, storage.clone());
 
         // 第一次读取：因为文件不存在，f2 会生成一个随机地址
         let first_addr: FreeWebMovementAddress = io_storage_v1
@@ -42,7 +42,7 @@ mod tests {
         let mut opt_v2 = Opt::default();
         opt_v2.address_file = Some(file_path_str.clone()); // 指向刚才生成的路径
 
-        let io_storage_v2 = io_stroage_init(&opt_v2, storage.clone());
+        let io_storage_v2 = io_storage_init(&opt_v2, storage.clone());
 
         // 第二次读取：此时文件已存在，逻辑应该走 f1（读取文件）
         let second_addr: FreeWebMovementAddress = io_storage_v2
@@ -89,7 +89,7 @@ mod tests {
         // 步骤 1：首次启动（文件不存在），验证自动初始化为空
         // ==========================================
         {
-            let io_storage = io_stroage_init(&opt, storage.clone());
+            let io_storage = io_storage_init(&opt, storage.clone());
 
             // 读取 inner_server，预期触发 f2 生成空 HashSet
             let inner: HashSet<NodeRecord> = io_storage
@@ -119,7 +119,7 @@ mod tests {
         // ==========================================
         {
             // 重新初始化一个新的 IOStorage 实例，模拟重启
-            let io_storage_v2 = io_stroage_init(&opt, storage.clone());
+            let io_storage_v2 = io_storage_init(&opt, storage.clone());
 
             // 再次读取 inner_server
             let inner_reloaded: HashSet<NodeRecord> = io_storage_v2
@@ -139,7 +139,7 @@ mod tests {
         // 步骤 3：验证 external_server 的独立性
         // ==========================================
         {
-            let io_storage = io_stroage_init(&opt, storage.clone());
+            let io_storage = io_storage_init(&opt, storage.clone());
             let external: HashSet<NodeRecord> = io_storage
                 .read::<HashSet<NodeRecord>>("external_server")
                 .await

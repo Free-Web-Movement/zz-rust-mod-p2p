@@ -101,7 +101,7 @@ impl IOStorage {
     }
 }
 
-pub fn io_stroage_init(opt: &Opt, storage: Arc<Storage>) -> IOStorage {
+pub fn io_storage_init(opt: &Opt, storage: Arc<Storage>) -> IOStorage {
     let mut ios = IOStorage::new(storage.clone());
     storage!(ios, storage, [
         (

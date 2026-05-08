@@ -78,9 +78,9 @@ mod tests {
         assert_eq!(cmd.id(), 257);
 
         // 验证不同的 ID
-        // Entity::File (5), Action::Reject (13) -> (13 << 8) | 5 = 3333
+        // Entity::File (5), Action::Reject (20) -> (20 << 8) | 5 = 5125
         let id_complex = P2PCommand::to_u32(Entity::File, Action::Reject);
-        assert_eq!(id_complex, (13 << 8) | 5);
+        assert_eq!(id_complex, (20 << 8) | 5);
     }
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
 
         // 4. 验证 ID 逻辑（覆盖 to_u32 内部位移逻辑）
         assert_eq!(cmd_start.id(), 257); // (1 << 8) | 1
-        assert_eq!(cmd_end.id(), (13 << 8) | 5);
+        assert_eq!(cmd_end.id(), (20 << 8) | 5);
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
 
         // 显式覆盖 Command Trait 的方法实现
         // let trait_ptr: &dyn Command + 'static= &cmd;
-        assert_eq!(cmd.id(), (6 << 8) | 2);
+        assert_eq!(cmd.id(), (12 << 8) | 2);
         assert_eq!(cmd.data(), &vec![0xFF]);
 
         // 显式触发 Codec 标记（虽然是空的，但 impl 块需要被触达）
@@ -359,6 +359,6 @@ mod tests {
     fn test_to_u32_edge_cases() {
         // 覆盖 ID 计算逻辑
         assert_eq!(P2PCommand::to_u32(Entity::Node, Action::OnLine), 257);
-        assert_eq!(P2PCommand::to_u32(Entity::File, Action::Reject), 3333);
+        assert_eq!(P2PCommand::to_u32(Entity::File, Action::Reject), 5125);
     }
 }

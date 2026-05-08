@@ -1,7 +1,7 @@
 use aex::{
     connection::{
         entry::ConnectionEntry, global::GlobalContext, heartbeat::HeartbeatConfig,
-        scope::NetworkScope,
+        node::Node as AexNode, scope::NetworkScope,
     },
     crypto::session_key_manager::PairedSessionKey,
     server::{HTTPServer, Server},
@@ -12,17 +12,17 @@ use aex::{
 use chrono::Utc;
 use futures::future::FutureExt;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use zz_account::address::FreeWebMovementAddress;
 
 use crate::{
     cli::{Cli, Opt},
     io_storage::{
-        IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_stroage_init,
+        IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_storage_init,
     },
-    protocols::{command::P2PCommand, frame::P2PFrame, registry::register},
-    protocols::commands::seed_sync::{SeedSet, SeedInfo},
-    record::{self, NodeRecord, NodeRegistry},
+    protocols::{command::{P2PCommand, Action, Entity}, frame::P2PFrame, registry::register},
+    protocols::commands::node_registry::NodeRegistry,
+    record::{self, NodeRecord},
 };
 
 pub type WebHandler = Arc<
@@ -37,13 +37,14 @@ pub type WebHandler = Arc<
 #[derive(Clone)]
 pub struct Node {
     pub id: FreeWebMovementAddress,
-    pub inner: NodeRegistry,
-    pub external: NodeRegistry,
-    // pub storage: Arc<Storage>,
-    pub io_storage: IOStorage, // Unique network address of the node, also id for the node
-    pub name: String,          // User defined name for the node, no need to be unique
+    pub inner: record::NodeRegistry,
+    pub external: record::NodeRegistry,
+    pub registry: NodeRegistry,
+    pub peer_addrs: Arc<RwLock<Vec<SocketAddr>>>,
+    pub io_storage: IOStorage,
+    pub name: String,
     pub addr: SocketAddr,
-    pub context: Arc<GlobalContext>, // global context
+    pub context: Arc<GlobalContext>,
     pub server: Server,
     pub cli: Arc<Cli>,
 }
@@ -51,12 +52,13 @@ pub struct Node {
 impl Node {
     pub async fn new(
         name: String,
-        // storage: Arc<Storage>,
         io_storage: IOStorage,
         addr: SocketAddr,
         context: Arc<GlobalContext>,
         server: Server,
         cli: Arc<Cli>,
+        registry: NodeRegistry,
+        peer_addrs: Arc<RwLock<Vec<SocketAddr>>>,
     ) -> Self {
         let id = io_storage
             .read::<FreeWebMovementAddress>(STORAGE_ADDRESS)
@@ -70,13 +72,15 @@ impl Node {
             .read::<HashSet<NodeRecord>>(STORAGE_EXTERNAL_SERVER)
             .await
             .unwrap();
-        let inner = NodeRegistry::new(inner_nodes);
-        let external = NodeRegistry::new(external_nodes);
+        let inner = record::NodeRegistry::new(inner_nodes);
+        let external = record::NodeRegistry::new(external_nodes);
         Self {
             name,
             id,
             inner,
             external,
+            registry,
+            peer_addrs,
             io_storage,
             addr,
             context,
@@ -88,20 +92,81 @@ impl Node {
     pub async fn connect(&mut self) {
         let manager = self.context.manager.clone();
         let global = self.context.clone();
+        let self_registry = self.registry.clone();
 
         let nodes: Vec<record::NodeRecord> = self.inner.nodes.iter().cloned().collect();
 
         for record in nodes {
             let endpoint = record.endpoint;
             let g = global.clone();
+            let registry = self_registry.clone();
 
             let _ = manager
                 .connect::<P2PFrame, P2PCommand, _, _>(
                     endpoint,
                     g,
-                    move |_ctx| {
+                    move |ctx| {
+                        let peer = endpoint;
+                        let self_registry = registry.clone();
                         Box::pin(async move {
-                            // Connection handler will be dispatched through router
+                            tracing::info!("✅ Connected to peer: {}", peer);
+
+                            let psk = {
+                                let guard = ctx.lock().await;
+                                let g = guard.global.clone();
+                                g.paired_session_keys.clone().unwrap()
+                            };
+
+                            let (id, key) = {
+                                let guard = psk.lock().await;
+                                guard.create(false).await
+                            };
+
+                            // Get local_node.id (FreeWebMovementAddress bytes)
+                            let self_node_id = {
+                                let guard = ctx.lock().await;
+                                guard.global.local_node.read().await.id.clone()
+                            };
+
+                            let aex_node = AexNode::from_system(peer.port(), self_node_id.clone(), 1);
+
+                            // Generate seeds from NodeRegistry
+                            let seeds_to_send = {
+                                let all_seeds: Vec<crate::protocols::commands::ack::SeedRecord> = self_registry
+                                    .get_all_seeds()
+                                    .into_iter()
+                                    .map(|(s, na)| crate::protocols::commands::ack::SeedRecord::new(s.to_string(), na))
+                                    .collect();
+                                crate::protocols::commands::ack::SeedsCommand::new(all_seeds)
+                            };
+
+                            let (intranet_ips, wan_ips) = crate::protocols::commands::online::get_all_ips();
+                            let cmd = crate::protocols::commands::online::OnlineCommand {
+                                session_id: id,
+                                node: aex_node,
+                                ephemeral_public_key: key.to_bytes(),
+                                intranet_ips,
+                                wan_ips,
+                                seeds: Some(seeds_to_send),
+                            };
+                            if let Err(e) = P2PFrame::send::<crate::protocols::commands::online::OnlineCommand>(
+                                ctx.clone(),
+                                &Some(cmd),
+                                Entity::Node,
+                                Action::OnLine,
+                                false,
+                            ).await {
+                                tracing::error!("Failed to send OnlineCommand: {:?}", e);
+                            }
+
+                            // Start reader loop to process responses (OnlineAck, seeds, etc.)
+                            let g = {
+                                let guard = ctx.lock().await;
+                                guard.global.clone()
+                            };
+                            if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&g.routers) {
+                                let _ = router.handle(ctx).await;
+                            }
                         })
                     },
                     Some(10),
@@ -114,7 +179,7 @@ impl Node {
 
     pub async fn init(opt: Opt) -> Self {
         let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));
-        let io_storage = io_stroage_init(&opt, storage.clone());
+        let io_storage = io_storage_init(&opt, storage.clone());
 
         let addr = format!("{}:{}", opt.ip.clone(), opt.port)
             .parse::<SocketAddr>()
@@ -141,6 +206,12 @@ impl Node {
             .await
             .unwrap();
 
+        // Set local_node.id = FreeWebMovementAddress bytes
+        {
+            let mut local_node = global.local_node.write().await;
+            local_node.id = address.to_string().into_bytes();
+        }
+
         global.set(address.clone()).await;
 
         let address_1 = global.get::<FreeWebMovementAddress>().await.unwrap();
@@ -156,31 +227,40 @@ impl Node {
         let router = register(router);
         let server = server.tcp(router);
 
-        // Register self as seed in GlobalContext SeedSet (must be intranet or public IP)
-        let node_name = opt.name.clone();
+        // Create NodeRegistry and register self seeds
+        let node_registry = NodeRegistry::new();
         let all_ips = aex::connection::node::Node::system_ips();
-        let self_ip = all_ips
-            .iter()
-            .filter(|(scope, ip)| !ip.is_loopback() && !ip.is_unspecified())
-            .map(|(_, ip)| ip.to_string())
-            .next()
-            .unwrap_or_default();
+        let self_address = address.to_string();
 
-        if self_ip.is_empty() {
-            tracing::warn!("⚠️ No valid seed IP found (no intranet or public IP available)");
-        } else {
-            let is_intranet = self_ip.starts_with("192.168.") || self_ip.starts_with("10.") || self_ip.starts_with("172.");
-            let seed_port = addr.port();
-            let self_seed = SeedInfo::new(
-                self_ip.clone(),
-                seed_port,
-                node_name,
-                is_intranet,
-            );
-            let initial_seed_set = SeedSet::new(vec![self_seed], 0);
-            global.set(initial_seed_set).await;
-            tracing::info!("🌱 Registered self seed: {}:{}", self_ip, seed_port);
+        let is_loopback = addr.ip().is_loopback();
+        if !is_loopback {
+            let scope = NetworkScope::from_ip(&addr.ip());
+            node_registry.register(self_address.clone(), addr, scope);
+            tracing::info!("🌱 Registered self seed: {} (node: {})", addr, self_address);
         }
+
+        for (_, ip) in &all_ips {
+            if ip == &addr.ip() {
+                continue;
+            }
+            if ip.is_loopback() {
+                continue;
+            }
+            let seed_addr = SocketAddr::new(*ip, addr.port());
+            let scope = NetworkScope::from_ip(ip);
+            node_registry.register(self_address.clone(), seed_addr, scope);
+            tracing::info!("🌱 Registered self seed: {} (node: {})", seed_addr, self_address);
+        }
+
+        // Create peer_addrs from CLI seeds
+        let seed_addrs: Vec<SocketAddr> = if let Some(ref seeds_str) = opt.seeds {
+            seeds_str
+                .split(',')
+                .filter_map(|s| s.trim().parse::<SocketAddr>().ok())
+                .collect()
+        } else {
+            vec![]
+        };
 
         let mut node = Node::new(
             opt.name,
@@ -189,22 +269,21 @@ impl Node {
             global.clone(),
             server,
             Arc::new(cli),
+            node_registry,
+            Arc::new(RwLock::new(seed_addrs.clone())),
         )
         .await;
 
-        // Save CLI seeds to Context for tick sync cycle
-        if let Some(ref seeds_str) = opt.seeds {
-            let seed_addrs: Vec<SocketAddr> = seeds_str
-                .split(',')
-                .filter_map(|s| s.trim().parse::<SocketAddr>().ok())
-                .collect();
+        // Store Arc<Node> in GlobalContext
+        let node_arc = Arc::new(node.clone());
+        global.set(node_arc).await;
 
-            global.set(seed_addrs.clone()).await;
-
-            for addr in &seed_addrs {
-                node.inner.upsert(*addr, true);
-                node.external.upsert(*addr, true);
-                tracing::info!("Adding seed: {}", addr);
+        // Save CLI seeds to persistent registries
+        if opt.seeds.is_some() {
+            for saddr in &seed_addrs {
+                node.inner.upsert(*saddr, true);
+                node.external.upsert(*saddr, true);
+                tracing::info!("Adding seed: {}", saddr);
             }
             let _ = node.save_registries().await;
         }
@@ -273,10 +352,25 @@ impl Node {
             })
             .tcp_handler(Arc::new(move |ctx| {
                 let router = tcp_router.clone();
-                let ctx = Arc::new(Mutex::new(ctx));
-                tokio::spawn(async move {
-                    let _ = router.handle(ctx).await;
-                })
+                let peer_addr = ctx.addr;
+                let manager = ctx.global.manager.clone();
+                let ctx_arc = Arc::new(Mutex::new(ctx));
+                let ctx_for_add = ctx_arc.clone();
+
+                let child_token = manager.cancel_token.child_token();
+                let task_token = child_token.clone();
+
+                let handle = tokio::spawn(async move {
+                    tokio::select! {
+                        _ = task_token.cancelled() => {}
+                        _ = router.handle(ctx_arc) => {}
+                    }
+                });
+
+                let abort_handle = handle.abort_handle();
+                manager.add(peer_addr, abort_handle, child_token, true, Some(ctx_for_add));
+
+                handle
             }));
 
         tracing::info!("Server running. Press Ctrl+C to stop.");

@@ -1,6 +1,7 @@
-use aex::connection::{global::GlobalContext, node::Node};
+use aex::connection::{global::GlobalContext, node::Node as AexNode, scope::NetworkScope};
 use std::{net::SocketAddr, sync::Arc};
 
+use crate::node::Node as P2pNode;
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
     commands::online::{get_all_ips, OnlineCommand},
@@ -18,6 +19,15 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
         Ok(addr) => {
             let manager = context.manager.clone();
             let global = context.clone();
+
+            // Register peer in NodeRegistry
+            if let Some(node) = global.get::<Arc<P2pNode>>().await {
+                let self_node_id = global.local_node.read().await.id.clone();
+                let self_address = String::from_utf8(self_node_id).unwrap_or_default();
+                let scope = NetworkScope::from_ip(&addr.ip());
+                node.registry.register(self_address, addr, scope);
+            }
+
             match manager
                 .connect::<P2PFrame, P2PCommand, _, _>(
                     addr,
@@ -40,33 +50,38 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                                 guard.create(false).await
                             };
 
-                            let aex_node = Node::from_system(peer.port(), id.clone(), 1);
-                            let announced_ips = get_all_ips();
+                            // Get local_node.id
+                            let self_node_id = {
+                                let guard = ctx.lock().await;
+                                guard.global.local_node.read().await.id.clone()
+                            };
 
-                            // Build seeds to send: current connected peers + self
+                            let aex_node = AexNode::from_system(peer.port(), self_node_id.clone(), 1);
+                            let (intranet_ips, wan_ips) = get_all_ips();
+
+                            // Build seeds from NodeRegistry
                             let seeds_to_send = {
                                 let guard = ctx_for_seeds.lock().await;
-                                let connected: Vec<String> = guard.global.manager.get_all_entries()
-                                    .iter()
-                                    .map(|a| a.to_string())
-                                    .collect();
-                                let self_addr = guard.global.addr.to_string();
+                                let seeds = if let Some(node) = guard.global.get::<Arc<P2pNode>>().await {
+                                    let all_seeds: Vec<SeedRecord> = node.registry
+                                        .get_all_seeds()
+                                        .into_iter()
+                                        .map(|(s, na)| SeedRecord::new(s.to_string(), na))
+                                        .collect();
+                                    SeedsCommand::new(all_seeds)
+                                } else {
+                                    SeedsCommand::new(vec![])
+                                };
                                 drop(guard);
-
-                                let mut all_seeds: Vec<SeedRecord> = connected
-                                    .iter()
-                                    .filter(|s| *s != &self_addr)
-                                    .map(|addr| SeedRecord::new(addr.clone()))
-                                    .collect();
-                                all_seeds.push(SeedRecord::new(self_addr.clone()));
-                                SeedsCommand::new(all_seeds)
+                                seeds
                             };
 
                             let cmd = OnlineCommand {
                                 session_id: id,
                                 node: aex_node,
                                 ephemeral_public_key: key.to_bytes(),
-                                announced_ips,
+                                intranet_ips,
+                                wan_ips,
                                 seeds: Some(seeds_to_send),
                             };
                             P2PFrame::send::<OnlineCommand>(
