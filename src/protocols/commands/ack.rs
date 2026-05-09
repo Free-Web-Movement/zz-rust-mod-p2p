@@ -148,6 +148,23 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
         }
     }
 
+    // Store peer's Node info in ConnectionEntry so get_connection_info() can read it
+    let peer_node = ack.node.clone();
+    let entry_opt = {
+        let guard = ctx.lock().await;
+        let manager = &guard.global.manager;
+        match manager.connections.get(&(peer_addr.ip(), scope)) {
+            Some(bi_conn) => match bi_conn.servers.get(&peer_addr) {
+                Some(entry_ref) => Some(entry_ref.value().clone()),
+                None => None,
+            },
+            None => None,
+        }
+    };
+    if let Some(entry) = entry_opt {
+        entry.update_node(peer_node).await;
+    }
+
     // Update endpoint as available in manager - mark as server (inbound)
     {
         let guard = ctx.lock().await;
@@ -162,7 +179,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
             Err(_) => false,
         };
         if !is_loopback {
-            let seed_addr: SocketAddr = format!("{}:0", ip).parse().unwrap_or(peer_addr);
+            let seed_addr: SocketAddr = format!("{}:{}", ip, peer_addr.port()).parse().unwrap_or(peer_addr);
             let node = {
                 let guard = ctx.lock().await;
                 guard.global.get::<Arc<Node>>().await

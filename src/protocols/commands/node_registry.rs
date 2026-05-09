@@ -59,6 +59,37 @@ impl NodeRegistry {
         }
     }
 
+    /// 原子检查并设置连接状态。
+    /// 返回 true 表示成功获取连接权（之前未连接），false 表示该节点已连接。
+    pub fn try_connect(&self, address: &str) -> bool {
+        use dashmap::mapref::entry::Entry;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        match self.nodes.entry(address.to_string()) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().is_connected {
+                    false
+                } else {
+                    entry.get_mut().is_connected = true;
+                    entry.get_mut().last_seen = now;
+                    true
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(NodeEntry {
+                    address: address.to_string(),
+                    seeds: HashSet::new(),
+                    is_connected: true,
+                    scope: NetworkScope::Intranet,
+                    last_seen: now,
+                });
+                true
+            }
+        }
+    }
+
     pub fn mark_connected(&self, address: &str, connected: bool) {
         if let Some(mut entry) = self.nodes.get_mut(address) {
             entry.is_connected = connected;
@@ -70,6 +101,13 @@ impl NodeRegistry {
             .get(address)
             .map(|e| e.is_connected)
             .unwrap_or(false)
+    }
+
+    /// 断开节点：清除 is_connected 标志
+    pub fn disconnect(&self, address: &str) {
+        if let Some(mut entry) = self.nodes.get_mut(address) {
+            entry.is_connected = false;
+        }
     }
 
     pub fn is_registered(&self, address: &str) -> bool {

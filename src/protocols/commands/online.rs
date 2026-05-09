@@ -115,6 +115,46 @@ pub async fn online_handler(
         return;
     }
 
+    // ============================================================
+    // 节点去重：同一 node.id 只能有一个 inbound 连接
+    // ============================================================
+    {
+        let gctx = {
+            let guard = ctx.lock().await;
+            guard.global.clone()
+        };
+        let node = gctx.get::<Arc<P2pNode>>().await;
+        if let Some(node) = node {
+            if !node.registry.try_connect(&frame.body.address) {
+                tracing::warn!(
+                    "❌ Rejecting duplicate connection from node {} (already connected)",
+                    frame.body.address
+                );
+                return;
+            }
+            tracing::info!("✅ Node {} connected (1st connection, accepted)", frame.body.address);
+        }
+    }
+
+    // Store peer's Node info in ConnectionEntry so get_connection_info() can read it
+    let peer_node = online.node.clone();
+    let entry_opt = {
+        let guard = ctx.lock().await;
+        let peer_addr = guard.addr;
+        let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
+        let manager = &guard.global.manager;
+        match manager.connections.get(&(peer_addr.ip(), scope)) {
+            Some(bi_conn) => match bi_conn.clients.get(&peer_addr) {
+                Some(entry_ref) => Some(entry_ref.value().clone()),
+                None => None,
+            },
+            None => None,
+        }
+    };
+    if let Some(entry) = entry_opt {
+        entry.update_node(peer_node).await;
+    }
+
     let psk = {
         let ctx = ctx.lock().await;
         ctx.global.paired_session_keys.clone().unwrap()
@@ -345,6 +385,34 @@ pub async fn online_handler(
             "full".to_string(),
         ).await {
             eprintln!("❌ Failed to trigger node sync: {}", e);
+        }
+    });
+
+    // 连接断开监控：当 TCP 连接关闭时自动清理 registry 中的 connected 标志
+    let node_id_for_cleanup = frame.body.address.clone();
+    let gctx_for_cleanup = {
+        let guard = ctx.lock().await;
+        guard.global.clone()
+    };
+    let peer_sock = {
+        let guard = ctx.lock().await;
+        guard.addr
+    };
+    let scope = aex::connection::scope::NetworkScope::from_ip(&peer_sock.ip());
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            let still_connected = gctx_for_cleanup.manager.connections
+                .get(&(peer_sock.ip(), scope))
+                .map(|bi_conn| bi_conn.clients.contains_key(&peer_sock) || bi_conn.servers.contains_key(&peer_sock))
+                .unwrap_or(false);
+            if !still_connected {
+                if let Some(node) = gctx_for_cleanup.get::<Arc<P2pNode>>().await {
+                    node.registry.disconnect(&node_id_for_cleanup);
+                    tracing::info!("🧹 Disconnected stale connection for node {}", node_id_for_cleanup);
+                }
+                break;
+            }
         }
     });
 }
