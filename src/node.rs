@@ -348,6 +348,20 @@ impl Node {
                     async move { hh(ctx).await }.boxed()
                 });
                 router.get("/", executor).register();
+
+                let h2 = handler.clone();
+                let api_executor: std::sync::Arc<
+                    dyn for<'a> std::ops::Fn(
+                            &'a mut aex::connection::context::Context,
+                        )
+                            -> futures::future::BoxFuture<'a, bool>
+                        + Send
+                        + Sync,
+                > = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
+                    let hh2 = h2.clone();
+                    async move { hh2(ctx).await }.boxed()
+                });
+                router.get("/api/data", api_executor).register();
                 router
             })
             .tcp_handler(Arc::new(move |ctx| {
