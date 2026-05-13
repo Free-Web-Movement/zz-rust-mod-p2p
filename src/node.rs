@@ -218,6 +218,12 @@ impl Node {
         assert_eq!(address.to_string(), address_1.to_string());
         global.set(storage.clone()).await;
         global.set(io_storage.clone()).await;
+        // 初始化消息去重集合
+        let seen: crate::protocols::commands::message::SeenMessages =
+            Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+        global.set(seen).await;
+        // 初始化待确认回执表
+        global.set(crate::protocols::commands::message::PendingAcks::default()).await;
         let cli = Cli::new();
 
         let server = HTTPServer::new(addr, Some(global.clone()));
@@ -362,6 +368,37 @@ impl Node {
                     async move { hh2(ctx).await }.boxed()
                 });
                 router.get("/api/data", api_executor).register();
+
+                // Catch-all so API endpoints (POST /api/send_chat, etc.) reach the web handler
+                let h3 = handler.clone();
+                let catch_all_executor: std::sync::Arc<
+                    dyn for<'a> std::ops::Fn(
+                            &'a mut aex::connection::context::Context,
+                        )
+                            -> futures::future::BoxFuture<'a, bool>
+                        + Send
+                        + Sync,
+                > = std::sync::Arc::new(move |ctx: &mut aex::connection::context::Context| {
+                    let hh3 = h3.clone();
+                    async move { hh3(ctx).await }.boxed()
+                });
+                router.all("/*", catch_all_executor).register();
+
+                // WebSocket route for real-time push notifications
+                let ws_middleware = aex::http::middlewares::websocket::WebSocket::to_middleware(
+                    aex::http::middlewares::websocket::WebSocket::new()
+                );
+                let ws_executor: std::sync::Arc<
+                    dyn for<'a> std::ops::Fn(
+                            &'a mut aex::connection::context::Context,
+                        )
+                            -> futures::future::BoxFuture<'a, bool>
+                        + Send
+                        + Sync,
+                > = std::sync::Arc::new(move |_ctx: &mut aex::connection::context::Context| {
+                    async move { true }.boxed()
+                });
+                router.get("/ws", ws_executor).middleware(Arc::from(ws_middleware)).register();
                 router
             })
             .tcp_handler(Arc::new(move |ctx| {

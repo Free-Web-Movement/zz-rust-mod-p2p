@@ -31,6 +31,7 @@ pub enum Action {
     // Message Actions
     SendText,
     SendBinary,
+    MessageAck,
 
     // Witness Actions
     Tick,
