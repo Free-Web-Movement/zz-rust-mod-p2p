@@ -63,7 +63,7 @@ pub struct EpochData {
     pub day: i64,
     pub start_time: i64,
     pub end_time: i64,
-    pub tick_count: u32,
+    pub tick_count: u8,
     pub total_reward: String,
     pub settled: bool,
 }
