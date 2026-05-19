@@ -50,13 +50,14 @@ pub struct MessageCommand {
 
 impl Codec for MessageCommand {}
 
-/// 消息送达确认
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct MessageAckCommand {
     pub request_id: u64,
 }
 
 impl Codec for MessageAckCommand {}
+
+/// 加密消息命令 - 全网广播
 
 /// 收到的消息，用于通过 channel 通知上层应用
 #[derive(Debug, Clone)]

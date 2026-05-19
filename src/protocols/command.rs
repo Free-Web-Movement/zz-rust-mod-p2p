@@ -33,6 +33,12 @@ pub enum Action {
     SendBinary,
     MessageAck,
 
+    // Encrypted Message Actions
+    SendEncrypted,
+    SendEncryptedAck,
+    ReadReceipt,
+    DeleteMessage,
+
     // Witness Actions
     Tick,
     TickAck,
