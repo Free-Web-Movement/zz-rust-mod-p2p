@@ -12,6 +12,8 @@ use aex::connection::context::Context;
 use aex::connection::global::GlobalContext;
 use aex::connection::scope::NetworkScope;
 use aex::tcp::types::Codec;
+use futures::future::join_all;
+use tokio::sync::Semaphore;
 
 use crate::node::Node;
 use crate::protocols::command::{Action, Entity, P2PCommand};
@@ -437,14 +439,27 @@ pub async fn run_seed_sync_cycle(
 
         tracing::info!("=== Seed sync round {}/{} with {} peers ({} seeds), stable_rounds={} ===", round, MAX_ROUNDS, peer_addrs.len(), current_seed_set.len(), stable_rounds);
 
-        for addr in &peer_addrs {
+        // Sync with all peers concurrently (bounded by semaphore to avoid thundering herd)
+        const MAX_CONCURRENT: usize = 50;
+        let semaphore = std::sync::Arc::new(Semaphore::new(MAX_CONCURRENT));
+        let mut handles = Vec::with_capacity(peer_addrs.len());
+        for &addr in &peer_addrs {
             if Instant::now() >= tick_deadline {
                 break;
             }
-            let _ = try_sync_with_peer_global(gctx.clone(), *addr).await;
+            let gctx = gctx.clone();
+            let permit = semaphore.clone().acquire_owned();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit.await.unwrap();
+                try_sync_with_peer_global(gctx, addr).await;
+            }));
+        }
+        for h in handles {
+            let _ = h.await;
         }
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Brief gap for responses to propagate
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let current_hash = {
             let node = match gctx.get::<Arc<Node>>().await {
@@ -505,7 +520,7 @@ async fn sync_once(gctx: Arc<GlobalContext>, addr: SocketAddr, attempt: u32) -> 
     if let Some(existing_ctx) = get_existing_connection_context(&gctx, addr) {
         tracing::info!("🔗 Using existing connection to peer: {} (attempt {})", addr, attempt);
         send_seed_sync_via_existing_ctx(existing_ctx, addr, psk, gctx.clone(), result_clone, attempt).await;
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         let success = result.load(Ordering::SeqCst);
         tracing::info!("🏁 Sync with {} (existing) attempt {} result: {}", addr, attempt, if success { "SUCCESS" } else { "FAILED" });
         return success;
@@ -531,7 +546,7 @@ async fn sync_once(gctx: Arc<GlobalContext>, addr: SocketAddr, attempt: u32) -> 
     .await
     {
         Ok(_) => {
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
             let success = result.load(Ordering::SeqCst);
             tracing::info!("🏁 Sync with {} (new) attempt {} result: {}", addr, attempt, if success { "SUCCESS" } else { "FAILED" });
             success
@@ -543,7 +558,7 @@ async fn sync_once(gctx: Arc<GlobalContext>, addr: SocketAddr, attempt: u32) -> 
     }
 }
 
-fn get_existing_connection_context(gctx: &GlobalContext, addr: SocketAddr) -> Option<Arc<Mutex<aex::connection::context::Context>>> {
+pub fn get_existing_connection_context(gctx: &GlobalContext, addr: SocketAddr) -> Option<Arc<Mutex<aex::connection::context::Context>>> {
     let manager = &gctx.manager;
     let ip = addr.ip();
     let scope = aex::connection::scope::NetworkScope::from_ip(&ip);
@@ -593,7 +608,7 @@ async fn send_seed_sync_via_existing_ctx(
     .await {
         Ok(_) => {
             tracing::info!("✅ Request sent to {}, waiting for response...", addr);
-            tokio::time::sleep(Duration::from_millis(2000)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             let merged = match gctx.get::<Arc<Node>>().await {
                 Some(node) => derive_seed_set_from_registry(&node.registry),
@@ -663,7 +678,7 @@ async fn send_seed_sync_request(
             }
         });
 
-        tokio::time::sleep(Duration::from_millis(2000)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         let merged = match gctx.get::<Arc<Node>>().await {
             Some(node) => derive_seed_set_from_registry(&node.registry),

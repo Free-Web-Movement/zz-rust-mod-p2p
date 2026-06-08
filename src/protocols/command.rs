@@ -44,6 +44,10 @@ pub enum Action {
     TickAck,
     Check,
 
+    // Bubble Validation Actions
+    StatusRequest,
+    StatusAck,
+
     // Telephone Actions
     Call,
     HangUp,

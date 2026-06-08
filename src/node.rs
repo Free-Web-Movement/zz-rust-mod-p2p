@@ -128,7 +128,11 @@ impl Node {
                                 guard.global.local_node.read().await.id.clone()
                             };
 
-                            let aex_node = AexNode::from_system(peer.port(), self_node_id.clone(), 1);
+                            let self_port = {
+                                let guard = ctx.lock().await;
+                                guard.global.addr.port()
+                            };
+                            let aex_node = AexNode::from_system(self_port, self_node_id.clone(), 1);
 
                             // Generate seeds from NodeRegistry
                             let seeds_to_send = {
@@ -175,7 +179,14 @@ impl Node {
         }
     }
 
-    pub async fn stop(&mut self) {}
+    pub async fn stop(&mut self) {
+        tracing::info!("🛑 Shutting down node {} ({})...", self.name, self.addr);
+        // 1. Shutdown all connections via GlobalContext
+        self.context.shutdown_all().await;
+        // 2. Save registries to persistent storage
+        let _ = self.save_registries().await;
+        tracing::info!("✅ Node {} shutdown complete", self.name);
+    }
 
     pub async fn init(opt: Opt) -> Self {
         let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));

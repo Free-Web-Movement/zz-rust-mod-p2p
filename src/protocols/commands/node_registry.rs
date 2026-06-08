@@ -225,29 +225,28 @@ impl NodeRegistry {
             .unwrap_or_default()
             .as_secs();
 
+        // Inbound connection addresses are ephemeral TCP source ports, NOT listening
+        // ports. Never store them as seeds — only mark the node as connected.
         for peer in &info.inbound {
             if let Some(ref nid) = peer.node_id {
-                if let Ok(addr) = peer.addr.parse::<SocketAddr>() {
-                    let scope = NetworkScope::from_ip(&addr.ip());
-                    self.nodes
-                        .entry(nid.clone())
-                        .and_modify(|e| {
-                            e.seeds.insert(addr, ConnectionDirection::Inbound);
-                            e.scope = scope;
-                            e.is_connected = true;
-                            e.last_seen = now;
-                        })
-                        .or_insert(NodeEntry {
-                            address: nid.clone(),
-                            seeds: HashMap::from([(addr, ConnectionDirection::Inbound)]),
-                            is_connected: true,
-                            scope,
-                            last_seen: now,
-                        });
-                }
+                self.nodes
+                    .entry(nid.clone())
+                    .and_modify(|e| {
+                        e.is_connected = true;
+                        e.last_seen = now;
+                    })
+                    .or_insert(NodeEntry {
+                        address: nid.clone(),
+                        seeds: HashMap::new(),
+                        is_connected: true,
+                        scope: NetworkScope::Extranet,
+                        last_seen: now,
+                    });
             }
         }
 
+        // Outbound addresses ARE listening ports (we connected to the peer's listener),
+        // so they are valid as seeds.
         for peer in &info.outbound {
             if let Some(ref nid) = peer.node_id {
                 if let Ok(addr) = peer.addr.parse::<SocketAddr>() {

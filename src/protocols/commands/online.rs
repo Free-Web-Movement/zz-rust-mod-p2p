@@ -52,13 +52,48 @@ pub async fn online_handler(
 
     // Handle seed-only gossip (empty session_id means broadcast from existing peer)
     if online.session_id.is_empty() {
+        // Store peer's Node info in ConnectionEntry so get_connection_info()
+        // can read the node_id (important for return connections).
+        let gossip_peer_node = online.node.clone();
+        {
+            let guard = ctx.lock().await;
+            let peer_addr = guard.addr;
+            let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
+            let manager = &guard.global.manager;
+            if let Some(bi_conn) = manager.connections.get(&(peer_addr.ip(), scope)) {
+                // The connection could be a server (we initiated outbound) or client (inbound)
+                if let Some(entry_ref) = bi_conn.servers.get(&peer_addr) {
+                    entry_ref.value().update_node(gossip_peer_node).await;
+                } else if let Some(entry_ref) = bi_conn.clients.get(&peer_addr) {
+                    entry_ref.value().update_node(gossip_peer_node).await;
+                }
+            }
+        }
+
+        let gctx = {
+            let guard = ctx.lock().await;
+            guard.global.clone()
+        };
+
+        // Register the gossiping peer itself (it sent us its Node info in online.node)
+        if let Some(node) = gctx.get::<Arc<P2pNode>>().await {
+            let gossip_sock = {
+                let guard = ctx.lock().await;
+                guard.addr
+            };
+            // Use the peer's advertised listening port, not the TCP source port
+            let listen_addr = std::net::SocketAddr::new(gossip_sock.ip(), online.node.port);
+            let gossip_scope = aex::connection::scope::NetworkScope::from_ip(&listen_addr.ip());
+            node.registry.register(
+                frame.body.address.clone(),
+                listen_addr,
+                gossip_scope,
+            );
+        }
+
         if let Some(ref peer_seeds) = online.seeds {
             if peer_seeds.verify() {
                 println!("📥 Received seed gossip, merging {} seeds", peer_seeds.seeds.len());
-                let gctx = {
-                    let guard = ctx.lock().await;
-                    guard.global.clone()
-                };
 
                 // Register peer nodes from gossip seeds and connect (node-based dedup)
                 let node = gctx.get::<Arc<P2pNode>>().await;
@@ -133,6 +168,21 @@ pub async fn online_handler(
                 return;
             }
             tracing::info!("✅ Node {} connected (1st connection, accepted)", frame.body.address);
+
+            // Register peer as a seed using its listening port (from online.node.port),
+            // NOT the ephemeral TCP source port (guard.addr.port). Seeds must always
+            // point to a reachable listener, not a transient connection endpoint.
+            let peer_sock = {
+                let guard = ctx.lock().await;
+                guard.addr
+            };
+            let listen_addr = std::net::SocketAddr::new(peer_sock.ip(), online.node.port);
+            let scope = aex::connection::scope::NetworkScope::from_ip(&listen_addr.ip());
+            node.registry.register(
+                frame.body.address.clone(),
+                listen_addr,
+                scope,
+            );
         }
     }
 
@@ -265,21 +315,25 @@ pub async fn online_handler(
 
     // 对称握手：作为 inbound 端，向对端发起出站连接（回连）
     // 但如果已有连接（任何方向），跳过以避免连接数膨胀
-    let peer_addr = {
+    let peer_sock = {
         let guard = ctx.lock().await;
         guard.addr
     };
+    // Use the peer's advertised listening port from online.node,
+    // NOT the ephemeral TCP source port (ctx.addr). This ensures
+    // the return-connection hits the peer's actual listener.
+    let peer_addr = std::net::SocketAddr::new(peer_sock.ip(), online.node.port);
     let gctx = {
         let guard = ctx.lock().await;
         guard.global.clone()
     };
     let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
-    let already_connected = gctx.manager.connections.get(&(peer_addr.ip(), scope))
-        .map(|bi_conn| bi_conn.servers.contains_key(&peer_addr) || bi_conn.clients.contains_key(&peer_addr))
+    let already_connected_outbound = gctx.manager.connections.get(&(peer_addr.ip(), scope))
+        .map(|bi_conn| bi_conn.servers.contains_key(&peer_addr))
         .unwrap_or(false);
 
-    if already_connected {
-        tracing::info!("↩️ Skip return connection to {} (already connected)", peer_addr);
+    if already_connected_outbound {
+        tracing::info!("↩️ Skip return connection to {} (already have outbound)", peer_addr);
     } else {
         let psk = gctx.paired_session_keys.clone().unwrap();
         let (_id, _key) = {

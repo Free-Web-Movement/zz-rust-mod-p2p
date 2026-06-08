@@ -284,7 +284,7 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             .await
         {
             let _ = tx.send(IncomingMessage {
-                from: from.clone(),
+                from: message.sender,
                 content: message.message.clone(),
                 timestamp: message.timestamp,
             });

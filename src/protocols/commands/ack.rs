@@ -119,11 +119,18 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
         guard.global.paired_session_keys.clone().unwrap()
     };
 
+    // 获取本地地址用于 main 表索引
+    let local_address = {
+        let guard = ctx.lock().await;
+        guard.global.get::<FreeWebMovementAddress>().await.unwrap().to_string()
+    };
+
     {
         let guard = psk.lock().await;
         let _ = guard
             .establish_ends(
-                ack.address.as_bytes().to_vec(),
+                ack.session_id.clone(),
+                local_address.as_bytes().to_vec(),
                 &ack.ephemeral_public_key.to_vec(),
             )
             .await;
