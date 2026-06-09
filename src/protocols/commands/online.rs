@@ -115,6 +115,14 @@ pub async fn online_handler(
                             continue;
                         }
 
+                        // Skip if seed is our own address (prevent self-connect loop)
+                        if let Some(local_addr) = gctx.get::<FreeWebMovementAddress>().await {
+                            if seed.node_address == local_addr.to_string() {
+                                tracing::info!("⏭️ Skipping self-connect to {}", seed.address);
+                                continue;
+                            }
+                        }
+
                         if let Ok(seed_addr) = seed.address.parse::<std::net::SocketAddr>() {
                             let ctx_owned = ctx.clone();
                             let addr_str = seed.address.clone();
@@ -152,7 +160,9 @@ pub async fn online_handler(
 
     // ============================================================
     // 节点去重：同一 node.id 只能有一个 inbound 连接
+    // 但回连（return connection）来自对端且方向不同
     // ============================================================
+    let is_return_conn: bool;
     {
         let gctx = {
             let guard = ctx.lock().await;
@@ -160,14 +170,15 @@ pub async fn online_handler(
         };
         let node = gctx.get::<Arc<P2pNode>>().await;
         if let Some(node) = node {
-            if !node.registry.try_connect(&frame.body.address) {
+            is_return_conn = !node.registry.try_connect(&frame.body.address);
+            if is_return_conn {
                 tracing::warn!(
-                    "❌ Rejecting duplicate connection from node {} (already connected)",
+                    "⚠️ Node {} is already connected (return connection), skipping key exchange",
                     frame.body.address
                 );
-                return;
+            } else {
+                tracing::info!("✅ Node {} connected (1st connection, accepted)", frame.body.address);
             }
-            tracing::info!("✅ Node {} connected (1st connection, accepted)", frame.body.address);
 
             // Register peer as a seed using its listening port (from online.node.port),
             // NOT the ephemeral TCP source port (guard.addr.port). Seeds must always
@@ -183,6 +194,8 @@ pub async fn online_handler(
                 listen_addr,
                 scope,
             );
+        } else {
+            is_return_conn = false;
         }
     }
 
@@ -210,16 +223,39 @@ pub async fn online_handler(
         ctx.global.paired_session_keys.clone().unwrap()
     };
 
-    let ephemeral_public = {
+    let addr_debug = frame.body.address.clone();
+    let local_addr_for_key = {
+        let guard = ctx.lock().await;
+        guard.global.get::<FreeWebMovementAddress>().await.unwrap().to_string()
+    };
+    let ephemeral_public = if is_return_conn {
+        // Return connection: skip key exchange, reuse initial session key
+        let zero_key = x25519_dalek::PublicKey::from([0u8; 32]);
+        tracing::info!("🔑 skip establish_begins for return connection from '{}'", addr_debug);
+        zero_key
+    } else {
         let guard = psk.lock().await;
-        guard
+        match guard
             .establish_begins(
                 frame.body.address.as_bytes().to_vec(),
+                local_addr_for_key.as_bytes().to_vec(),
                 &online.ephemeral_public_key.to_vec(),
             )
             .await
-            .unwrap()
-            .unwrap()
+        {
+            Ok(Some(pk)) => {
+                tracing::info!("🔑 establish_begins OK for address='{}'", addr_debug);
+                pk
+            }
+            Ok(None) => {
+                tracing::error!("❌ establish_begins DH failed for address='{}'", addr_debug);
+                return;
+            }
+            Err(e) => {
+                tracing::error!("❌ establish_begins error for address='{}': {:?}", addr_debug, e);
+                return;
+            }
+        }
     };
 
     let address: FreeWebMovementAddress = {
@@ -323,20 +359,35 @@ pub async fn online_handler(
     // NOT the ephemeral TCP source port (ctx.addr). This ensures
     // the return-connection hits the peer's actual listener.
     let peer_addr = std::net::SocketAddr::new(peer_sock.ip(), online.node.port);
+    tracing::info!("↩️ return-connect planning: peer_sock(inbound)={}, online.node.port={}, computed peer_addr={}",
+        peer_sock, online.node.port, peer_addr);
     let gctx = {
         let guard = ctx.lock().await;
         guard.global.clone()
     };
     let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
-    let already_connected_outbound = gctx.manager.connections.get(&(peer_addr.ip(), scope))
-        .map(|bi_conn| bi_conn.servers.contains_key(&peer_addr))
+    // Check both servers and clients, and both the TCP source address and the
+    // listening address. This prevents unnecessary return connections and the
+    // associated key-exchange race conditions.
+    let already_connected = gctx.manager.connections.get(&(peer_addr.ip(), scope))
+        .map(|bi_conn| {
+            let in_servers = bi_conn.servers.contains_key(&peer_sock) || bi_conn.servers.contains_key(&peer_addr);
+            let in_clients = bi_conn.clients.contains_key(&peer_sock) || bi_conn.clients.contains_key(&peer_addr);
+            let found = in_servers || in_clients;
+            let servers_addrs: Vec<std::net::SocketAddr> = bi_conn.servers.iter().map(|ref_multi| *ref_multi.key()).collect();
+            let clients_addrs: Vec<std::net::SocketAddr> = bi_conn.clients.iter().map(|ref_multi| *ref_multi.key()).collect();
+            tracing::info!("↩️ try_connect check: peer_sock={}, peer_addr={}, servers={:?}, clients={:?}, found={}",
+                peer_sock, peer_addr, servers_addrs, clients_addrs, found,
+            );
+            found
+        })
         .unwrap_or(false);
 
-    if already_connected_outbound {
-        tracing::info!("↩️ Skip return connection to {} (already have outbound)", peer_addr);
+    if already_connected {
+        tracing::info!("↩️ Skip return connection to {} (already connected)", peer_addr);
     } else {
         let psk = gctx.paired_session_keys.clone().unwrap();
-        let (_id, _key) = {
+        let (id, key) = {
             let guard = psk.lock().await;
             guard.create(false).await
         };
@@ -347,9 +398,9 @@ pub async fn online_handler(
         };
 
         let return_cmd = Arc::new(OnlineCommand {
-            session_id: vec![],
+            session_id: id,
             node: local_node,
-            ephemeral_public_key: [0u8; 32],
+            ephemeral_public_key: key.to_bytes(),
             intranet_ips: vec![],
             wan_ips: vec![],
             seeds: None,

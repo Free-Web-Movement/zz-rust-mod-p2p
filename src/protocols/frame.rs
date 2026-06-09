@@ -186,19 +186,41 @@ impl P2PFrame {
 
         let address = gctx.get::<FreeWebMovementAddress>().await.unwrap();
 
+        let addr_str = address.to_string();
         let bytes = if is_encrypt {
             match gpsk {
                 Some(psk) => {
                     let encode = psk.lock().await;
-                    encode
-                        .encrypt(&address.to_string().as_bytes().to_vec(), &data)
-                        .await?
+                    // For MessageCommand (SendText), use the recipient's address as the encryption key.
+                    // This ensures per-recipient session keys work correctly across multiple peers.
+                    let key = if action == Action::SendText {
+                        // Decode receiver from the serialized MessageCommand.
+                        let decoded: anyhow::Result<crate::protocols::commands::message::MessageCommand> = Codec::decode(&data);
+                        match decoded {
+                            Ok(msg) => msg.receiver.as_bytes().to_vec(),
+                            _ => {
+                                tracing::warn!("⚠️ Failed to decode MessageCommand for key lookup, falling back to self address");
+                                addr_str.as_bytes().to_vec()
+                            }
+                        }
+                    } else {
+                        addr_str.as_bytes().to_vec()
+                    };
+                    match encode.encrypt(&key, &data).await {
+                        Ok(ct) => ct,
+                        Err(e) => {
+                            tracing::error!("❌ ENCRYPT FAILED for address='{}' (action={:?}): {:?}", addr_str, action, e);
+                            return Err(e);
+                        }
+                    }
                 }
                 None => data,
             }
         } else {
             data
         };
+
+        tracing::info!("📤 P2PFrame::send: {} {:?} encrypt={} data_len={}", addr_str, action, is_encrypt, bytes.len());
 
         let command = P2PCommand::new(entity, action, bytes);
 

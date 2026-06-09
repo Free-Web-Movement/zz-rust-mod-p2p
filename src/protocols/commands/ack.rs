@@ -124,16 +124,28 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
         let guard = ctx.lock().await;
         guard.global.get::<FreeWebMovementAddress>().await.unwrap().to_string()
     };
+    // 对端地址（responder）
+    let peer_address = frame.body.address.clone();
 
-    {
+    // Skip establish_ends for return connection acks (zero key sentinel)
+    let is_zero_key = ack.ephemeral_public_key.iter().all(|&b| b == 0);
+    if !is_zero_key {
         let guard = psk.lock().await;
-        let _ = guard
+        match guard
             .establish_ends(
                 ack.session_id.clone(),
+                peer_address.as_bytes().to_vec(),
                 local_address.as_bytes().to_vec(),
                 &ack.ephemeral_public_key.to_vec(),
             )
-            .await;
+            .await
+        {
+            Ok(true) => tracing::info!("🔑 establish_ends OK for address='{}'", local_address),
+            Ok(false) => tracing::warn!("⚠️ establish_ends FAILED (temp not found) for address='{}'", local_address),
+            Err(e) => tracing::error!("❌ establish_ends error for address='{}': {:?}", local_address, e),
+        }
+    } else {
+        tracing::info!("🔑 skip establish_ends (return connection, zero key) for address='{}'", local_address);
     }
     println!(
         "🔐 Session established with {} (session_id={:?})",
@@ -172,10 +184,14 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
         entry.update_node(peer_node).await;
     }
 
-    // Update endpoint as available in manager - mark as server (inbound)
+    // Mark endpoint as available in manager (the context is already in the entry
+    // from the initial connect() call, so there is no need to call update() here;
+    // update() would replace the ConnectionEntry and drop the old one, which
+    // triggers abort_handle.abort() and kills the router task).
+    // The node info was already stored separately via entry.update_node() above. 
     {
         let guard = ctx.lock().await;
-        guard.global.manager.update(peer_addr, false, Some(ctx.clone()));
+        guard.global.manager.mark_active(peer_addr, false);
     }
     println!("Updated peer {} as inbound in manager", peer_addr);
 
@@ -243,6 +259,14 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                     if node.registry.is_connected(&seed.node_address) {
                         println!("⏭️ Skipping seed {} - node {} already connected", seed.address, seed.node_address);
                         continue;
+                    }
+
+                    // Skip if seed is our own address (prevent self-connect loop)
+                    if let Some(local_addr) = gctx.get::<FreeWebMovementAddress>().await {
+                        if seed.node_address == local_addr.to_string() {
+                            tracing::info!("⏭️ Skipping self-connect to {}", seed.address);
+                            continue;
+                        }
                     }
 
                     if let Ok(seed_addr) = seed.address.parse::<SocketAddr>() {
@@ -326,7 +350,7 @@ pub async fn connect_to_new_peer(ctx: Arc<Mutex<Context>>, addr: SocketAddr) -> 
         guard.create(false).await
     };
 
-    let (seeds_to_send, self_node_id) = {
+    let (seeds_to_send, _self_node_id) = {
         let self_node_id = gctx.local_node.read().await.id.clone();
         let seeds = if let Some(node) = gctx.get::<Arc<Node>>().await {
             let all_seeds: Vec<SeedRecord> = node.registry
@@ -341,7 +365,10 @@ pub async fn connect_to_new_peer(ctx: Arc<Mutex<Context>>, addr: SocketAddr) -> 
         (seeds, self_node_id)
     };
 
-    let aex_node = AexNode::from_system(addr.port(), self_node_id, 1);
+    let aex_node = {
+        let guard = gctx.local_node.read().await;
+        guard.clone()
+    };
     let (intranet_ips, wan_ips) = super::online::get_all_ips();
     let cmd = Arc::new(OnlineCommand {
         session_id: id,

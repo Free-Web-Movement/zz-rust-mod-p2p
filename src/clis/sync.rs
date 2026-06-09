@@ -1,4 +1,4 @@
-use aex::connection::{global::GlobalContext, node::Node as AexNode, scope::NetworkScope};
+use aex::connection::{global::GlobalContext, scope::NetworkScope};
 use std::{net::SocketAddr, sync::Arc};
 use sha2::{Digest, Sha256};
 
@@ -126,13 +126,10 @@ async fn connect_to_peer_sync(
                     guard.create(false).await
                 };
 
-                // Get local_node.id
-                let self_node_id = {
+                let aex_node = {
                     let guard = ctx.lock().await;
-                    guard.global.local_node.read().await.id.clone()
+                    guard.global.local_node.read().await.clone()
                 };
-
-                let aex_node = AexNode::from_system(addr.port(), self_node_id.clone(), 1);
 
                 // Build seeds from NodeRegistry
                 let seeds_to_send = {

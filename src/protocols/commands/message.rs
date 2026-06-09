@@ -229,7 +229,7 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
     let request_id = message.request_id;
     let address: FreeWebMovementAddress = {
         let guard = ctx.lock().await;
-        guard.get::<FreeWebMovementAddress>().unwrap()
+        guard.global.get::<FreeWebMovementAddress>().await.unwrap()
     };
 
     // 通知上层应用收到消息
