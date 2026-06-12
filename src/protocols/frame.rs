@@ -177,9 +177,9 @@ impl P2PFrame {
             None => vec![],
         };
 
-        let gctx = {
+        let (gctx, peer_sock) = {
             let guard = ctx.lock().await;
-            guard.global.clone()
+            (guard.global.clone(), guard.addr)
         };
 
         let gpsk = gctx.clone().paired_session_keys.clone();
@@ -202,6 +202,34 @@ impl P2PFrame {
                                 tracing::warn!("⚠️ Failed to decode MessageCommand for key lookup, falling back to self address");
                                 addr_str.as_bytes().to_vec()
                             }
+                        }
+                    } else if action == Action::MessageAck {
+                        // For MessageAck, use the peer's address (the node at the other end of
+                        // this connection) as the encryption key. The session key table stores
+                        // keys per-peer under the peer's address, so looking up main[self_addr]
+                        // (the old behaviour) would always fail.
+                        // First try the peer address stored in the connection context during
+                        // the online handshake, then fall back to registry lookup.
+                        let peer_addr_from_ctx: Option<String> = {
+                            let guard = ctx.lock().await;
+                            let addr: Option<String> = guard.get();
+                            tracing::info!("🔑 MessageAck key: ctx.addr={:?}, ctx.get::<String>()={:?}", guard.addr, addr);
+                            addr
+                        };
+                        if let Some(ref peer_addr) = peer_addr_from_ctx {
+                            tracing::info!("🔑 MessageAck using ctx peer_addr='{}'", peer_addr);
+                            peer_addr.as_bytes().to_vec()
+                        } else if let Some(node) = gctx.get::<std::sync::Arc<crate::node::Node>>().await {
+                            if let Some(ref peer_addr) = node.registry.find_node_for_seed(&peer_sock) {
+                                tracing::info!("🔑 MessageAck using registry peer_addr='{}'", peer_addr);
+                                peer_addr.as_bytes().to_vec()
+                            } else {
+                                tracing::warn!("⚠️ MessageAck: peer {} not found in registry, falling back to self address '{}'", peer_sock, addr_str);
+                                addr_str.as_bytes().to_vec()
+                            }
+                        } else {
+                            tracing::warn!("⚠️ MessageAck: Node not available in context, falling back to self address '{}'", addr_str);
+                            addr_str.as_bytes().to_vec()
                         }
                     } else {
                         addr_str.as_bytes().to_vec()

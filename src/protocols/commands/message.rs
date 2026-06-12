@@ -252,7 +252,11 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
                 tokio::spawn(async move {
                     manager.forward(|entries| async move {
                         for entry in entries {
-                            if seeds_clone.contains(&entry.addr) {
+                            let matches_socket = seeds_clone.contains(&entry.addr);
+                            let matches_peer = entry.context.as_ref().and_then(|ctx| {
+                                ctx.try_lock().ok().and_then(|g| g.get::<String>())
+                            }).map(|addr| addr == sender_addr).unwrap_or(false);
+                            if matches_socket || matches_peer {
                                 if let Some(ctx) = &entry.context {
                                     let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone()).await;
                                 }

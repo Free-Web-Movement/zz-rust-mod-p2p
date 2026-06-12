@@ -1,6 +1,6 @@
 use aex::connection::scope::NetworkScope;
 use dashmap::DashMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,7 +15,7 @@ pub enum ConnectionDirection {
 #[derive(Clone)]
 pub struct NodeEntry {
     pub address: String,
-    pub seeds: HashMap<SocketAddr, ConnectionDirection>,
+    pub seeds: HashMap<SocketAddr, HashSet<ConnectionDirection>>,
     pub is_connected: bool,
     pub scope: NetworkScope,
     pub last_seen: u64,
@@ -49,11 +49,13 @@ impl NodeRegistry {
             last_seen: now,
         });
 
-        entry.seeds.entry(seed).or_insert(ConnectionDirection::Unknown);
+        entry.seeds.entry(seed).or_insert(HashSet::new()).insert(ConnectionDirection::Unknown);
         entry.last_seen = now;
     }
 
-    /// Register a seed with direction info
+    /// Register a seed with direction info. Uses a HashSet so duplicate
+    /// directions for the same (peer, seed) are idempotent, preventing
+    /// extra Inbound/Outbound entries from duplicate TCP connections.
     pub fn register_with_direction(
         &self,
         address: String,
@@ -74,7 +76,7 @@ impl NodeRegistry {
             last_seen: now,
         });
 
-        entry.seeds.insert(seed, direction);
+        entry.seeds.entry(seed).or_insert(HashSet::new()).insert(direction);
         entry.last_seen = now;
     }
 
@@ -86,7 +88,7 @@ impl NodeRegistry {
 
         if let Some(mut entry) = self.nodes.get_mut(address) {
             let existed = entry.seeds.contains_key(&seed);
-            entry.seeds.entry(seed).or_insert(ConnectionDirection::Unknown);
+            entry.seeds.entry(seed).or_insert(HashSet::new()).insert(ConnectionDirection::Unknown);
             entry.last_seen = now;
             !existed
         } else {
@@ -191,13 +193,33 @@ impl NodeRegistry {
             .unwrap_or_default()
     }
 
+    /// Get aggregated direction counts across all entries.
+    /// Counts each ConnectionDirection in all seeds' HashSets.
+    pub fn direction_counts(&self) -> (usize, usize, usize) {
+        let mut inbound = 0usize;
+        let mut outbound = 0usize;
+        let mut unknown = 0usize;
+        for entry in self.nodes.iter() {
+            for dirs in entry.seeds.values() {
+                for dir in dirs {
+                    match dir {
+                        ConnectionDirection::Inbound => inbound += 1,
+                        ConnectionDirection::Outbound => outbound += 1,
+                        ConnectionDirection::Unknown => unknown += 1,
+                    }
+                }
+            }
+        }
+        (inbound, outbound, unknown)
+    }
+
     pub fn get_inbound_seeds(&self, address: &str) -> Vec<SocketAddr> {
         self.nodes
             .get(address)
             .map(|e| {
                 e.seeds
                     .iter()
-                    .filter(|(_, dir)| **dir == ConnectionDirection::Inbound)
+                    .filter(|(_, dirs)| dirs.contains(&ConnectionDirection::Inbound))
                     .map(|(addr, _)| *addr)
                     .collect()
             })
@@ -210,7 +232,7 @@ impl NodeRegistry {
             .map(|e| {
                 e.seeds
                     .iter()
-                    .filter(|(_, dir)| **dir == ConnectionDirection::Outbound)
+                    .filter(|(_, dirs)| dirs.contains(&ConnectionDirection::Outbound))
                     .map(|(addr, _)| *addr)
                     .collect()
             })
@@ -254,14 +276,14 @@ impl NodeRegistry {
                     self.nodes
                         .entry(nid.clone())
                         .and_modify(|e| {
-                            e.seeds.insert(addr, ConnectionDirection::Outbound);
+                            e.seeds.entry(addr).or_insert(HashSet::new()).insert(ConnectionDirection::Outbound);
                             e.scope = scope;
                             e.is_connected = true;
                             e.last_seen = now;
                         })
                         .or_insert(NodeEntry {
                             address: nid.clone(),
-                            seeds: HashMap::from([(addr, ConnectionDirection::Outbound)]),
+                            seeds: HashMap::from([(addr, HashSet::from([ConnectionDirection::Outbound]))]),
                             is_connected: true,
                             scope,
                             last_seen: now,

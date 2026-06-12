@@ -93,11 +93,21 @@ impl Node {
         let manager = self.context.manager.clone();
         let global = self.context.clone();
         let self_registry = self.registry.clone();
+        let local_addr = self.addr;
 
         let nodes: Vec<record::NodeRecord> = self.inner.nodes.iter().cloned().collect();
 
         for record in nodes {
             let endpoint = record.endpoint;
+
+            // Tiebreaker: only initiate if our SocketAddr is less than the peer's.
+            // This prevents both sides from simultaneously creating outbound connections,
+            // which would leave each side with 0 inbound entries.
+            if local_addr >= endpoint {
+                tracing::info!("⏭️ Tiebreaker: {} >= {}, letting peer initiate", local_addr, endpoint);
+                continue;
+            }
+
             let g = global.clone();
             let registry = self_registry.clone();
 

@@ -129,6 +129,8 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
 
     // Skip establish_ends for return connection acks (zero key sentinel)
     let is_zero_key = ack.ephemeral_public_key.iter().all(|&b| b == 0);
+    println!("***** ACK is_zero_key={}, responder='{}', initiator='{}', ephemeral_public_key={:?}",
+        is_zero_key, frame.body.address, local_address, &ack.ephemeral_public_key[..4]);
     if !is_zero_key {
         let guard = psk.lock().await;
         match guard
@@ -162,9 +164,18 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
     {
         let guard = ctx.lock().await;
         if let Some(node) = guard.global.get::<Arc<Node>>().await {
-            node.registry.register(peer_address.clone(), peer_addr, scope);
-            println!("📝 Registered peer node: {} at {}", peer_address, peer_addr);
+            // Mark as connected so that any future return-connect from the peer
+            // is correctly identified as already-connected (is_return_conn=true).
+            node.registry.try_connect(&peer_address);
+            node.registry.register_with_direction(peer_address.clone(), peer_addr, scope, crate::protocols::commands::node_registry::ConnectionDirection::Outbound);
+            println!("📝 Registered peer node: {} at {} (Outbound)", peer_address, peer_addr);
         }
+    }
+
+    // Store peer's FreeWebMovement address in connection context for encryption key lookup
+    {
+        let mut guard = ctx.lock().await;
+        guard.set(peer_address.clone());
     }
 
     // Store peer's Node info in ConnectionEntry so get_connection_info() can read it
@@ -265,6 +276,15 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                     if let Some(local_addr) = gctx.get::<FreeWebMovementAddress>().await {
                         if seed.node_address == local_addr.to_string() {
                             tracing::info!("⏭️ Skipping self-connect to {}", seed.address);
+                            continue;
+                        }
+                    }
+
+                    // Tiebreaker: only the node with the smaller address initiates connection.
+                    if let Some(local_addr) = gctx.get::<FreeWebMovementAddress>().await {
+                        if local_addr.to_string() > seed.node_address {
+                            tracing::info!("⏭️ Tiebreaker (ack): {} > {}, letting lower address initiate",
+                                local_addr, seed.node_address);
                             continue;
                         }
                     }
