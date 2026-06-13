@@ -227,16 +227,37 @@ pub async fn online_handler(
         let peer_addr = guard.addr;
         let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
         let manager = &guard.global.manager;
-        match manager.connections.get(&(peer_addr.ip(), scope)) {
-            Some(bi_conn) => match bi_conn.clients.get(&peer_addr) {
-                Some(entry_ref) => Some(entry_ref.value().clone()),
-                None => None,
+        let key = (peer_addr.ip(), scope);
+        tracing::debug!("🔍 ENTRY_LOOKUP: peer_addr={}, scope={:?}, key={:?}",
+            peer_addr, scope, key);
+        match manager.connections.get(&key) {
+            Some(bi_conn) => {
+                let in_clients = bi_conn.clients.contains_key(&peer_addr);
+                let in_servers = bi_conn.servers.contains_key(&peer_addr);
+                tracing::debug!("🔍 ENTRY_LOOKUP: bucket found, clients_contains={}, servers_contains={}",
+                    in_clients, in_servers);
+                match bi_conn.clients.get(&peer_addr) {
+                    Some(entry_ref) => Some(entry_ref.value().clone()),
+                    None => {
+                        match bi_conn.servers.get(&peer_addr) {
+                            Some(entry_ref) => Some(entry_ref.value().clone()),
+                            None => None,
+                        }
+                    }
+                }
             },
-            None => None,
+            None => {
+                tracing::warn!("🔍 ENTRY_LOOKUP: bucket NOT FOUND for key={:?}", key);
+                None
+            },
         }
     };
+    let peer_node_id_debug = String::from_utf8_lossy(&peer_node.id).to_string();
     if let Some(entry) = entry_opt {
         entry.update_node(peer_node).await;
+        tracing::debug!("🔍 ENTRY_LOOKUP: update_node OK for node_id={:?}", peer_node_id_debug);
+    } else {
+        tracing::warn!("🔍 ENTRY_LOOKUP: entry NOT FOUND, update_node SKIPPED for node_id={:?}", peer_node_id_debug);
     }
 
     let psk = {

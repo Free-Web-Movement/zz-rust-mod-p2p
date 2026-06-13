@@ -432,7 +432,14 @@ impl Node {
                 let child_token = manager.cancel_token.child_token();
                 let task_token = child_token.clone();
 
+                // Signal channel: router must NOT process frames until the
+                // entry is registered in the manager, otherwise online_handler
+                // will fail to find the entry for update_node (race condition).
+                let (entry_added_tx, entry_added_rx) = tokio::sync::oneshot::channel::<()>();
+
                 let handle = tokio::spawn(async move {
+                    // Wait for manager.add() to complete before processing frames
+                    let _ = entry_added_rx.await;
                     tokio::select! {
                         _ = task_token.cancelled() => {}
                         _ = router.handle(ctx_arc) => {}
@@ -441,6 +448,8 @@ impl Node {
 
                 let abort_handle = handle.abort_handle();
                 manager.add(peer_addr, abort_handle, child_token, true, Some(ctx_for_add));
+                // Signal that the entry is now visible in the manager
+                let _ = entry_added_tx.send(());
 
                 handle
             }));
