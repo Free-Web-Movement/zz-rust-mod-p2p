@@ -162,6 +162,6 @@ pub fn register(mut router: TcpRouter<P2PFrame, P2PCommand>) -> TcpRouter<P2PFra
         vec![],
     );
 
-    tracing::info!("Registered handlers: {:?}", router.handlers);
+    tracing::info!("Registered handler keys: {:?}", router.handlers.keys().collect::<Vec<_>>());
     router
 }
