@@ -23,12 +23,12 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     context
         .manager
         .notify(receiver.as_bytes(), |entries| async move {
-            for entry in entries {
+            if let Some(entry) = entries.into_iter().next() {
                 let _ = send_text_message(
                     sender.clone(),
                     receiver_for_closure.clone(),
                     request_id,
-                    entry.context.clone().expect("Context missing"),
+                    entry.context.as_ref().expect("Context missing").clone(),
                     &msg,
                 )
                 .await;

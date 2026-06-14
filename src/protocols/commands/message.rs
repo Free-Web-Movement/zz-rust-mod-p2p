@@ -232,6 +232,12 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
         guard.global.get::<FreeWebMovementAddress>().await.unwrap()
     };
 
+    // 不处理自己发送的消息（避免被 peers 转发回来的回音）
+    if message.sender == address.to_string() {
+        tracing::info!("  ⏭️  Skipping own message from {}", message.sender);
+        return;
+    }
+
     // 通知上层应用收到消息
     if receiver == address.to_string() {
         tracing::info!("  ✅ Message IS for us ({}), delivering to app channel", address);
@@ -247,22 +253,47 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             let seeds = node.registry.get_seeds_for_node(&sender_addr);
             if !seeds.is_empty() {
                 let manager = gctx.manager.clone();
-                let seeds_clone = seeds.clone();
+                let seeds_for_direct = seeds.clone();
                 let req_id = request_id;
                 tokio::spawn(async move {
-                    manager.forward(|entries| async move {
-                        for entry in entries {
-                            let matches_socket = seeds_clone.contains(&entry.addr);
-                            let matches_peer = entry.context.as_ref().and_then(|ctx| {
-                                ctx.try_lock().ok().and_then(|g| g.get::<String>())
-                            }).map(|addr| addr == sender_addr).unwrap_or(false);
-                            if matches_socket || matches_peer {
+                    // 优先直连发送（全连接下必有 outbound 连接，且只发一份）
+                    let mut ack_sent = false;
+                    for seed_addr in &seeds_for_direct {
+                        if let Some(entry) = manager.find_entry(seed_addr) {
+                            if let Some(ctx) = &entry.context {
+                                let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone()).await;
+                                ack_sent = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !ack_sent {
+                        // 直连不存在时降级到 forward 匹配
+                        let seeds_for_fb = seeds_for_direct.clone();
+                        manager.forward(|entries| async move {
+                            let mut sent_nodes: std::collections::HashSet<String> = std::collections::HashSet::new();
+                            for entry in entries {
+                                let matches_socket = seeds_for_fb.contains(&entry.addr);
+                                let matches_peer = entry.context.as_ref().and_then(|ctx| {
+                                    ctx.try_lock().ok().and_then(|g| g.get::<String>())
+                                }).map(|addr| addr == sender_addr).unwrap_or(false);
+                                if !matches_socket && !matches_peer {
+                                    continue;
+                                }
+                                // Dedup by node_id
+                                let node_id = entry.node.read().await;
+                                if let Some(n) = node_id.as_ref() {
+                                    let nid = String::from_utf8_lossy(&n.id).to_string();
+                                    if !sent_nodes.insert(nid) {
+                                        continue;
+                                    }
+                                }
                                 if let Some(ctx) = &entry.context {
                                     let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone()).await;
                                 }
                             }
-                        }
-                    }).await;
+                        }).await;
+                    }
                 });
             } else {
                 // 发送者不在直接连接中，广播回执
@@ -297,28 +328,30 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             tracing::warn!("  ⚠️  No app channel found for incoming message!");
         }
         return;
+    } else {
+        // 全连接网络中目标节点与发送者直连，无需转发。
+        // 当网络变为非全连接时，取消注释以下 forward 代码进行路由转发。
+        tracing::info!("  ⏭️  Message not for us (us={}, receiver={}), dropping", address, receiver);
+
+        // let manager = { let guard = ctx.lock().await; guard.global.manager.clone() };
+        // let origin_ctx = ctx.clone();
+        // let from_clone = from.clone();
+        // manager.forward(|entries| async move {
+        //     let mut sent = std::collections::HashSet::new();
+        //     for entry in entries {
+        //         if let Some(entry_ctx) = &entry.context {
+        //             if Arc::ptr_eq(entry_ctx, &origin_ctx) { continue; }
+        //         }
+        //         let node = entry.node.read().await;
+        //         if let Some(n) = node.as_ref() {
+        //             let nid = String::from_utf8_lossy(&n.id).to_string();
+        //             if nid == from_clone || !sent.insert(nid) { continue; }
+        //         } else if !sent.insert(entry.addr.to_string()) { continue; }
+        //         if let Some(ctx) = &entry.context {
+        //             let _ = P2PFrame::send(ctx.clone(), &Some(message.clone()),
+        //                 Entity::Message, Action::SendText, true).await;
+        //         }
+        //     }
+        // }).await;
     }
-    tracing::info!("  🔄 Message NOT for us (us={}, receiver={}), forwarding...", address, receiver);
-
-    let manager = {
-        let guard = ctx.lock().await;
-        guard.global.manager.clone()
-    };
-
-    manager
-        .forward(|entries| async move {
-            for entry in entries {
-                if let Some(ctx) = &entry.context {
-                    let _ = P2PFrame::send(
-                        ctx.clone(),
-                        &Some(message.clone()),
-                        Entity::Message,
-                        Action::SendText,
-                        true,
-                    )
-                    .await;
-                }
-            }
-        })
-        .await
 }
