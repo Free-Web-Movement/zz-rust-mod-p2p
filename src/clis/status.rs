@@ -41,7 +41,8 @@ pub async fn handle(_args: Vec<String>, context: Arc<GlobalContext>) {
     }
 
     let total_conns = total_clients + total_servers;
-    println!("\
+    println!(
+        "\
 ┏━━━━━━━━━━━━━━━━ AEX Connection Profile ━━━━━━━━━━━━━━━┓
 ┃  Nodes (IPs):      {: <40} ┃
 ┃  Total Conns:      {: <40} ┃
@@ -49,5 +50,6 @@ pub async fn handle(_args: Vec<String>, context: Arc<GlobalContext>) {
 ┃  Direction:        Inbound: {: <10} Outbound: {: <10} ┃
 ┃  Network Scope:    Intra:   {: <10} Extra:    {: <10} ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
-        total_ips, total_conns, total_clients, total_servers, intranet_conns, extranet_conns);
+        total_ips, total_conns, total_clients, total_servers, intranet_conns, extranet_conns
+    );
 }

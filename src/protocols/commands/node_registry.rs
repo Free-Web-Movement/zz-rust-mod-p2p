@@ -41,15 +41,22 @@ impl NodeRegistry {
             .unwrap_or_default()
             .as_secs();
 
-        let mut entry = self.nodes.entry(address.clone()).or_insert_with(|| NodeEntry {
-            address,
-            seeds: HashMap::new(),
-            is_connected: false,
-            scope,
-            last_seen: now,
-        });
+        let mut entry = self
+            .nodes
+            .entry(address.clone())
+            .or_insert_with(|| NodeEntry {
+                address,
+                seeds: HashMap::new(),
+                is_connected: false,
+                scope,
+                last_seen: now,
+            });
 
-        entry.seeds.entry(seed).or_insert(HashSet::new()).insert(ConnectionDirection::Unknown);
+        entry
+            .seeds
+            .entry(seed)
+            .or_insert(HashSet::new())
+            .insert(ConnectionDirection::Unknown);
         entry.last_seen = now;
     }
 
@@ -68,15 +75,22 @@ impl NodeRegistry {
             .unwrap_or_default()
             .as_secs();
 
-        let mut entry = self.nodes.entry(address.clone()).or_insert_with(|| NodeEntry {
-            address,
-            seeds: HashMap::new(),
-            is_connected: false,
-            scope,
-            last_seen: now,
-        });
+        let mut entry = self
+            .nodes
+            .entry(address.clone())
+            .or_insert_with(|| NodeEntry {
+                address,
+                seeds: HashMap::new(),
+                is_connected: false,
+                scope,
+                last_seen: now,
+            });
 
-        entry.seeds.entry(seed).or_insert(HashSet::new()).insert(direction);
+        entry
+            .seeds
+            .entry(seed)
+            .or_insert(HashSet::new())
+            .insert(direction);
         entry.last_seen = now;
     }
 
@@ -88,7 +102,11 @@ impl NodeRegistry {
 
         if let Some(mut entry) = self.nodes.get_mut(address) {
             let existed = entry.seeds.contains_key(&seed);
-            entry.seeds.entry(seed).or_insert(HashSet::new()).insert(ConnectionDirection::Unknown);
+            entry
+                .seeds
+                .entry(seed)
+                .or_insert(HashSet::new())
+                .insert(ConnectionDirection::Unknown);
             entry.last_seen = now;
             !existed
         } else {
@@ -276,14 +294,20 @@ impl NodeRegistry {
                     self.nodes
                         .entry(nid.clone())
                         .and_modify(|e| {
-                            e.seeds.entry(addr).or_insert(HashSet::new()).insert(ConnectionDirection::Outbound);
+                            e.seeds
+                                .entry(addr)
+                                .or_insert(HashSet::new())
+                                .insert(ConnectionDirection::Outbound);
                             e.scope = scope;
                             e.is_connected = true;
                             e.last_seen = now;
                         })
                         .or_insert(NodeEntry {
                             address: nid.clone(),
-                            seeds: HashMap::from([(addr, HashSet::from([ConnectionDirection::Outbound]))]),
+                            seeds: HashMap::from([(
+                                addr,
+                                HashSet::from([ConnectionDirection::Outbound]),
+                            )]),
                             is_connected: true,
                             scope,
                             last_seen: now,

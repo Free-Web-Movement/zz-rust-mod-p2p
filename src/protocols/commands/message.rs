@@ -16,7 +16,8 @@ use zz_account::address::FreeWebMovementAddress;
 pub type SeenMessages = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
 
 /// 待确认的发送请求：request_id → oneshot (true=已送达)
-pub type PendingAcks = Arc<Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<bool>>>>;
+pub type PendingAcks =
+    Arc<Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<bool>>>>;
 
 const SEEN_MESSAGES_MAX: usize = 10_000;
 
@@ -120,7 +121,11 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
         }
     };
 
-    tracing::info!("📬 ACK received from {} for request_id={}", from, ack.request_id);
+    tracing::info!(
+        "📬 ACK received from {} for request_id={}",
+        from,
+        ack.request_id
+    );
 
     let gctx = {
         let guard = ctx.lock().await;
@@ -133,7 +138,10 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
         if let Some(seen) = gctx.get::<SeenMessages>().await {
             let mut guard = seen.lock().unwrap();
             if !guard.insert(key) {
-                tracing::info!("  ⏭️  Duplicate ACK request_id={}, skipping", ack.request_id);
+                tracing::info!(
+                    "  ⏭️  Duplicate ACK request_id={}, skipping",
+                    ack.request_id
+                );
                 return;
             }
             if guard.len() > SEEN_MESSAGES_MAX {
@@ -147,7 +155,10 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
             let mut guard = pending.lock().await;
             if let Some(tx) = guard.remove(&ack.request_id) {
                 let _ = tx.send(true);
-                tracing::info!("  ✅ ACK matched pending request_id={}, delivery confirmed", ack.request_id);
+                tracing::info!(
+                    "  ✅ ACK matched pending request_id={}, delivery confirmed",
+                    ack.request_id
+                );
                 true
             } else {
                 false
@@ -205,17 +216,30 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
         }
     };
 
-    tracing::info!("📨 message_handler: received from {}, sender={}, receiver={}, msg_len={}",
-        from, message.sender, message.receiver, message.message.len());
+    tracing::info!(
+        "📨 message_handler: received from {}, sender={}, receiver={}, msg_len={}",
+        from,
+        message.sender,
+        message.receiver,
+        message.message.len()
+    );
 
     // 去重检查
     {
         let gctx = { ctx.lock().await.global.clone() };
-        let key = dedup_key(&message.sender, &message.receiver, &message.message, message.timestamp);
+        let key = dedup_key(
+            &message.sender,
+            &message.receiver,
+            &message.message,
+            message.timestamp,
+        );
         if let Some(seen) = gctx.get::<SeenMessages>().await {
             let mut guard = seen.lock().unwrap();
             if !guard.insert(key) {
-                tracing::info!("  ⏭️  Duplicate message (receiver={}), skipping", message.receiver);
+                tracing::info!(
+                    "  ⏭️  Duplicate message (receiver={}), skipping",
+                    message.receiver
+                );
                 return;
             }
             if guard.len() > SEEN_MESSAGES_MAX {
@@ -240,7 +264,10 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
 
     // 通知上层应用收到消息
     if receiver == address.to_string() {
-        tracing::info!("  ✅ Message IS for us ({}), delivering to app channel", address);
+        tracing::info!(
+            "  ✅ Message IS for us ({}), delivering to app channel",
+            address
+        );
 
         // 发送回执给原始发送者
         let gctx = {
@@ -261,7 +288,8 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
                     for seed_addr in &seeds_for_direct {
                         if let Some(entry) = manager.find_entry(seed_addr) {
                             if let Some(ctx) = &entry.context {
-                                let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone()).await;
+                                let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone())
+                                    .await;
                                 ack_sent = true;
                                 break;
                             }
@@ -270,46 +298,66 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
                     if !ack_sent {
                         // 直连不存在时降级到 forward 匹配
                         let seeds_for_fb = seeds_for_direct.clone();
-                        manager.forward(|entries| async move {
-                            let mut sent_nodes: std::collections::HashSet<String> = std::collections::HashSet::new();
-                            for entry in entries {
-                                let matches_socket = seeds_for_fb.contains(&entry.addr);
-                                let matches_peer = entry.context.as_ref().and_then(|ctx| {
-                                    ctx.try_lock().ok().and_then(|g| g.get::<String>())
-                                }).map(|addr| addr == sender_addr).unwrap_or(false);
-                                if !matches_socket && !matches_peer {
-                                    continue;
-                                }
-                                // Dedup by node_id
-                                let node_id = entry.node.read().await;
-                                if let Some(n) = node_id.as_ref() {
-                                    let nid = String::from_utf8_lossy(&n.id).to_string();
-                                    if !sent_nodes.insert(nid) {
+                        manager
+                            .forward(|entries| async move {
+                                let mut sent_nodes: std::collections::HashSet<String> =
+                                    std::collections::HashSet::new();
+                                for entry in entries {
+                                    let matches_socket = seeds_for_fb.contains(&entry.addr);
+                                    let matches_peer = entry
+                                        .context
+                                        .as_ref()
+                                        .and_then(|ctx| {
+                                            ctx.try_lock().ok().and_then(|g| g.get::<String>())
+                                        })
+                                        .map(|addr| addr == sender_addr)
+                                        .unwrap_or(false);
+                                    if !matches_socket && !matches_peer {
                                         continue;
                                     }
+                                    // Dedup by node_id
+                                    let node_id = entry.node.read().await;
+                                    if let Some(n) = node_id.as_ref() {
+                                        let nid = String::from_utf8_lossy(&n.id).to_string();
+                                        if !sent_nodes.insert(nid) {
+                                            continue;
+                                        }
+                                    }
+                                    if let Some(ctx) = &entry.context {
+                                        let _ = send_message_ack(
+                                            sender_addr.clone(),
+                                            req_id,
+                                            ctx.clone(),
+                                        )
+                                        .await;
+                                    }
                                 }
-                                if let Some(ctx) = &entry.context {
-                                    let _ = send_message_ack(sender_addr.clone(), req_id, ctx.clone()).await;
-                                }
-                            }
-                        }).await;
+                            })
+                            .await;
                     }
                 });
             } else {
                 // 发送者不在直接连接中，广播回执
-                tracing::warn!("  ⚠️  Sender {} not in NodeRegistry, broadcasting ACK", sender_addr);
+                tracing::warn!(
+                    "  ⚠️  Sender {} not in NodeRegistry, broadcasting ACK",
+                    sender_addr
+                );
                 let gctx_clone = gctx.clone();
                 let req_id = request_id;
                 let sender_clone = sender_addr.clone();
                 tokio::spawn(async move {
                     let manager = gctx_clone.manager.clone();
-                    manager.forward(|entries| async move {
-                        for entry in entries {
-                            if let Some(ctx) = &entry.context {
-                                let _ = send_message_ack(sender_clone.clone(), req_id, ctx.clone()).await;
+                    manager
+                        .forward(|entries| async move {
+                            for entry in entries {
+                                if let Some(ctx) = &entry.context {
+                                    let _ =
+                                        send_message_ack(sender_clone.clone(), req_id, ctx.clone())
+                                            .await;
+                                }
                             }
-                        }
-                    }).await;
+                        })
+                        .await;
                 });
             }
         }
@@ -331,7 +379,11 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
     } else {
         // 全连接网络中目标节点与发送者直连，无需转发。
         // 当网络变为非全连接时，取消注释以下 forward 代码进行路由转发。
-        tracing::info!("  ⏭️  Message not for us (us={}, receiver={}), dropping", address, receiver);
+        tracing::info!(
+            "  ⏭️  Message not for us (us={}, receiver={}), dropping",
+            address,
+            receiver
+        );
 
         // let manager = { let guard = ctx.lock().await; guard.global.manager.clone() };
         // let origin_ctx = ctx.clone();

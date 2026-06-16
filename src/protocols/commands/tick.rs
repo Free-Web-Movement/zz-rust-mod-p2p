@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 use crate::node::Node;
 use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{Action, Entity};
-use crate::protocols::commands::ack::{broadcast_seeds_to_peers, SeedRecord, SeedsCommand};
+use crate::protocols::commands::ack::{SeedRecord, SeedsCommand, broadcast_seeds_to_peers};
 use crate::protocols::commands::node_registry::NodeRegistry;
 use crate::protocols::frame::P2PFrame;
 
@@ -59,7 +59,7 @@ async fn build_tick_command(ctx: Arc<Mutex<Context>>) -> TickCommand {
 pub fn compute_witness_ring_hash(seeds: &[SeedRecord]) -> [u8; 32] {
     let mut sorted: Vec<String> = seeds.iter().map(|s| s.address.clone()).collect();
     sorted.sort();
-    
+
     let mut hasher = Sha256::default();
     for addr in &sorted {
         hasher.update(addr.as_bytes());
@@ -119,7 +119,11 @@ pub async fn tick_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCom
         };
 
         if stable {
-            tracing::info!("🔒 Witness ring STABLE: {} nodes, hash={:?}", ring_size, &local_hash[..8]);
+            tracing::info!(
+                "🔒 Witness ring STABLE: {} nodes, hash={:?}",
+                ring_size,
+                &local_hash[..8]
+            );
             lock_witness_ring(ctx.clone(), &local_ring, local_hash).await;
         }
     }
@@ -138,7 +142,8 @@ pub async fn tick_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCom
         Entity::Node,
         Action::TickAck,
         false,
-    ).await;
+    )
+    .await;
 
     tracing::info!(
         "📊 Witness ring: {} nodes, hash={:?}, stable={}",
@@ -171,7 +176,7 @@ async fn lock_witness_ring(ctx: Arc<Mutex<Context>>, ring: &[SeedRecord], hash: 
 
         let existing = gctx.get::<Vec<WitnessEntry>>().await.unwrap_or_default();
         let pos = existing.iter().position(|w| w.address == witness.address);
-        
+
         let updated = if let Some(p) = pos {
             let mut v = existing;
             v[p] = witness;
@@ -188,8 +193,12 @@ async fn lock_witness_ring(ctx: Arc<Mutex<Context>>, ring: &[SeedRecord], hash: 
     gctx.set(hash).await;
 
     let total_nodes = ring.len();
-    let total_reward: u64 = 1000; 
-    let per_witness = if total_nodes > 0 { total_reward / total_nodes as u64 } else { 0 };
+    let total_reward: u64 = 1000;
+    let per_witness = if total_nodes > 0 {
+        total_reward / total_nodes as u64
+    } else {
+        0
+    };
 
     let mut balances: Vec<BalanceEntry> = gctx.get::<Vec<BalanceEntry>>().await.unwrap_or_default();
     for seed in ring {
@@ -237,7 +246,9 @@ async fn sync_witness_ring(ctx: Arc<Mutex<Context>>, seeds_cmd: &SeedsCommand) {
     };
 
     if let Some(node) = node {
-        let local_addrs: HashSet<String> = node.registry.get_all_seeds()
+        let local_addrs: HashSet<String> = node
+            .registry
+            .get_all_seeds()
             .iter()
             .map(|(s, _)| s.to_string())
             .collect();
@@ -246,8 +257,12 @@ async fn sync_witness_ring(ctx: Arc<Mutex<Context>>, seeds_cmd: &SeedsCommand) {
             if !local_addrs.contains(&seed.address) {
                 if let Ok(seed_addr) = seed.address.parse::<SocketAddr>() {
                     let scope = NetworkScope::from_ip(&seed_addr.ip());
-                    node.registry.register(seed.node_address.clone(), seed_addr, scope);
-                    println!("  + Tick registered new seed: {} (node: {})", seed.address, seed.node_address);
+                    node.registry
+                        .register(seed.node_address.clone(), seed_addr, scope);
+                    println!(
+                        "  + Tick registered new seed: {} (node: {})",
+                        seed.address, seed.node_address
+                    );
                 }
             }
         }
@@ -260,7 +275,10 @@ async fn sync_witness_ring(ctx: Arc<Mutex<Context>>, seeds_cmd: &SeedsCommand) {
                     let reg_clone = node.registry.clone();
                     let node_addr = seed.node_address.clone();
                     tokio::spawn(async move {
-                        if crate::protocols::commands::ack::connect_to_new_peer(ctx_spawn, addr).await.is_ok() {
+                        if crate::protocols::commands::ack::connect_to_new_peer(ctx_spawn, addr)
+                            .await
+                            .is_ok()
+                        {
                             reg_clone.mark_connected(&node_addr, true);
                             println!("  ✅ Tick connected to node {} via {}", node_addr, addr);
                         }
@@ -303,6 +321,11 @@ pub async fn send_tick(
     P2PFrame::send::<TickCommand>(ctx.clone(), &Some(tick), Entity::Node, Action::Tick, false)
         .await?;
 
-    tracing::info!("Sent Tick to {}: daily_epoch={}, slot={}", receiver, daily_epoch, slot);
+    tracing::info!(
+        "Sent Tick to {}: daily_epoch={}, slot={}",
+        receiver,
+        daily_epoch,
+        slot
+    );
     Ok(())
 }

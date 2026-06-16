@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use zz_account::address::FreeWebMovementAddress;
 
+use crate::node::Node as P2pNode;
 use crate::protocols::command::P2PCommand;
 use crate::protocols::command::{Action, Entity};
 use crate::protocols::commands::ack::{OnlineAckCommand, SeedRecord, SeedsCommand};
-use crate::node::Node as P2pNode;
 use crate::protocols::frame::P2PFrame;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -27,11 +27,7 @@ pub struct OnlineCommand {
 
 impl Codec for OnlineCommand {}
 
-pub async fn online_handler(
-    ctx: Arc<Mutex<Context>>,
-    frame: P2PFrame,
-    cmd: P2PCommand,
-) {
+pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     println!("inside online handler!");
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
@@ -48,7 +44,10 @@ pub async fn online_handler(
     println!("received session_id: {:?}", online.session_id);
     println!("intranet IPs: {:?}", online.intranet_ips);
     println!("wan IPs: {:?}", online.wan_ips);
-    println!("received seeds: {:?}", online.seeds.as_ref().map(|s| s.seeds.len()));
+    println!(
+        "received seeds: {:?}",
+        online.seeds.as_ref().map(|s| s.seeds.len())
+    );
 
     // Handle seed-only gossip (empty session_id means broadcast from existing peer)
     if online.session_id.is_empty() {
@@ -84,23 +83,23 @@ pub async fn online_handler(
             // Use the peer's advertised listening port, not the TCP source port
             let listen_addr = std::net::SocketAddr::new(gossip_sock.ip(), online.node.port);
             let gossip_scope = aex::connection::scope::NetworkScope::from_ip(&listen_addr.ip());
-            node.registry.register(
-                frame.body.address.clone(),
-                listen_addr,
-                gossip_scope,
-            );
+            node.registry
+                .register(frame.body.address.clone(), listen_addr, gossip_scope);
         }
 
         if let Some(ref peer_seeds) = online.seeds {
             if peer_seeds.verify() {
-                println!("📥 Received seed gossip, merging {} seeds", peer_seeds.seeds.len());
+                println!(
+                    "📥 Received seed gossip, merging {} seeds",
+                    peer_seeds.seeds.len()
+                );
 
                 // Register peer nodes from gossip seeds and connect (node-based dedup)
                 let node = gctx.get::<Arc<P2pNode>>().await;
                 if let Some(node) = node {
                     let reg = &node.registry;
                     let before_count = reg.get_all_seeds().len();
-                    
+
                     for seed in &peer_seeds.seeds {
                         // Register the node if not already known
                         if !reg.is_registered(&seed.node_address) {
@@ -128,8 +127,11 @@ pub async fn online_handler(
                         // different session keys for the same peer pair.
                         if let Some(local_addr) = gctx.get::<FreeWebMovementAddress>().await {
                             if local_addr.to_string() > seed.node_address {
-                                tracing::info!("⏭️ Tiebreaker: {} > {}, letting lower address initiate",
-                                    local_addr, seed.node_address);
+                                tracing::info!(
+                                    "⏭️ Tiebreaker: {} > {}, letting lower address initiate",
+                                    local_addr,
+                                    seed.node_address
+                                );
                                 continue;
                             }
                         }
@@ -140,27 +142,41 @@ pub async fn online_handler(
                             let reg_clone = reg.clone();
                             let node_addr = seed.node_address.clone();
                             tokio::spawn(async move {
-                                if super::ack::connect_to_new_peer(ctx_owned, seed_addr).await.is_ok() {
+                                if super::ack::connect_to_new_peer(ctx_owned, seed_addr)
+                                    .await
+                                    .is_ok()
+                                {
                                     reg_clone.mark_connected(&node_addr, true);
                                 } else {
-                                    eprintln!("  ❌ Failed to connect to gossiped seed {}", addr_str);
+                                    eprintln!(
+                                        "  ❌ Failed to connect to gossiped seed {}",
+                                        addr_str
+                                    );
                                 }
                             });
                         }
                     }
-                    
+
                     // Propagate to other peers if we learned new seeds
                     let after_count = reg.get_all_seeds().len();
                     if after_count > before_count {
                         let ctx_for_broadcast = ctx.clone();
-                        let all_seeds: Vec<crate::protocols::commands::ack::SeedRecord> = reg.get_all_seeds()
+                        let all_seeds: Vec<crate::protocols::commands::ack::SeedRecord> = reg
+                            .get_all_seeds()
                             .into_iter()
-                            .map(|(s, na)| crate::protocols::commands::ack::SeedRecord::new(s.to_string(), na))
+                            .map(|(s, na)| {
+                                crate::protocols::commands::ack::SeedRecord::new(s.to_string(), na)
+                            })
                             .collect();
-                        let seeds_to_broadcast = crate::protocols::commands::ack::SeedsCommand::new(all_seeds);
-                        
+                        let seeds_to_broadcast =
+                            crate::protocols::commands::ack::SeedsCommand::new(all_seeds);
+
                         tokio::spawn(async move {
-                            super::ack::broadcast_seeds_to_peers(ctx_for_broadcast, &seeds_to_broadcast).await;
+                            super::ack::broadcast_seeds_to_peers(
+                                ctx_for_broadcast,
+                                &seeds_to_broadcast,
+                            )
+                            .await;
                         });
                     }
                 }
@@ -188,7 +204,10 @@ pub async fn online_handler(
                     frame.body.address
                 );
             } else {
-                tracing::info!("✅ Node {} connected (1st connection, accepted)", frame.body.address);
+                tracing::info!(
+                    "✅ Node {} connected (1st connection, accepted)",
+                    frame.body.address
+                );
             }
 
             // Register peer as a seed using its listening port (from online.node.port),
@@ -228,36 +247,47 @@ pub async fn online_handler(
         let scope = aex::connection::scope::NetworkScope::from_ip(&peer_addr.ip());
         let manager = &guard.global.manager;
         let key = (peer_addr.ip(), scope);
-        tracing::debug!("🔍 ENTRY_LOOKUP: peer_addr={}, scope={:?}, key={:?}",
-            peer_addr, scope, key);
+        tracing::debug!(
+            "🔍 ENTRY_LOOKUP: peer_addr={}, scope={:?}, key={:?}",
+            peer_addr,
+            scope,
+            key
+        );
         match manager.connections.get(&key) {
             Some(bi_conn) => {
                 let in_clients = bi_conn.clients.contains_key(&peer_addr);
                 let in_servers = bi_conn.servers.contains_key(&peer_addr);
-                tracing::debug!("🔍 ENTRY_LOOKUP: bucket found, clients_contains={}, servers_contains={}",
-                    in_clients, in_servers);
+                tracing::debug!(
+                    "🔍 ENTRY_LOOKUP: bucket found, clients_contains={}, servers_contains={}",
+                    in_clients,
+                    in_servers
+                );
                 match bi_conn.clients.get(&peer_addr) {
                     Some(entry_ref) => Some(entry_ref.value().clone()),
-                    None => {
-                        match bi_conn.servers.get(&peer_addr) {
-                            Some(entry_ref) => Some(entry_ref.value().clone()),
-                            None => None,
-                        }
-                    }
+                    None => match bi_conn.servers.get(&peer_addr) {
+                        Some(entry_ref) => Some(entry_ref.value().clone()),
+                        None => None,
+                    },
                 }
-            },
+            }
             None => {
                 tracing::warn!("🔍 ENTRY_LOOKUP: bucket NOT FOUND for key={:?}", key);
                 None
-            },
+            }
         }
     };
     let peer_node_id_debug = String::from_utf8_lossy(&peer_node.id).to_string();
     if let Some(entry) = entry_opt {
         entry.update_node(peer_node).await;
-        tracing::debug!("🔍 ENTRY_LOOKUP: update_node OK for node_id={:?}", peer_node_id_debug);
+        tracing::debug!(
+            "🔍 ENTRY_LOOKUP: update_node OK for node_id={:?}",
+            peer_node_id_debug
+        );
     } else {
-        tracing::warn!("🔍 ENTRY_LOOKUP: entry NOT FOUND, update_node SKIPPED for node_id={:?}", peer_node_id_debug);
+        tracing::warn!(
+            "🔍 ENTRY_LOOKUP: entry NOT FOUND, update_node SKIPPED for node_id={:?}",
+            peer_node_id_debug
+        );
     }
 
     let psk = {
@@ -268,7 +298,12 @@ pub async fn online_handler(
     let addr_debug = frame.body.address.clone();
     let local_addr_for_key = {
         let guard = ctx.lock().await;
-        guard.global.get::<FreeWebMovementAddress>().await.unwrap().to_string()
+        guard
+            .global
+            .get::<FreeWebMovementAddress>()
+            .await
+            .unwrap()
+            .to_string()
     };
     let ephemeral_public = if is_return_conn {
         // Return connection: check if a session key already exists for this peer.
@@ -291,41 +326,54 @@ pub async fn online_handler(
             }
             Ok(None) => {
                 // Key already exists for this peer (or DH failed) — skip exchange
-                tracing::info!("🔑 establish_begins skipped for address='{}' (key exists)", addr_debug);
+                tracing::info!(
+                    "🔑 establish_begins skipped for address='{}' (key exists)",
+                    addr_debug
+                );
                 let zero_key = x25519_dalek::PublicKey::from([0u8; 32]);
                 zero_key
             }
             Err(e) => {
-                tracing::error!("❌ establish_begins error for address='{}': {:?}", addr_debug, e);
+                tracing::error!(
+                    "❌ establish_begins error for address='{}': {:?}",
+                    addr_debug,
+                    e
+                );
                 return;
             }
+        }
+    } else {
+        let guard = psk.lock().await;
+        match guard
+            .establish_begins(
+                frame.body.address.as_bytes().to_vec(),
+                local_addr_for_key.as_bytes().to_vec(),
+                &online.ephemeral_public_key.to_vec(),
+            )
+            .await
+        {
+            Ok(Some(pk)) => {
+                tracing::info!("🔑 establish_begins OK for address='{}'", addr_debug);
+                pk
             }
-        } else {
-            let guard = psk.lock().await;
-            match guard
-                .establish_begins(
-                    frame.body.address.as_bytes().to_vec(),
-                    local_addr_for_key.as_bytes().to_vec(),
-                    &online.ephemeral_public_key.to_vec(),
-                )
-                .await
-            {
-                Ok(Some(pk)) => {
-                    tracing::info!("🔑 establish_begins OK for address='{}'", addr_debug);
-                    pk
-                }
-                Ok(None) => {
-                    tracing::info!("🔑 establish_begins skipped for address='{}' (key exists)", addr_debug);
-                    let zero_key = x25519_dalek::PublicKey::from([0u8; 32]);
-                    zero_key
-                }
-                Err(e) => {
-                    tracing::error!("❌ establish_begins error for address='{}': {:?}", addr_debug, e);
-                    return;
-                }
+            Ok(None) => {
+                tracing::info!(
+                    "🔑 establish_begins skipped for address='{}' (key exists)",
+                    addr_debug
+                );
+                let zero_key = x25519_dalek::PublicKey::from([0u8; 32]);
+                zero_key
+            }
+            Err(e) => {
+                tracing::error!(
+                    "❌ establish_begins error for address='{}': {:?}",
+                    addr_debug,
+                    e
+                );
+                return;
             }
         }
-    ;
+    };
 
     let address: FreeWebMovementAddress = {
         let ctx = ctx.lock().await;
@@ -355,13 +403,24 @@ pub async fn online_handler(
         // Merge peer's seeds into NodeRegistry
         if let Some(ref peer_seeds) = online.seeds {
             if peer_seeds.verify() {
-                println!("🔄 Merging peer's seeds: {} seeds, hash={:?}", peer_seeds.seeds.len(), peer_seeds.hash);
+                println!(
+                    "🔄 Merging peer's seeds: {} seeds, hash={:?}",
+                    peer_seeds.seeds.len(),
+                    peer_seeds.hash
+                );
                 let node = ctx.lock().await.global.get::<Arc<P2pNode>>().await;
                 if let Some(node) = node {
                     for seed in &peer_seeds.seeds {
                         if let Ok(seed_addr) = seed.address.parse::<std::net::SocketAddr>() {
-                            node.registry.register(seed.node_address.clone(), seed_addr, NetworkScope::from_ip(&seed_addr.ip()));
-                            println!("  + Registered seed from peer: {} (node: {})", seed.address, seed.node_address);
+                            node.registry.register(
+                                seed.node_address.clone(),
+                                seed_addr,
+                                NetworkScope::from_ip(&seed_addr.ip()),
+                            );
+                            println!(
+                                "  + Registered seed from peer: {} (node: {})",
+                                seed.address, seed.node_address
+                            );
                         }
                     }
                 }
@@ -373,7 +432,8 @@ pub async fn online_handler(
         // Generate seeds from NodeRegistry
         let node = ctx.lock().await.global.get::<Arc<P2pNode>>().await;
         let seed_records = if let Some(node) = node {
-            let all_seeds: Vec<SeedRecord> = node.registry
+            let all_seeds: Vec<SeedRecord> = node
+                .registry
                 .get_all_seeds()
                 .into_iter()
                 .map(|(s, na)| SeedRecord::new(s.to_string(), na))
@@ -383,7 +443,11 @@ pub async fn online_handler(
             SeedsCommand::new(vec![])
         };
 
-        println!("📊 Consensus seeds: {} seeds, hash={:?}", seed_records.seeds.len(), seed_records.hash);
+        println!(
+            "📊 Consensus seeds: {} seeds, hash={:?}",
+            seed_records.seeds.len(),
+            seed_records.hash
+        );
         Some(seed_records)
     };
 
@@ -428,8 +492,12 @@ pub async fn online_handler(
     // NOT the ephemeral TCP source port (ctx.addr). This ensures
     // the return-connection hits the peer's actual listener.
     let peer_addr = std::net::SocketAddr::new(peer_sock.ip(), online.node.port);
-    tracing::info!("↩️ return-connect planning: peer_sock(inbound)={}, online.node.port={}, computed peer_addr={}",
-        peer_sock, online.node.port, peer_addr);
+    tracing::info!(
+        "↩️ return-connect planning: peer_sock(inbound)={}, online.node.port={}, computed peer_addr={}",
+        peer_sock,
+        online.node.port,
+        peer_addr
+    );
     let gctx = {
         let guard = ctx.lock().await;
         guard.global.clone()
@@ -439,20 +507,35 @@ pub async fn online_handler(
     // should never block creating the return outbound; otherwise the mesh becomes
     // asymmetric (N0 gets 0 inbounds, other nodes get N-1). Each inbound must
     // produce exactly one outbound return-connect to balance the mesh.
-    let already_connected = gctx.manager.connections.get(&(peer_addr.ip(), scope))
+    let already_connected = gctx
+        .manager
+        .connections
+        .get(&(peer_addr.ip(), scope))
         .map(|bi_conn| {
-            let in_servers = bi_conn.servers.contains_key(&peer_sock) || bi_conn.servers.contains_key(&peer_addr);
+            let in_servers = bi_conn.servers.contains_key(&peer_sock)
+                || bi_conn.servers.contains_key(&peer_addr);
             let found = in_servers;
-            let servers_addrs: Vec<std::net::SocketAddr> = bi_conn.servers.iter().map(|ref_multi| *ref_multi.key()).collect();
-            tracing::info!("↩️ try_connect check: peer_sock={}, peer_addr={}, servers={:?}, found={}",
-                peer_sock, peer_addr, servers_addrs, found,
+            let servers_addrs: Vec<std::net::SocketAddr> = bi_conn
+                .servers
+                .iter()
+                .map(|ref_multi| *ref_multi.key())
+                .collect();
+            tracing::info!(
+                "↩️ try_connect check: peer_sock={}, peer_addr={}, servers={:?}, found={}",
+                peer_sock,
+                peer_addr,
+                servers_addrs,
+                found,
             );
             found
         })
         .unwrap_or(false);
 
     if already_connected {
-        tracing::info!("↩️ Skip return connection to {} (already connected)", peer_addr);
+        tracing::info!(
+            "↩️ Skip return connection to {} (already connected)",
+            peer_addr
+        );
     } else {
         let local_node = {
             let guard = gctx.local_node.write().await;
@@ -463,11 +546,7 @@ pub async fn online_handler(
         // will recognize this as is_return_conn=true (since the peer is already
         // marked connected) and skip key exchange. The session keys were already
         // established by the first (inbound) connection.
-        let (session_id, _eph_pub) = psk
-            .lock()
-            .await
-            .create(false)
-            .await;
+        let (session_id, _eph_pub) = psk.lock().await.create(false).await;
         let return_cmd = Arc::new(OnlineCommand {
             session_id: session_id.clone(),
             node: local_node,
@@ -480,30 +559,41 @@ pub async fn online_handler(
         let cmd_clone = return_cmd.clone();
         let gctx_clone = gctx.clone();
         tokio::spawn(async move {
-            match gctx_clone.manager.clone().connect::<P2PFrame, P2PCommand, _, _>(
-                peer_addr,
-                gctx_clone.clone(),
-                move |new_ctx| {
-                    let cmd = cmd_clone.clone();
-                    let g = gctx_clone.clone();
-                    Box::pin(async move {
-                        if let Err(e) = P2PFrame::send::<OnlineCommand>(
-                            new_ctx.clone(),
-                            &Some((*cmd).clone()),
-                            Entity::Node,
-                            Action::OnLine,
-                            false,
-                        ).await {
-                            tracing::error!("❌ Failed to send return OnlineCommand: {:?}", e);
-                            return;
-                        }
-                        if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&g.routers) {
-                            let _ = router.handle(new_ctx).await;
-                        }
-                    })
-                },
-                Some(10),
-            ).await {
+            match gctx_clone
+                .manager
+                .clone()
+                .connect::<P2PFrame, P2PCommand, _, _>(
+                    peer_addr,
+                    gctx_clone.clone(),
+                    move |new_ctx| {
+                        let cmd = cmd_clone.clone();
+                        let g = gctx_clone.clone();
+                        Box::pin(async move {
+                            if let Err(e) = P2PFrame::send::<OnlineCommand>(
+                                new_ctx.clone(),
+                                &Some((*cmd).clone()),
+                                Entity::Node,
+                                Action::OnLine,
+                                false,
+                            )
+                            .await
+                            {
+                                tracing::error!("❌ Failed to send return OnlineCommand: {:?}", e);
+                                return;
+                            }
+                            if let Some(router) = aex::connection::context::get_tcp_router::<
+                                P2PFrame,
+                                P2PCommand,
+                            >(&g.routers)
+                            {
+                                let _ = router.handle(new_ctx).await;
+                            }
+                        })
+                    },
+                    Some(10),
+                )
+                .await
+            {
                 Ok(_) => tracing::info!("✅ Return connection established to {}", peer_addr),
                 Err(_) => tracing::info!("↩️ Return connection already exists to {}", peer_addr),
             }
@@ -518,7 +608,8 @@ pub async fn online_handler(
         };
 
         let seed_records = if let Some(node) = node {
-            let all_seeds: Vec<SeedRecord> = node.registry
+            let all_seeds: Vec<SeedRecord> = node
+                .registry
                 .get_all_seeds()
                 .into_iter()
                 .map(|(s, na)| SeedRecord::new(s.to_string(), na))
@@ -554,12 +645,17 @@ pub async fn online_handler(
     tokio::spawn(async move {
         // 延迟一点，让 ack 先完成
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        tracing::info!("🔄 Triggering node sync with peer {} after online handshake...", peer_addr);
+        tracing::info!(
+            "🔄 Triggering node sync with peer {} after online handshake...",
+            peer_addr
+        );
         if let Err(e) = crate::protocols::commands::node_sync::request_node_sync(
             ctx_for_peer_sync,
             peer_addr,
             "full".to_string(),
-        ).await {
+        )
+        .await
+        {
             eprintln!("❌ Failed to trigger node sync: {}", e);
         }
     });
@@ -578,15 +674,27 @@ pub async fn online_handler(
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-            let still_connected = gctx_for_cleanup.manager.connections
+            let still_connected = gctx_for_cleanup
+                .manager
+                .connections
                 .get(&(peer_sock.ip(), scope))
-                .map(|bi_conn| bi_conn.clients.contains_key(&peer_sock) || bi_conn.servers.contains_key(&peer_sock))
+                .map(|bi_conn| {
+                    bi_conn.clients.contains_key(&peer_sock)
+                        || bi_conn.servers.contains_key(&peer_sock)
+                })
                 .unwrap_or(false);
             if !still_connected {
                 if let Some(node) = gctx_for_cleanup.get::<Arc<P2pNode>>().await {
                     node.registry.disconnect(&node_id_for_cleanup);
-                    tracing::info!("🧹 Disconnected stale connection for node {}", node_id_for_cleanup);
+                    tracing::info!(
+                        "🧹 Disconnected stale connection for node {}",
+                        node_id_for_cleanup
+                    );
                 }
+                let event = PeerOfflineEvent {
+                    addr: node_id_for_cleanup.clone(),
+                };
+                let _ = gctx_for_cleanup.spread.publish("peer_offline", event).await;
                 break;
             }
         }
@@ -598,6 +706,11 @@ pub struct PeerOnlineEvent {
     pub addr: String,
     pub intranet_ips: Vec<String>,
     pub wan_ips: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerOfflineEvent {
+    pub addr: String,
 }
 
 pub fn get_all_ips() -> (Vec<String>, Vec<String>) {
@@ -619,7 +732,10 @@ pub fn get_all_ips() -> (Vec<String>, Vec<String>) {
                     current_iface = line.split(':').nth(1).unwrap_or("").trim();
                 }
                 // Skip virtual interfaces
-                if virtual_prefixes.iter().any(|p| current_iface.starts_with(p)) {
+                if virtual_prefixes
+                    .iter()
+                    .any(|p| current_iface.starts_with(p))
+                {
                     continue;
                 }
                 // Parse IPv4 addresses

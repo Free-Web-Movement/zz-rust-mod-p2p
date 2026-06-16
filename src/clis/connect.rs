@@ -2,12 +2,12 @@ use aex::connection::{global::GlobalContext, scope::NetworkScope};
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::node::Node as P2pNode;
+use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::online::{get_all_ips, OnlineCommand},
+    commands::online::{OnlineCommand, get_all_ips},
     frame::P2PFrame,
 };
-use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 
 pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     if args.len() < 2 {
@@ -59,16 +59,18 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                             // Build seeds from NodeRegistry
                             let seeds_to_send = {
                                 let guard = ctx_for_seeds.lock().await;
-                                let seeds = if let Some(node) = guard.global.get::<Arc<P2pNode>>().await {
-                                    let all_seeds: Vec<SeedRecord> = node.registry
-                                        .get_all_seeds()
-                                        .into_iter()
-                                        .map(|(s, na)| SeedRecord::new(s.to_string(), na))
-                                        .collect();
-                                    SeedsCommand::new(all_seeds)
-                                } else {
-                                    SeedsCommand::new(vec![])
-                                };
+                                let seeds =
+                                    if let Some(node) = guard.global.get::<Arc<P2pNode>>().await {
+                                        let all_seeds: Vec<SeedRecord> = node
+                                            .registry
+                                            .get_all_seeds()
+                                            .into_iter()
+                                            .map(|(s, na)| SeedRecord::new(s.to_string(), na))
+                                            .collect();
+                                        SeedsCommand::new(all_seeds)
+                                    } else {
+                                        SeedsCommand::new(vec![])
+                                    };
                                 drop(guard);
                                 seeds
                             };

@@ -2,8 +2,8 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -76,12 +76,26 @@ impl SeedSet {
     pub fn new(seeds: Vec<SeedInfo>, epoch: u64) -> Self {
         let pre_hash = default_pre_hash();
         let hash = compute_seed_hash(&pre_hash, &seeds);
-        Self { seeds, pre_hash, hash, epoch, locked: false, sync_round: 0 }
+        Self {
+            seeds,
+            pre_hash,
+            hash,
+            epoch,
+            locked: false,
+            sync_round: 0,
+        }
     }
 
     pub fn with_pre_hash(seeds: Vec<SeedInfo>, epoch: u64, pre_hash: String) -> Self {
         let hash = compute_seed_hash(&pre_hash, &seeds);
-        Self { seeds, pre_hash, hash, epoch, locked: false, sync_round: 0 }
+        Self {
+            seeds,
+            pre_hash,
+            hash,
+            epoch,
+            locked: false,
+            sync_round: 0,
+        }
     }
 
     pub fn verify(&self) -> bool {
@@ -106,12 +120,15 @@ impl SeedSet {
     }
 
     pub fn merge(&self, other: &SeedSet) -> SeedSet {
-        let mut merged: Vec<SeedInfo> = self.seeds.iter()
+        let mut merged: Vec<SeedInfo> = self
+            .seeds
+            .iter()
             .filter(|s| !Self::is_loopback(&s.ip))
             .cloned()
             .collect();
-        let mut seen: std::collections::HashSet<String> = merged.iter().map(|s| s.address()).collect();
-        
+        let mut seen: std::collections::HashSet<String> =
+            merged.iter().map(|s| s.address()).collect();
+
         for seed in &other.seeds {
             if Self::is_loopback(&seed.ip) {
                 continue;
@@ -150,8 +167,7 @@ pub fn derive_seed_set_from_registry(reg: &NodeRegistry) -> SeedSet {
         .into_iter()
         .filter(|(addr, _)| addr.port() != 0)
         .map(|(addr, node_addr)| {
-            let is_intranet =
-                matches!(addr.ip(), std::net::IpAddr::V4(v4) if v4.is_private());
+            let is_intranet = matches!(addr.ip(), std::net::IpAddr::V4(v4) if v4.is_private());
             SeedInfo::new(addr.ip().to_string(), addr.port(), node_addr, is_intranet)
         })
         .collect();
@@ -161,7 +177,7 @@ pub fn derive_seed_set_from_registry(reg: &NodeRegistry) -> SeedSet {
 pub fn compute_seed_hash(pre_hash: &str, seeds: &[SeedInfo]) -> [u8; 32] {
     let mut sorted: Vec<String> = seeds.iter().map(|s| s.address()).collect();
     sorted.sort();
-    
+
     let mut hasher = Sha256::default();
     hasher.update(pre_hash.as_bytes());
     for addr in &sorted {
@@ -211,7 +227,9 @@ pub async fn seed_sync_request_handler(
 
     println!(
         "🔄 Seed sync request from {} (retry={}), their seeds: {}",
-        request.from_node_id, request.retry_count, request.seed_set.len()
+        request.from_node_id,
+        request.retry_count,
+        request.seed_set.len()
     );
 
     let guard = ctx.lock().await;
@@ -219,7 +237,8 @@ pub async fn seed_sync_request_handler(
         for seed in &request.seed_set.seeds {
             if let Some(seed_addr) = seed.socket_addr() {
                 let scope = NetworkScope::from_ip(&seed_addr.ip());
-                node.registry.register(seed.node_id.clone(), seed_addr, scope);
+                node.registry
+                    .register(seed.node_id.clone(), seed_addr, scope);
             }
         }
 
@@ -237,15 +256,14 @@ pub async fn seed_sync_request_handler(
 
     let response = {
         let guard = ctx.lock().await;
-        let node = guard
-            .global
-            .get::<Arc<Node>>()
-            .await
-            .unwrap();
+        let node = guard.global.get::<Arc<Node>>().await.unwrap();
 
         let seed_set = derive_seed_set_from_registry(&node.registry);
         let filtered_set = seed_set.filter_loopback();
-        println!("  → response seeds (after filter_loopback): {}", filtered_set.len());
+        println!(
+            "  → response seeds (after filter_loopback): {}",
+            filtered_set.len()
+        );
 
         SeedSyncResponse {
             hash: filtered_set.hash,
@@ -287,7 +305,8 @@ pub async fn seed_sync_response_handler(
         for seed in &response.seed_set.seeds {
             if let Some(seed_addr) = seed.socket_addr() {
                 let scope = NetworkScope::from_ip(&seed_addr.ip());
-                node.registry.register(seed.node_id.clone(), seed_addr, scope);
+                node.registry
+                    .register(seed.node_id.clone(), seed_addr, scope);
             }
         }
 
@@ -304,11 +323,7 @@ pub async fn seed_sync_response_handler(
     drop(guard);
 }
 
-pub async fn seed_sync_commit_handler(
-    ctx: Arc<Mutex<Context>>,
-    _frame: P2PFrame,
-    cmd: P2PCommand,
-) {
+pub async fn seed_sync_commit_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: P2PCommand) {
     let commit: SeedSyncCommit = match Codec::decode(&cmd.data) {
         Ok(c) => c,
         Err(e) => {
@@ -328,7 +343,8 @@ pub async fn seed_sync_commit_handler(
         for seed in &commit.seed_set.seeds {
             if let Some(seed_addr) = seed.socket_addr() {
                 let scope = NetworkScope::from_ip(&seed_addr.ip());
-                node.registry.register(seed.node_id.clone(), seed_addr, scope);
+                node.registry
+                    .register(seed.node_id.clone(), seed_addr, scope);
             }
         }
 
@@ -355,7 +371,9 @@ pub async fn broadcast_seed_set_to_all_peers(ctx: Arc<Mutex<Context>>, seed_set:
         guard.global.clone()
     };
 
-    let address = gctx.get::<zz_account::address::FreeWebMovementAddress>().await;
+    let address = gctx
+        .get::<zz_account::address::FreeWebMovementAddress>()
+        .await;
     let address = match address {
         Some(addr) => addr,
         None => return,
@@ -392,7 +410,10 @@ pub async fn broadcast_seed_set_to_all_peers(ctx: Arc<Mutex<Context>>, seed_set:
         })
         .await;
 
-    println!("  📢 Broadcast seed set ({} seeds) to all peers", seed_count);
+    println!(
+        "  📢 Broadcast seed set ({} seeds) to all peers",
+        seed_count
+    );
 }
 
 pub async fn lock_seed_set_global(gctx: Arc<GlobalContext>, mut seed_set: SeedSet) {
@@ -437,7 +458,14 @@ pub async fn run_seed_sync_cycle(
             derive_seed_set_from_registry(&node.registry)
         };
 
-        tracing::info!("=== Seed sync round {}/{} with {} peers ({} seeds), stable_rounds={} ===", round, MAX_ROUNDS, peer_addrs.len(), current_seed_set.len(), stable_rounds);
+        tracing::info!(
+            "=== Seed sync round {}/{} with {} peers ({} seeds), stable_rounds={} ===",
+            round,
+            MAX_ROUNDS,
+            peer_addrs.len(),
+            current_seed_set.len(),
+            stable_rounds
+        );
 
         // Sync with all peers concurrently (bounded by semaphore to avoid thundering herd)
         const MAX_CONCURRENT: usize = 50;
@@ -472,11 +500,20 @@ pub async fn run_seed_sync_cycle(
 
         if prev_hash == Some(current_hash) {
             stable_rounds += 1;
-            tracing::info!("📊 SeedSet hash unchanged, stable_rounds={}/{}", stable_rounds, STABLE_ROUNDS_REQUIRED);
+            tracing::info!(
+                "📊 SeedSet hash unchanged, stable_rounds={}/{}",
+                stable_rounds,
+                STABLE_ROUNDS_REQUIRED
+            );
             if stable_rounds >= STABLE_ROUNDS_REQUIRED {
                 let node = gctx.get::<Arc<Node>>().await.unwrap();
                 let current_set = derive_seed_set_from_registry(&node.registry);
-                tracing::info!("✅ Seed sync converged after {} rounds with {} seeds, hash={:?}", round, current_set.len(), &current_hash[..8]);
+                tracing::info!(
+                    "✅ Seed sync converged after {} rounds with {} seeds, hash={:?}",
+                    round,
+                    current_set.len(),
+                    &current_hash[..8]
+                );
                 return Ok(current_set);
             }
         } else {
@@ -484,7 +521,11 @@ pub async fn run_seed_sync_cycle(
             prev_hash = Some(current_hash);
             let node = gctx.get::<Arc<Node>>().await.unwrap();
             let set_len = derive_seed_set_from_registry(&node.registry).len();
-            tracing::info!("📊 SeedSet hash changed, {} seeds, hash={:?}", set_len, &current_hash[..8]);
+            tracing::info!(
+                "📊 SeedSet hash changed, {} seeds, hash={:?}",
+                set_len,
+                &current_hash[..8]
+            );
         }
     }
 
@@ -518,47 +559,88 @@ async fn sync_once(gctx: Arc<GlobalContext>, addr: SocketAddr, attempt: u32) -> 
 
     // First try to find existing connection (inbound or outbound)
     if let Some(existing_ctx) = get_existing_connection_context(&gctx, addr) {
-        tracing::info!("🔗 Using existing connection to peer: {} (attempt {})", addr, attempt);
-        send_seed_sync_via_existing_ctx(existing_ctx, addr, psk, gctx.clone(), result_clone, attempt).await;
+        tracing::info!(
+            "🔗 Using existing connection to peer: {} (attempt {})",
+            addr,
+            attempt
+        );
+        send_seed_sync_via_existing_ctx(
+            existing_ctx,
+            addr,
+            psk,
+            gctx.clone(),
+            result_clone,
+            attempt,
+        )
+        .await;
         tokio::time::sleep(Duration::from_millis(500)).await;
         let success = result.load(Ordering::SeqCst);
-        tracing::info!("🏁 Sync with {} (existing) attempt {} result: {}", addr, attempt, if success { "SUCCESS" } else { "FAILED" });
+        tracing::info!(
+            "🏁 Sync with {} (existing) attempt {} result: {}",
+            addr,
+            attempt,
+            if success { "SUCCESS" } else { "FAILED" }
+        );
         return success;
     }
 
     // No existing connection, try to connect
-    tracing::info!("🔗 Attempting to connect to peer: {} (attempt {})", addr, attempt);
-
-    match gctx.manager.clone().connect::<P2PFrame, P2PCommand, _, _>(
+    tracing::info!(
+        "🔗 Attempting to connect to peer: {} (attempt {})",
         addr,
-        gctx.clone(),
-        move |ctx| {
-            let result = result_clone.clone();
-            let gctx = gctx.clone();
-            let psk = psk.clone();
-            Box::pin(async move {
-                tracing::info!("✅ Connected to peer: {}, sending seed sync request (attempt {})", addr, attempt);
-                send_seed_sync_request(ctx, addr, psk, gctx, result, attempt).await;
-            })
-        },
-        Some(5),
-    )
-    .await
+        attempt
+    );
+
+    match gctx
+        .manager
+        .clone()
+        .connect::<P2PFrame, P2PCommand, _, _>(
+            addr,
+            gctx.clone(),
+            move |ctx| {
+                let result = result_clone.clone();
+                let gctx = gctx.clone();
+                let psk = psk.clone();
+                Box::pin(async move {
+                    tracing::info!(
+                        "✅ Connected to peer: {}, sending seed sync request (attempt {})",
+                        addr,
+                        attempt
+                    );
+                    send_seed_sync_request(ctx, addr, psk, gctx, result, attempt).await;
+                })
+            },
+            Some(5),
+        )
+        .await
     {
         Ok(_) => {
             tokio::time::sleep(Duration::from_millis(500)).await;
             let success = result.load(Ordering::SeqCst);
-            tracing::info!("🏁 Sync with {} (new) attempt {} result: {}", addr, attempt, if success { "SUCCESS" } else { "FAILED" });
+            tracing::info!(
+                "🏁 Sync with {} (new) attempt {} result: {}",
+                addr,
+                attempt,
+                if success { "SUCCESS" } else { "FAILED" }
+            );
             success
         }
         Err(e) => {
-            tracing::error!("❌ Connection to {} attempt {} failed: {}", addr, attempt, e);
+            tracing::error!(
+                "❌ Connection to {} attempt {} failed: {}",
+                addr,
+                attempt,
+                e
+            );
             false
         }
     }
 }
 
-pub fn get_existing_connection_context(gctx: &GlobalContext, addr: SocketAddr) -> Option<Arc<Mutex<aex::connection::context::Context>>> {
+pub fn get_existing_connection_context(
+    gctx: &GlobalContext,
+    addr: SocketAddr,
+) -> Option<Arc<Mutex<aex::connection::context::Context>>> {
     let manager = &gctx.manager;
     let ip = addr.ip();
     let scope = aex::connection::scope::NetworkScope::from_ip(&ip);
@@ -590,7 +672,12 @@ async fn send_seed_sync_via_existing_ctx(
         None => SeedSet::new(vec![], 0),
     };
 
-    tracing::info!("📤 Sending {} seeds to peer {} (existing conn, attempt {})", local_set.len(), addr, attempt);
+    tracing::info!(
+        "📤 Sending {} seeds to peer {} (existing conn, attempt {})",
+        local_set.len(),
+        addr,
+        attempt
+    );
 
     let request = SeedSyncRequest {
         from_node_id: gctx.addr.to_string(),
@@ -605,7 +692,8 @@ async fn send_seed_sync_via_existing_ctx(
         Action::SeedSyncRequest,
         false,
     )
-    .await {
+    .await
+    {
         Ok(_) => {
             tracing::info!("✅ Request sent to {}, waiting for response...", addr);
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -615,11 +703,19 @@ async fn send_seed_sync_via_existing_ctx(
                 None => local_set.clone(),
             };
 
-            tracing::info!("📊 After sync with {}: {} seeds (was {})", addr, merged.len(), local_set.len());
+            tracing::info!(
+                "📊 After sync with {}: {} seeds (was {})",
+                addr,
+                merged.len(),
+                local_set.len()
+            );
 
             if merged.verify() {
                 result.store(true, Ordering::SeqCst);
-                tracing::info!("✅ Sync successful: valid SeedSet with {} seeds", merged.len());
+                tracing::info!(
+                    "✅ Sync successful: valid SeedSet with {} seeds",
+                    merged.len()
+                );
             } else {
                 tracing::warn!("❌ Sync failed: SeedSet verification failed");
             }
@@ -650,7 +746,12 @@ async fn send_seed_sync_request(
         None => SeedSet::new(vec![], 0),
     };
 
-    tracing::info!("📤 Sending {} seeds to peer {} (attempt {})", local_set.len(), addr, attempt);
+    tracing::info!(
+        "📤 Sending {} seeds to peer {} (attempt {})",
+        local_set.len(),
+        addr,
+        attempt
+    );
 
     let request = SeedSyncRequest {
         from_node_id: gctx.addr.to_string(),
@@ -685,7 +786,12 @@ async fn send_seed_sync_request(
             None => local_set.clone(),
         };
 
-        tracing::info!("📊 After sync with {}: {} seeds (was {})", addr, merged.len(), local_set.len());
+        tracing::info!(
+            "📊 After sync with {}: {} seeds (was {})",
+            addr,
+            merged.len(),
+            local_set.len()
+        );
         for s in &merged.seeds {
             tracing::info!("  → seed: {}:{}", s.ip, s.port);
         }
@@ -697,5 +803,3 @@ async fn send_seed_sync_request(
         tracing::error!("❌ Failed to send request to {}: {:?}", addr, send_result);
     }
 }
-
-

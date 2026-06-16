@@ -1,13 +1,13 @@
-use tokio::sync::oneshot;
-use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use aex::tcp::types::Codec;
 use aex::connection::context::Context;
+use aex::tcp::types::Codec;
 
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
@@ -122,8 +122,10 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
         }
     };
 
-    println!("  Request ID: {}, Node: {}, Type: {}", 
-             request.request_id, request.node_id, request.sync_type);
+    println!(
+        "  Request ID: {}, Node: {}, Type: {}",
+        request.request_id, request.node_id, request.sync_type
+    );
 
     // 通过通道请求主项目提供数据
     let response = {
@@ -190,7 +192,9 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
         Entity::Node,
         Action::NodeSyncResponse,
         false,
-    ).await {
+    )
+    .await
+    {
         eprintln!("❌ Failed to send NodeSyncResponse: {}", e);
     } else {
         println!("✅ Sent node sync response");
@@ -213,8 +217,12 @@ pub async fn node_sync_response_handler(
         }
     };
 
-    println!("  Request ID: {}, Success: {}, Seeds: {}", 
-             response.request_id, response.success, response.seeds.len());
+    println!(
+        "  Request ID: {}, Success: {}, Seeds: {}",
+        response.request_id,
+        response.success,
+        response.seeds.len()
+    );
 
     if !response.success {
         eprintln!("❌ Node sync failed on remote side");
@@ -261,7 +269,8 @@ pub async fn request_node_sync(
         Entity::Node,
         Action::NodeSyncRequest,
         false,
-    ).await?;
+    )
+    .await?;
 
     println!("✅ Node sync request sent");
     Ok(())

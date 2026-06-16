@@ -15,7 +15,9 @@ pub async fn handle(_args: Vec<String>, context: Arc<GlobalContext>) {
             continue;
         }
         match key.1 {
-            NetworkScope::Intranet => intranet_conns += bi_conn.clients.len() + bi_conn.servers.len(),
+            NetworkScope::Intranet => {
+                intranet_conns += bi_conn.clients.len() + bi_conn.servers.len()
+            }
             _ => extranet_conns += bi_conn.clients.len() + bi_conn.servers.len(),
         }
         total_clients += bi_conn.clients.len();

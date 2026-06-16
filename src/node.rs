@@ -20,8 +20,12 @@ use crate::{
     io_storage::{
         IOStorage, STORAGE_ADDRESS, STORAGE_EXTERNAL_SERVER, STORAGE_INNER_SERVER, io_storage_init,
     },
-    protocols::{command::{P2PCommand, Action, Entity}, frame::P2PFrame, registry::register},
     protocols::commands::node_registry::NodeRegistry,
+    protocols::{
+        command::{Action, Entity, P2PCommand},
+        frame::P2PFrame,
+        registry::register,
+    },
     record::{self, NodeRecord},
 };
 
@@ -104,7 +108,11 @@ impl Node {
             // This prevents both sides from simultaneously creating outbound connections,
             // which would leave each side with 0 inbound entries.
             if local_addr >= endpoint {
-                tracing::info!("⏭️ Tiebreaker: {} >= {}, letting peer initiate", local_addr, endpoint);
+                tracing::info!(
+                    "⏭️ Tiebreaker: {} >= {}, letting peer initiate",
+                    local_addr,
+                    endpoint
+                );
                 continue;
             }
 
@@ -146,15 +154,22 @@ impl Node {
 
                             // Generate seeds from NodeRegistry
                             let seeds_to_send = {
-                                let all_seeds: Vec<crate::protocols::commands::ack::SeedRecord> = self_registry
-                                    .get_all_seeds()
-                                    .into_iter()
-                                    .map(|(s, na)| crate::protocols::commands::ack::SeedRecord::new(s.to_string(), na))
-                                    .collect();
+                                let all_seeds: Vec<crate::protocols::commands::ack::SeedRecord> =
+                                    self_registry
+                                        .get_all_seeds()
+                                        .into_iter()
+                                        .map(|(s, na)| {
+                                            crate::protocols::commands::ack::SeedRecord::new(
+                                                s.to_string(),
+                                                na,
+                                            )
+                                        })
+                                        .collect();
                                 crate::protocols::commands::ack::SeedsCommand::new(all_seeds)
                             };
 
-                            let (intranet_ips, wan_ips) = crate::protocols::commands::online::get_all_ips();
+                            let (intranet_ips, wan_ips) =
+                                crate::protocols::commands::online::get_all_ips();
                             let cmd = crate::protocols::commands::online::OnlineCommand {
                                 session_id: id,
                                 node: aex_node,
@@ -163,13 +178,16 @@ impl Node {
                                 wan_ips,
                                 seeds: Some(seeds_to_send),
                             };
-                            if let Err(e) = P2PFrame::send::<crate::protocols::commands::online::OnlineCommand>(
-                                ctx.clone(),
-                                &Some(cmd),
-                                Entity::Node,
-                                Action::OnLine,
-                                false,
-                            ).await {
+                            if let Err(e) =
+                                P2PFrame::send::<crate::protocols::commands::online::OnlineCommand>(
+                                    ctx.clone(),
+                                    &Some(cmd),
+                                    Entity::Node,
+                                    Action::OnLine,
+                                    false,
+                                )
+                                .await
+                            {
                                 tracing::error!("Failed to send OnlineCommand: {:?}", e);
                             }
 
@@ -178,7 +196,11 @@ impl Node {
                                 let guard = ctx.lock().await;
                                 guard.global.clone()
                             };
-                            if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&g.routers) {
+                            if let Some(router) = aex::connection::context::get_tcp_router::<
+                                P2PFrame,
+                                P2PCommand,
+                            >(&g.routers)
+                            {
                                 let _ = router.handle(ctx).await;
                             }
                         })
@@ -222,6 +244,12 @@ impl Node {
 
         let global = Arc::new(global);
 
+        // Spawn a background observer that checks heartbeat timeouts via on_timeout
+        // and publishes PeerOfflineEvent when a connection times out.
+        // The on_timeout closure is synchronous, so we use a broadcast channel pattern:
+        // a separate watcher monitors the node registry and publishes offline events
+        // for peers that disappear from the active connection list.
+
         let address: FreeWebMovementAddress = io_storage
             .read::<FreeWebMovementAddress>(&STORAGE_ADDRESS)
             .await
@@ -244,7 +272,9 @@ impl Node {
             Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
         global.set(seen).await;
         // 初始化待确认回执表
-        global.set(crate::protocols::commands::message::PendingAcks::default()).await;
+        global
+            .set(crate::protocols::commands::message::PendingAcks::default())
+            .await;
         let cli = Cli::new();
 
         let server = HTTPServer::new(addr, Some(global.clone()));
@@ -276,7 +306,11 @@ impl Node {
             let seed_addr = SocketAddr::new(*ip, addr.port());
             let scope = NetworkScope::from_ip(ip);
             node_registry.register(self_address.clone(), seed_addr, scope);
-            tracing::info!("🌱 Registered self seed: {} (node: {})", seed_addr, self_address);
+            tracing::info!(
+                "🌱 Registered self seed: {} (node: {})",
+                seed_addr,
+                self_address
+            );
         }
 
         // Create peer_addrs from CLI seeds
@@ -360,8 +394,9 @@ impl Node {
 
         let unified = UnifiedServer::new(addr, globals)
             .http_router({
-                let mut router =
-                    aex::http::router::Router::new(aex::http::router::NodeType::Static("root".into()));
+                let mut router = aex::http::router::Router::new(
+                    aex::http::router::NodeType::Static("root".into()),
+                );
                 let h = handler.clone();
                 let executor: std::sync::Arc<
                     dyn for<'a> std::ops::Fn(
@@ -407,7 +442,7 @@ impl Node {
 
                 // WebSocket route for real-time push notifications
                 let ws_middleware = aex::http::middlewares::websocket::WebSocket::to_middleware(
-                    aex::http::middlewares::websocket::WebSocket::new()
+                    aex::http::middlewares::websocket::WebSocket::new(),
                 );
                 let ws_executor: std::sync::Arc<
                     dyn for<'a> std::ops::Fn(
@@ -419,7 +454,10 @@ impl Node {
                 > = std::sync::Arc::new(move |_ctx: &mut aex::connection::context::Context| {
                     async move { true }.boxed()
                 });
-                router.get("/ws", ws_executor).middleware(Arc::from(ws_middleware)).register();
+                router
+                    .get("/ws", ws_executor)
+                    .middleware(Arc::from(ws_middleware))
+                    .register();
                 router
             })
             .tcp_handler(Arc::new(move |ctx| {
@@ -447,7 +485,13 @@ impl Node {
                 });
 
                 let abort_handle = handle.abort_handle();
-                manager.add(peer_addr, abort_handle, child_token, true, Some(ctx_for_add));
+                manager.add(
+                    peer_addr,
+                    abort_handle,
+                    child_token,
+                    true,
+                    Some(ctx_for_add),
+                );
                 // Signal that the entry is now visible in the manager
                 let _ = entry_added_tx.send(());
 
@@ -531,11 +575,11 @@ impl Node {
     }
     pub async fn connect_to(&mut self, peer_addr: &str) -> Result<(), String> {
         let endpoint = peer_addr.parse::<SocketAddr>().map_err(|e| e.to_string())?;
-        
+
         // Add to both inner and external seeds
         self.inner.upsert(endpoint, true);
         self.external.upsert(endpoint, true);
-        
+
         let manager = self.context.manager.clone();
         let global = self.context.clone();
 
@@ -550,10 +594,10 @@ impl Node {
             .map_err(|e| e.to_string())?;
 
         tracing::info!("Connecting to peer: {}", peer_addr);
-        
+
         // Save to storage
         let _ = self.save_registries().await;
-        
+
         Ok(())
     }
 }

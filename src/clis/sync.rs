@@ -1,14 +1,14 @@
 use aex::connection::{global::GlobalContext, scope::NetworkScope};
-use std::{net::SocketAddr, sync::Arc};
 use sha2::{Digest, Sha256};
+use std::{net::SocketAddr, sync::Arc};
 
 use crate::node::{self, Node as P2pNode};
+use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::online::{get_all_ips, OnlineCommand},
+    commands::online::{OnlineCommand, get_all_ips},
     frame::P2PFrame,
 };
-use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 
 pub const SYNC_ROUNDS_PER_TICK: u32 = 3;
 pub const SYNC_INTERVAL_MS: u64 = 200;
@@ -17,7 +17,9 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
     let target_addrs: Vec<SocketAddr> = if args.is_empty() {
         node::filter_entries(context.manager.get_all_entries())
     } else {
-        args.iter().filter_map(|a| a.parse::<SocketAddr>().ok()).collect()
+        args.iter()
+            .filter_map(|a| a.parse::<SocketAddr>().ok())
+            .collect()
     };
 
     if target_addrs.is_empty() {
@@ -54,7 +56,12 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
         let current_seeds: Vec<String> = get_connected_seeds(&context);
         let new_hash = compute_witness_hash(&current_seeds);
 
-        println!("  📊 Round {}: {} connected, hash={:?}", round + 1, current_seeds.len(), &new_hash[..8]);
+        println!(
+            "  📊 Round {}: {} connected, hash={:?}",
+            round + 1,
+            current_seeds.len(),
+            &new_hash[..8]
+        );
 
         if new_hash == prev_hash && !current_seeds.is_empty() {
             stable_count += 1;
@@ -109,71 +116,81 @@ async fn connect_to_peer_sync(
     }
 
     let gctx_for_reader = context.clone();
-    let _ = gctx_for_reader.manager.clone().connect::<P2PFrame, P2PCommand, _, _>(
-        addr,
-        context.clone(),
-        move |ctx| {
-            let tx = tx;
-            let ctx_for_seeds = ctx.clone();
-            let reader_gctx = gctx_for_reader.clone();
-            Box::pin(async move {
-                let psk = {
-                    let guard = ctx.lock().await;
-                    guard.global.paired_session_keys.clone().unwrap()
-                };
-                let (id, key) = {
-                    let guard = psk.lock().await;
-                    guard.create(false).await
-                };
-
-                let aex_node = {
-                    let guard = ctx.lock().await;
-                    guard.global.local_node.read().await.clone()
-                };
-
-                // Build seeds from NodeRegistry
-                let seeds_to_send = {
-                    let guard = ctx_for_seeds.lock().await;
-                let seeds = if let Some(node) = guard.global.get::<Arc<P2pNode>>().await {
-                        let all_seeds: Vec<SeedRecord> = node.registry
-                            .get_all_seeds()
-                            .into_iter()
-                            .map(|(s, na)| SeedRecord::new(s.to_string(), na))
-                            .collect();
-                        SeedsCommand::new(all_seeds)
-                    } else {
-                        SeedsCommand::new(vec![])
+    let _ = gctx_for_reader
+        .manager
+        .clone()
+        .connect::<P2PFrame, P2PCommand, _, _>(
+            addr,
+            context.clone(),
+            move |ctx| {
+                let tx = tx;
+                let ctx_for_seeds = ctx.clone();
+                let reader_gctx = gctx_for_reader.clone();
+                Box::pin(async move {
+                    let psk = {
+                        let guard = ctx.lock().await;
+                        guard.global.paired_session_keys.clone().unwrap()
                     };
-                    drop(guard);
-                    seeds
-                };
+                    let (id, key) = {
+                        let guard = psk.lock().await;
+                        guard.create(false).await
+                    };
 
-                let (intranet_ips, wan_ips) = get_all_ips();
-                let cmd = OnlineCommand {
-                    session_id: id,
-                    node: aex_node,
-                    ephemeral_public_key: key.to_bytes(),
-                    intranet_ips,
-                    wan_ips,
-                    seeds: Some(seeds_to_send),
-                };
-                let _ = P2PFrame::send::<OnlineCommand>(
-                    ctx.clone(),
-                    &Some(cmd),
-                    Entity::Node,
-                    Action::OnLine,
-                    false,
-                ).await;
-                let _ = tx.send(());
+                    let aex_node = {
+                        let guard = ctx.lock().await;
+                        guard.global.local_node.read().await.clone()
+                    };
 
-                // Start reader loop
-                if let Some(router) = aex::connection::context::get_tcp_router::<P2PFrame, P2PCommand>(&reader_gctx.routers) {
-                    let _ = router.handle(ctx).await;
-                }
-            })
-        },
-        Some(5),
-    ).await;
+                    // Build seeds from NodeRegistry
+                    let seeds_to_send = {
+                        let guard = ctx_for_seeds.lock().await;
+                        let seeds = if let Some(node) = guard.global.get::<Arc<P2pNode>>().await {
+                            let all_seeds: Vec<SeedRecord> = node
+                                .registry
+                                .get_all_seeds()
+                                .into_iter()
+                                .map(|(s, na)| SeedRecord::new(s.to_string(), na))
+                                .collect();
+                            SeedsCommand::new(all_seeds)
+                        } else {
+                            SeedsCommand::new(vec![])
+                        };
+                        drop(guard);
+                        seeds
+                    };
+
+                    let (intranet_ips, wan_ips) = get_all_ips();
+                    let cmd = OnlineCommand {
+                        session_id: id,
+                        node: aex_node,
+                        ephemeral_public_key: key.to_bytes(),
+                        intranet_ips,
+                        wan_ips,
+                        seeds: Some(seeds_to_send),
+                    };
+                    let _ = P2PFrame::send::<OnlineCommand>(
+                        ctx.clone(),
+                        &Some(cmd),
+                        Entity::Node,
+                        Action::OnLine,
+                        false,
+                    )
+                    .await;
+                    let _ = tx.send(());
+
+                    // Start reader loop
+                    if let Some(router) = aex::connection::context::get_tcp_router::<
+                        P2PFrame,
+                        P2PCommand,
+                    >(&reader_gctx.routers)
+                    {
+                        let _ = router.handle(ctx).await;
+                    }
+                })
+            },
+            Some(5),
+        )
+        .await;
 
     rx.await.map_err(|e| e.into())
 }

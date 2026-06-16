@@ -195,11 +195,15 @@ impl P2PFrame {
                     // This ensures per-recipient session keys work correctly across multiple peers.
                     let key = if action == Action::SendText {
                         // Decode receiver from the serialized MessageCommand.
-                        let decoded: anyhow::Result<crate::protocols::commands::message::MessageCommand> = Codec::decode(&data);
+                        let decoded: anyhow::Result<
+                            crate::protocols::commands::message::MessageCommand,
+                        > = Codec::decode(&data);
                         match decoded {
                             Ok(msg) => msg.receiver.as_bytes().to_vec(),
                             _ => {
-                                tracing::warn!("⚠️ Failed to decode MessageCommand for key lookup, falling back to self address");
+                                tracing::warn!(
+                                    "⚠️ Failed to decode MessageCommand for key lookup, falling back to self address"
+                                );
                                 addr_str.as_bytes().to_vec()
                             }
                         }
@@ -213,22 +217,40 @@ impl P2PFrame {
                         let peer_addr_from_ctx: Option<String> = {
                             let guard = ctx.lock().await;
                             let addr: Option<String> = guard.get();
-                            tracing::info!("🔑 MessageAck key: ctx.addr={:?}, ctx.get::<String>()={:?}", guard.addr, addr);
+                            tracing::info!(
+                                "🔑 MessageAck key: ctx.addr={:?}, ctx.get::<String>()={:?}",
+                                guard.addr,
+                                addr
+                            );
                             addr
                         };
                         if let Some(ref peer_addr) = peer_addr_from_ctx {
                             tracing::info!("🔑 MessageAck using ctx peer_addr='{}'", peer_addr);
                             peer_addr.as_bytes().to_vec()
-                        } else if let Some(node) = gctx.get::<std::sync::Arc<crate::node::Node>>().await {
-                            if let Some(ref peer_addr) = node.registry.find_node_for_seed(&peer_sock) {
-                                tracing::info!("🔑 MessageAck using registry peer_addr='{}'", peer_addr);
+                        } else if let Some(node) =
+                            gctx.get::<std::sync::Arc<crate::node::Node>>().await
+                        {
+                            if let Some(ref peer_addr) =
+                                node.registry.find_node_for_seed(&peer_sock)
+                            {
+                                tracing::info!(
+                                    "🔑 MessageAck using registry peer_addr='{}'",
+                                    peer_addr
+                                );
                                 peer_addr.as_bytes().to_vec()
                             } else {
-                                tracing::warn!("⚠️ MessageAck: peer {} not found in registry, falling back to self address '{}'", peer_sock, addr_str);
+                                tracing::warn!(
+                                    "⚠️ MessageAck: peer {} not found in registry, falling back to self address '{}'",
+                                    peer_sock,
+                                    addr_str
+                                );
                                 addr_str.as_bytes().to_vec()
                             }
                         } else {
-                            tracing::warn!("⚠️ MessageAck: Node not available in context, falling back to self address '{}'", addr_str);
+                            tracing::warn!(
+                                "⚠️ MessageAck: Node not available in context, falling back to self address '{}'",
+                                addr_str
+                            );
                             addr_str.as_bytes().to_vec()
                         }
                     } else {
@@ -237,7 +259,12 @@ impl P2PFrame {
                     match encode.encrypt(&key, &data).await {
                         Ok(ct) => ct,
                         Err(e) => {
-                            tracing::error!("❌ ENCRYPT FAILED for address='{}' (action={:?}): {:?}", addr_str, action, e);
+                            tracing::error!(
+                                "❌ ENCRYPT FAILED for address='{}' (action={:?}): {:?}",
+                                addr_str,
+                                action,
+                                e
+                            );
                             return Err(e);
                         }
                     }
@@ -248,7 +275,13 @@ impl P2PFrame {
             data
         };
 
-        tracing::info!("📤 P2PFrame::send: {} {:?} encrypt={} data_len={}", addr_str, action, is_encrypt, bytes.len());
+        tracing::info!(
+            "📤 P2PFrame::send: {} {:?} encrypt={} data_len={}",
+            addr_str,
+            action,
+            is_encrypt,
+            bytes.len()
+        );
 
         let command = P2PCommand::new(entity, action, bytes);
 
