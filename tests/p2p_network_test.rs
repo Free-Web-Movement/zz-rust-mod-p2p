@@ -61,10 +61,10 @@ async fn send_online_command(
         seeds: None,
     };
 
-    let cmd = P2PCommand::new(Entity::Node, Action::OnLine, Codec::encode(&online_cmd));
+    let cmd = P2PCommand::new(Entity::Node, Action::OnLine, Codec::encode(&online_cmd).unwrap());
     let frame = P2PFrame::build(address, cmd, 1).await?;
 
-    let frame_bytes = Codec::encode(&frame);
+    let frame_bytes = Codec::encode(&frame).unwrap();
     let len_bytes = (frame_bytes.len() as u32).to_le_bytes();
 
     socket.write_all(&len_bytes).await?;
@@ -86,7 +86,7 @@ async fn send_message(
     );
     let frame = P2PFrame::build(sender_address, cmd, 1).await?;
 
-    let frame_bytes = Codec::encode(&frame);
+    let frame_bytes = Codec::encode(&frame).unwrap();
     let len_bytes = (frame_bytes.len() as u32).to_le_bytes();
 
     socket.write_all(&len_bytes).await?;
@@ -326,7 +326,7 @@ async fn test_p2p_offline_command() {
 
     let offline_cmd = P2PCommand::new(Entity::Node, Action::OffLine, vec![]);
     let frame = P2PFrame::build(&address, offline_cmd, 1).await.unwrap();
-    let frame_bytes = Codec::encode(&frame);
+    let frame_bytes = Codec::encode(&frame).unwrap();
     let len = (frame_bytes.len() as u32).to_le_bytes();
 
     socket.write_all(&len).await.unwrap();

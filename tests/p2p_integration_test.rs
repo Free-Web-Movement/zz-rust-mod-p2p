@@ -40,7 +40,7 @@ async fn test_online_command_encoding() {
         seeds: None,
     };
 
-    let encoded = Codec::encode(&online_cmd);
+    let encoded = Codec::encode(&online_cmd).unwrap();
     assert!(!encoded.is_empty());
 
     let decoded: OnlineCommand = Codec::decode(&encoded).unwrap();
@@ -54,7 +54,7 @@ async fn test_message_command_flow() {
     let id = cmd.id();
     assert_eq!(id, P2PCommand::to_u32(Entity::Message, Action::SendText));
 
-    let encoded = Codec::encode(&cmd);
+    let encoded = Codec::encode(&cmd).unwrap();
     let decoded: P2PCommand = Codec::decode(&encoded).unwrap();
 
     assert_eq!(decoded.entity, Entity::Message);
@@ -68,7 +68,7 @@ async fn test_offline_command_flow() {
     let id = cmd.id();
     assert_eq!(id, P2PCommand::to_u32(Entity::Node, Action::OffLine));
 
-    let encoded = Codec::encode(&cmd);
+    let encoded = Codec::encode(&cmd).unwrap();
     let decoded: P2PCommand = Codec::decode(&encoded).unwrap();
 
     assert_eq!(decoded.entity, Entity::Node);
@@ -82,7 +82,7 @@ async fn test_ack_command_flow() {
     let id = cmd.id();
     assert_eq!(id, P2PCommand::to_u32(Entity::Node, Action::OnLineAck));
 
-    let encoded = Codec::encode(&cmd);
+    let encoded = Codec::encode(&cmd).unwrap();
     let decoded: P2PCommand = Codec::decode(&encoded).unwrap();
 
     assert_eq!(decoded.entity, Entity::Node);
@@ -211,7 +211,7 @@ async fn test_online_command_all_fields() {
         seeds: None,
     };
 
-    let encoded = Codec::encode(&online_cmd);
+    let encoded = Codec::encode(&online_cmd).unwrap();
     let decoded: OnlineCommand = Codec::decode(&encoded).unwrap();
 
     assert_eq!(decoded.session_id, vec![1, 2, 3, 4, 5]);

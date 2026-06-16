@@ -112,17 +112,17 @@ static RESPONSE_SENDER: StdMutex<Option<ResponseSender>> = StdMutex::new(None);
 
 /// 处理节点同步请求（老节点/已同步节点）
 pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: P2PCommand) {
-    println!("🔄 Received node sync request");
+    tracing::info!("🔄 Received node sync request");
 
     let request: NodeSyncRequest = match Codec::decode(&cmd.data) {
         Ok(req) => req,
         Err(e) => {
-            eprintln!("❌ Failed to decode NodeSyncRequest: {}", e);
+            tracing::error!("❌ Failed to decode NodeSyncRequest: {}", e);
             return;
         }
     };
 
-    println!(
+    tracing::info!(
         "  Request ID: {}, Node: {}, Type: {}",
         request.request_id, request.node_id, request.sync_type
     );
@@ -142,7 +142,7 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
                     response_tx: resp_tx,
                 };
                 if let Err(e) = tx.send(sync_req).await {
-                    eprintln!("❌ Failed to send request to main: {}", e);
+                    tracing::error!("❌ Failed to send request to main: {}", e);
                     NodeSyncResponse {
                         request_id: request.request_id,
                         success: false,
@@ -156,7 +156,7 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
                     match resp_rx.await {
                         Ok(resp) => resp,
                         Err(e) => {
-                            eprintln!("❌ Failed to receive response from main: {}", e);
+                            tracing::error!("❌ Failed to receive response from main: {}", e);
                             NodeSyncResponse {
                                 request_id: request.request_id,
                                 success: false,
@@ -171,7 +171,7 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
                 }
             }
             None => {
-                eprintln!("⚠️  No request sender registered");
+                tracing::warn!("⚠️  No request sender registered");
                 NodeSyncResponse {
                     request_id: request.request_id,
                     success: false,
@@ -195,9 +195,9 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
     )
     .await
     {
-        eprintln!("❌ Failed to send NodeSyncResponse: {}", e);
+        tracing::error!("❌ Failed to send NodeSyncResponse: {}", e);
     } else {
-        println!("✅ Sent node sync response");
+        tracing::info!("✅ Sent node sync response");
     }
 }
 
@@ -207,17 +207,17 @@ pub async fn node_sync_response_handler(
     _frame: P2PFrame,
     cmd: P2PCommand,
 ) {
-    println!("✅ Received node sync response");
+    tracing::info!("✅ Received node sync response");
 
     let response: NodeSyncResponse = match Codec::decode(&cmd.data) {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("❌ Failed to decode NodeSyncResponse: {}", e);
+            tracing::error!("❌ Failed to decode NodeSyncResponse: {}", e);
             return;
         }
     };
 
-    println!(
+    tracing::info!(
         "  Request ID: {}, Success: {}, Seeds: {}",
         response.request_id,
         response.success,
@@ -225,7 +225,7 @@ pub async fn node_sync_response_handler(
     );
 
     if !response.success {
-        eprintln!("❌ Node sync failed on remote side");
+        tracing::error!("❌ Node sync failed on remote side");
         return;
     }
 
@@ -237,12 +237,12 @@ pub async fn node_sync_response_handler(
 
     if let Some(tx) = tx_option {
         if let Err(e) = tx.send(response).await {
-            eprintln!("❌ Failed to send response to main: {}", e);
+            tracing::error!("❌ Failed to send response to main: {}", e);
         } else {
-            println!("📦 Node sync data forwarded to main project");
+            tracing::info!("📦 Node sync data forwarded to main project");
         }
     } else {
-        println!("⚠️  No response sender registered");
+        tracing::warn!("⚠️  No response sender registered");
     }
 }
 
@@ -261,7 +261,7 @@ pub async fn request_node_sync(
         sync_type,
     };
 
-    println!("🔄 Requesting node sync (ID: {})", request_id);
+    tracing::info!("🔄 Requesting node sync (ID: {})", request_id);
 
     P2PFrame::send::<NodeSyncRequest>(
         ctx.clone(),
@@ -272,7 +272,7 @@ pub async fn request_node_sync(
     )
     .await?;
 
-    println!("✅ Node sync request sent");
+    tracing::info!("✅ Node sync request sent");
     Ok(())
 }
 

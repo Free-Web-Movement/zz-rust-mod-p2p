@@ -64,18 +64,30 @@ impl Node {
         registry: NodeRegistry,
         peer_addrs: Arc<RwLock<Vec<SocketAddr>>>,
     ) -> Self {
-        let id = io_storage
+        let id = match io_storage
             .read::<FreeWebMovementAddress>(STORAGE_ADDRESS)
             .await
-            .unwrap();
-        let inner_nodes = io_storage
+        {
+            Some(v) => v,
+            None => {
+                tracing::error!("Failed to read address from storage, generating random");
+                FreeWebMovementAddress::random()
+            }
+        };
+        let inner_nodes = match io_storage
             .read::<HashSet<NodeRecord>>(STORAGE_INNER_SERVER)
             .await
-            .unwrap();
-        let external_nodes = io_storage
+        {
+            Some(v) => v,
+            None => HashSet::new(),
+        };
+        let external_nodes = match io_storage
             .read::<HashSet<NodeRecord>>(STORAGE_EXTERNAL_SERVER)
             .await
-            .unwrap();
+        {
+            Some(v) => v,
+            None => HashSet::new(),
+        };
         let inner = record::NodeRegistry::new(inner_nodes);
         let external = record::NodeRegistry::new(external_nodes);
         Self {
@@ -129,10 +141,12 @@ impl Node {
                         Box::pin(async move {
                             tracing::info!("✅ Connected to peer: {}", peer);
 
-                            let psk = {
-                                let guard = ctx.lock().await;
-                                let g = guard.global.clone();
-                                g.paired_session_keys.clone().unwrap()
+                            let psk = match ctx.lock().await.global.clone().paired_session_keys.clone() {
+                                Some(psk) => psk,
+                                None => {
+                                    tracing::error!("PairedSessionKeys not set in GlobalContext");
+                                    return;
+                                }
                             };
 
                             let (id, key) = {
@@ -224,9 +238,13 @@ impl Node {
         let storage = Arc::new(Storage::new(opt.data_dir.as_deref()));
         let io_storage = io_storage_init(&opt, storage.clone());
 
-        let addr = format!("{}:{}", opt.ip.clone(), opt.port)
-            .parse::<SocketAddr>()
-            .unwrap();
+        let addr = match format!("{}:{}", opt.ip.clone(), opt.port).parse::<SocketAddr>() {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::error!("Failed to parse address {}:{}: {}", opt.ip, opt.port, e);
+                std::process::exit(1);
+            }
+        };
         let psk = Arc::new(Mutex::new(PairedSessionKey::new(16)));
 
         let heartbeat_config = HeartbeatConfig::new()
@@ -250,10 +268,16 @@ impl Node {
         // a separate watcher monitors the node registry and publishes offline events
         // for peers that disappear from the active connection list.
 
-        let address: FreeWebMovementAddress = io_storage
+        let address: FreeWebMovementAddress = match io_storage
             .read::<FreeWebMovementAddress>(&STORAGE_ADDRESS)
             .await
-            .unwrap();
+        {
+            Some(v) => v,
+            None => {
+                tracing::error!("Failed to read address from storage in init, generating random");
+                FreeWebMovementAddress::random()
+            }
+        };
 
         // Set local_node.id = FreeWebMovementAddress bytes
         {
@@ -263,7 +287,13 @@ impl Node {
 
         global.set(address.clone()).await;
 
-        let address_1 = global.get::<FreeWebMovementAddress>().await.unwrap();
+        let address_1 = match global.get::<FreeWebMovementAddress>().await {
+            Some(v) => v,
+            None => {
+                tracing::error!("Address not found in GlobalContext after set, using original");
+                address.clone()
+            }
+        };
         assert_eq!(address.to_string(), address_1.to_string());
         global.set(storage.clone()).await;
         global.set(io_storage.clone()).await;
@@ -369,7 +399,7 @@ impl Node {
         // 使用 tokio::spawn 确保 server 不会阻塞主线程对 CLI 的处理
         let server_handle = tokio::spawn(async move {
             if let Err(e) = server.start_with_protocols::<P2PFrame, P2PCommand>().await {
-                eprintln!("Server error: {:?}", e);
+                tracing::error!("Server error: {:?}", e);
             }
         });
 

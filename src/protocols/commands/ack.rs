@@ -102,49 +102,50 @@ pub struct OnlineAckCommand {
 impl Codec for OnlineAckCommand {}
 
 pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
-    println!(
+    tracing::info!(
         "✅ Node OnlineAck received from {} nonce={}",
         frame.body.address, frame.body.nonce
     );
 
-    println!("received ack: {:?}", cmd.data);
+    tracing::info!("received ack: {:?}", cmd.data);
     let ack: OnlineAckCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
         Err(e) => {
-            eprintln!("❌ decode OnlineAckCommand failed: {e}");
+            tracing::error!("❌ decode OnlineAckCommand failed: {e}");
             return;
         }
     };
 
-    println!("session:id: {:?}", ack.session_id);
-    println!("Received intranet IPs: {:?}", ack.intranet_ips);
-    println!("Received wan IPs: {:?}", ack.wan_ips);
-    println!(
+    tracing::info!("session:id: {:?}", ack.session_id);
+    tracing::info!("Received intranet IPs: {:?}", ack.intranet_ips);
+    tracing::info!("Received wan IPs: {:?}", ack.wan_ips);
+    tracing::info!(
         "Received seeds: {:?}",
         ack.seeds.as_ref().map(|s| s.seeds.len())
     );
 
-    let psk = {
-        let guard = ctx.lock().await;
-        guard.global.paired_session_keys.clone().unwrap()
+    let psk = match ctx.lock().await.global.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set in GlobalContext");
+            return;
+        }
     };
 
     // 获取本地地址用于 main 表索引
-    let local_address = {
-        let guard = ctx.lock().await;
-        guard
-            .global
-            .get::<FreeWebMovementAddress>()
-            .await
-            .unwrap()
-            .to_string()
+    let local_address = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+        Some(addr) => addr.to_string(),
+        None => {
+            tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+            return;
+        }
     };
     // 对端地址（responder）
     let peer_address = frame.body.address.clone();
 
     // Skip establish_ends for return connection acks (zero key sentinel)
     let is_zero_key = ack.ephemeral_public_key.iter().all(|&b| b == 0);
-    println!(
+    tracing::info!(
         "***** ACK is_zero_key={}, responder='{}', initiator='{}', ephemeral_public_key={:?}",
         is_zero_key,
         frame.body.address,
@@ -179,7 +180,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
             local_address
         );
     }
-    println!(
+    tracing::info!(
         "🔐 Session established with {} (session_id={:?})",
         ack.address, ack.session_id
     );
@@ -203,7 +204,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                 scope,
                 crate::protocols::commands::node_registry::ConnectionDirection::Outbound,
             );
-            println!(
+            tracing::info!(
                 "📝 Registered peer node: {} at {} (Outbound)",
                 peer_address, peer_addr
             );
@@ -242,7 +243,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
         let guard = ctx.lock().await;
         guard.global.manager.mark_active(peer_addr, false);
     }
-    println!("Updated peer {} as inbound in manager", peer_addr);
+    tracing::info!("Updated peer {} as inbound in manager", peer_addr);
 
     // Store the announced IPs from peer as external seeds
     for ip in ack.intranet_ips.iter().chain(ack.wan_ips.iter()) {
@@ -261,7 +262,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
             if let Some(n) = node {
                 n.registry.add_seed(&peer_address, seed_addr);
             }
-            println!("Storing external IP from peer: {} -> {}", ip, seed_addr);
+            tracing::info!("Storing external IP from peer: {} -> {}", ip, seed_addr);
         }
     }
 
@@ -272,7 +273,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
             let gctx = guard.global.clone();
             drop(guard);
 
-            println!("🔄 Merging seeds from ack, hash={:?}", seeds_cmd.hash);
+            tracing::info!("🔄 Merging seeds from ack, hash={:?}", seeds_cmd.hash);
 
             // Register received seeds in NodeRegistry
             let node = gctx.get::<Arc<Node>>().await;
@@ -284,7 +285,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                         let scope = NetworkScope::from_ip(&seed_addr.ip());
                         node.registry
                             .register(seed.node_address.clone(), seed_addr, scope);
-                        println!(
+                        tracing::info!(
                             "  + Registered seed from ack: {} (node: {})",
                             seed.address, seed.node_address
                         );
@@ -314,7 +315,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                 for seed in &seeds_cmd.seeds {
                     // Skip if this node is already connected
                     if node.registry.is_connected(&seed.node_address) {
-                        println!(
+                        tracing::info!(
                             "⏭️ Skipping seed {} - node {} already connected",
                             seed.address, seed.node_address
                         );
@@ -347,15 +348,15 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                         let reg_clone = node.registry.clone();
                         let node_addr = seed.node_address.clone();
                         tokio::spawn(async move {
-                            println!(
+                            tracing::info!(
                                 "🔗 Attempting connection to {} (node: {})",
                                 addr_str, node_addr
                             );
                             if connect_to_new_peer(ctx_owned, seed_addr).await.is_ok() {
                                 reg_clone.mark_connected(&node_addr, true);
-                                println!("✅ Connected to node {} via {}", node_addr, addr_str);
+                                tracing::info!("✅ Connected to node {} via {}", node_addr, addr_str);
                             } else {
-                                eprintln!(
+                                tracing::error!(
                                     "  ❌ Failed to connect to {}: seed of node {}",
                                     addr_str, node_addr
                                 );
@@ -365,7 +366,7 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                 }
             }
         } else {
-            eprintln!("❌ Invalid seeds hash in ack!");
+            tracing::error!("❌ Invalid seeds hash in ack!");
         }
     }
 }
@@ -377,7 +378,13 @@ pub async fn broadcast_seeds_to_peers(ctx: Arc<Mutex<Context>>, seeds: &SeedsCom
     };
 
     let self_node_id = gctx.local_node.read().await.id.clone();
-    let address = gctx.get::<FreeWebMovementAddress>().await.unwrap();
+    let address = match gctx.get::<FreeWebMovementAddress>().await {
+        Some(a) => a,
+        None => {
+            tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+            return;
+        }
+    };
 
     let cmd = OnlineCommand {
         session_id: vec![],
@@ -388,13 +395,31 @@ pub async fn broadcast_seeds_to_peers(ctx: Arc<Mutex<Context>>, seeds: &SeedsCom
         seeds: Some(seeds.clone()),
     };
 
-    let cmd_bytes = Codec::encode(&cmd);
+    let cmd_bytes = match Codec::encode(&cmd) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!("Failed to encode seed broadcast command: {:?}", e);
+            return;
+        }
+    };
     let p2p_cmd = P2PCommand::new(Entity::Node, Action::OnLine, cmd_bytes);
-    let frame = P2PFrame::build(&address, p2p_cmd, 1).await.unwrap();
+    let frame = match P2PFrame::build(&address, p2p_cmd, 1).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to build seed broadcast frame: {:?}", e);
+            return;
+        }
+    };
     let seed_count = seeds.seeds.len();
 
     let manager = gctx.manager.clone();
-    let frame_bytes = Codec::encode(&frame);
+    let frame_bytes = match Codec::encode(&frame) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!("Failed to encode seed broadcast frame: {:?}", e);
+            return;
+        }
+    };
 
     manager
         .forward(|entries| async move {
@@ -403,7 +428,7 @@ pub async fn broadcast_seeds_to_peers(ctx: Arc<Mutex<Context>>, seeds: &SeedsCom
                     let mut guard = peer_ctx.lock().await;
                     if let Some(writer) = &mut guard.writer {
                         if let Err(e) = writer.write_all(&frame_bytes).await {
-                            eprintln!("  ❌ Failed to broadcast seeds: {:?}", e);
+                            tracing::error!("  ❌ Failed to broadcast seeds: {:?}", e);
                         } else {
                             let _ = writer.flush().await;
                         }
@@ -413,7 +438,7 @@ pub async fn broadcast_seeds_to_peers(ctx: Arc<Mutex<Context>>, seeds: &SeedsCom
         })
         .await;
 
-    println!("  📢 Broadcast seeds ({} seeds) to all peers", seed_count);
+    tracing::info!("  📢 Broadcast seeds ({} seeds) to all peers", seed_count);
 }
 
 pub async fn connect_to_new_peer(
@@ -425,7 +450,13 @@ pub async fn connect_to_new_peer(
         guard.global.clone()
     };
 
-    let psk = gctx.paired_session_keys.clone().unwrap();
+    let psk = match gctx.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set, cannot connect to new peer");
+            return Err("PairedSessionKeys not set".into());
+        }
+    };
     let (id, key) = {
         let guard = psk.lock().await;
         guard.create(false).await

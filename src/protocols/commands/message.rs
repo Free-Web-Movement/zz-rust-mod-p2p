@@ -100,23 +100,32 @@ pub async fn send_message_ack(
 /// 消息送达确认处理
 pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     let from = &frame.body.address;
-    let psk = {
-        let guard = ctx.lock().await;
-        guard.global.paired_session_keys.clone().unwrap()
+    let psk = match ctx.lock().await.global.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set in GlobalContext");
+            return;
+        }
     };
 
     let plaintext: Vec<u8> = {
         let guard = psk.lock().await;
-        guard
+        match guard
             .decrypt(&from.as_bytes().to_vec(), &cmd.data)
             .await
-            .expect("Wrong encrypted data!")
+        {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to decrypt message ack data: {:?}", e);
+                return;
+            }
+        }
     };
 
     let ack: MessageAckCommand = match Codec::decode(&plaintext) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("❌ Invalid MessageAckCommand from {}: {:?}", from, e);
+            tracing::error!("❌ Invalid MessageAckCommand from {}: {:?}", from, e);
             return;
         }
     };
@@ -136,7 +145,13 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
     {
         let key = format!("ack:{}", ack.request_id);
         if let Some(seen) = gctx.get::<SeenMessages>().await {
-            let mut guard = seen.lock().unwrap();
+            let mut guard = match seen.lock() {
+                Ok(g) => g,
+                Err(poisoned) => {
+                    tracing::warn!("SeenMessages mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             if !guard.insert(key) {
                 tracing::info!(
                     "  ⏭️  Duplicate ACK request_id={}, skipping",
@@ -195,23 +210,32 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
 
 pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     let from = &frame.body.address;
-    let psk = {
-        let guard = ctx.lock().await;
-        guard.global.paired_session_keys.clone().unwrap()
+    let psk = match ctx.lock().await.global.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set in GlobalContext");
+            return;
+        }
     };
 
     let plaintext: Vec<u8> = {
         let guard = psk.lock().await;
-        guard
+        match guard
             .decrypt(&from.as_bytes().to_vec(), &cmd.data)
             .await
-            .expect("Wrong encrypted data!")
+        {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Failed to decrypt message data: {:?}", e);
+                return;
+            }
+        }
     };
 
     let message: MessageCommand = match Codec::decode(&plaintext) {
         Ok(cmd) => cmd,
         Err(e) => {
-            eprintln!("❌ Invalid MessageCommand from {}: {:?}", from, e);
+            tracing::error!("❌ Invalid MessageCommand from {}: {:?}", from, e);
             return;
         }
     };
@@ -234,7 +258,13 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
             message.timestamp,
         );
         if let Some(seen) = gctx.get::<SeenMessages>().await {
-            let mut guard = seen.lock().unwrap();
+            let mut guard = match seen.lock() {
+                Ok(g) => g,
+                Err(poisoned) => {
+                    tracing::warn!("SeenMessages mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             if !guard.insert(key) {
                 tracing::info!(
                     "  ⏭️  Duplicate message (receiver={}), skipping",
@@ -251,9 +281,12 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
     let receiver = message.receiver.clone();
     let sender_addr = message.sender.clone();
     let request_id = message.request_id;
-    let address: FreeWebMovementAddress = {
-        let guard = ctx.lock().await;
-        guard.global.get::<FreeWebMovementAddress>().await.unwrap()
+    let address: FreeWebMovementAddress = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+        Some(addr) => addr,
+        None => {
+            tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+            return;
+        }
     };
 
     // 不处理自己发送的消息（避免被 peers 转发回来的回音）

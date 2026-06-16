@@ -28,23 +28,23 @@ pub struct OnlineCommand {
 impl Codec for OnlineCommand {}
 
 pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
-    println!("inside online handler!");
+    tracing::info!("inside online handler!");
     let online: OnlineCommand = match Codec::decode(&cmd.data) {
         Ok(cmd) => cmd,
         Err(e) => {
-            eprintln!("❌ decode OnlineCommand failed: {e}");
-            return ();
+            tracing::error!("❌ decode OnlineCommand failed: {e}");
+            return;
         }
     };
-    println!(
+    tracing::info!(
         "✅ Node Online: addr={}, nonce={}",
         frame.body.address, frame.body.nonce
     );
 
-    println!("received session_id: {:?}", online.session_id);
-    println!("intranet IPs: {:?}", online.intranet_ips);
-    println!("wan IPs: {:?}", online.wan_ips);
-    println!(
+    tracing::info!("received session_id: {:?}", online.session_id);
+    tracing::info!("intranet IPs: {:?}", online.intranet_ips);
+    tracing::info!("wan IPs: {:?}", online.wan_ips);
+    tracing::info!(
         "received seeds: {:?}",
         online.seeds.as_ref().map(|s| s.seeds.len())
     );
@@ -89,7 +89,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
 
         if let Some(ref peer_seeds) = online.seeds {
             if peer_seeds.verify() {
-                println!(
+                tracing::info!(
                     "📥 Received seed gossip, merging {} seeds",
                     peer_seeds.seeds.len()
                 );
@@ -148,7 +148,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
                                 {
                                     reg_clone.mark_connected(&node_addr, true);
                                 } else {
-                                    eprintln!(
+                                    tracing::error!(
                                         "  ❌ Failed to connect to gossiped seed {}",
                                         addr_str
                                     );
@@ -290,20 +290,21 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         );
     }
 
-    let psk = {
-        let ctx = ctx.lock().await;
-        ctx.global.paired_session_keys.clone().unwrap()
+    let psk = match ctx.lock().await.global.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set in GlobalContext");
+            return;
+        }
     };
 
     let addr_debug = frame.body.address.clone();
-    let local_addr_for_key = {
-        let guard = ctx.lock().await;
-        guard
-            .global
-            .get::<FreeWebMovementAddress>()
-            .await
-            .unwrap()
-            .to_string()
+    let local_addr_for_key = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+        Some(addr) => addr.to_string(),
+        None => {
+            tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+            return;
+        }
     };
     let ephemeral_public = if is_return_conn {
         // Return connection: check if a session key already exists for this peer.
@@ -375,9 +376,12 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         }
     };
 
-    let address: FreeWebMovementAddress = {
-        let ctx = ctx.lock().await;
-        ctx.global.get().await.expect("Expect Address be set!")
+    let address: FreeWebMovementAddress = match ctx.lock().await.global.get().await {
+        Some(addr) => addr,
+        None => {
+            tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+            return;
+        }
     };
 
     let local_node = {
@@ -391,8 +395,8 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
     };
 
     let (intranet_ips, wan_ips) = get_all_ips();
-    println!("Announcing intranet IPs: {:?}", intranet_ips);
-    println!("Announcing wan IPs: {:?}", wan_ips);
+    tracing::info!("Announcing intranet IPs: {:?}", intranet_ips);
+    tracing::info!("Announcing wan IPs: {:?}", wan_ips);
 
     // Build seeds from NodeRegistry
     let seeds_to_send = {
@@ -403,7 +407,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         // Merge peer's seeds into NodeRegistry
         if let Some(ref peer_seeds) = online.seeds {
             if peer_seeds.verify() {
-                println!(
+                tracing::info!(
                     "🔄 Merging peer's seeds: {} seeds, hash={:?}",
                     peer_seeds.seeds.len(),
                     peer_seeds.hash
@@ -417,7 +421,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
                                 seed_addr,
                                 NetworkScope::from_ip(&seed_addr.ip()),
                             );
-                            println!(
+                            tracing::info!(
                                 "  + Registered seed from peer: {} (node: {})",
                                 seed.address, seed.node_address
                             );
@@ -425,7 +429,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
                     }
                 }
             } else {
-                eprintln!("❌ Invalid seeds hash from peer!");
+                tracing::error!("❌ Invalid seeds hash from peer!");
             }
         }
 
@@ -443,7 +447,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
             SeedsCommand::new(vec![])
         };
 
-        println!(
+        tracing::info!(
             "📊 Consensus seeds: {} seeds, hash={:?}",
             seed_records.seeds.len(),
             seed_records.hash
@@ -461,10 +465,13 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         seeds: seeds_to_send,
     };
 
-    println!("send ack session_id : {:?}", ack.session_id);
-    println!("send ack: {:?}", Codec::encode(&ack));
+    tracing::info!("send ack session_id : {:?}", ack.session_id);
+    match Codec::encode(&ack) {
+        Ok(encoded) => tracing::info!("send ack: {:?}", encoded),
+        Err(e) => tracing::error!("Failed to encode ack for debug: {:?}", e),
+    }
 
-    P2PFrame::send::<OnlineAckCommand>(
+    if let Err(e) = P2PFrame::send::<OnlineAckCommand>(
         ctx.clone(),
         &Some(ack),
         Entity::Node,
@@ -472,13 +479,16 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         false,
     )
     .await
-    .expect("Error send online ack!");
-    println!("end of current online!");
+    {
+        tracing::error!("Failed to send online ack: {:?}", e);
+        return;
+    }
+    tracing::info!("end of current online!");
 
     // Store the announced IPs from peer as external seeds
     for ip in online.intranet_ips.iter().chain(online.wan_ips.iter()) {
         if ip != "0.0.0.0" && !ip.starts_with("127.") {
-            println!("Received external IP from peer: {}", ip);
+            tracing::info!("Received external IP from peer: {}", ip);
         }
     }
 
@@ -625,7 +635,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         });
     }
 
-    println!("end of online!");
+    tracing::info!("end of online!");
 
     // 发布 peer online 事件，触发自动连接（事件驱动）
     {
@@ -656,7 +666,7 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         )
         .await
         {
-            eprintln!("❌ Failed to trigger node sync: {}", e);
+            tracing::error!("❌ Failed to trigger node sync: {}", e);
         }
     });
 

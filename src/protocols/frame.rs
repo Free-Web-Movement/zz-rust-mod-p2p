@@ -56,8 +56,7 @@ impl FrameBody {
     }
 
     pub fn data_from_command(&mut self, cmd: &P2PCommand) -> anyhow::Result<()> {
-        let bytes = Codec::encode(cmd);
-        self.data = bytes;
+        self.data = Codec::encode(cmd)?;
         Ok(())
     }
 
@@ -84,8 +83,7 @@ impl P2PFrame {
     }
 
     pub fn sign(body: FrameBody, signer: &FreeWebMovementAddress) -> anyhow::Result<Self> {
-        // let bytes = encode_to_vec(&body, frame_config())?;
-        let bytes = Codec::encode(&body);
+        let bytes = Codec::encode(&body)?;
         let signature = FreeWebMovementAddress::sign_message(&signer.private_key, &bytes)
             .serialize_compact()
             .to_vec();
@@ -98,7 +96,7 @@ impl P2PFrame {
     }
 
     pub fn verify(frame: P2PFrame) -> anyhow::Result<P2PFrame> {
-        let bytes = Codec::encode(&frame.body);
+        let bytes = Codec::encode(&frame.body)?;
         let bytes = bytes.as_slice();
 
         let public_key = FreeWebMovementAddress::to_public_key(&frame.body.public_key);
@@ -115,7 +113,7 @@ impl P2PFrame {
         cmd: P2PCommand,
         version: u8,
     ) -> anyhow::Result<Self> {
-        let cmd_bytes = Codec::encode(&cmd);
+        let cmd_bytes = Codec::encode(&cmd)?;
         let body = FrameBody {
             address: address.to_string(),
             public_key: address.public_key.to_bytes().to_vec(),
@@ -132,7 +130,9 @@ impl Codec for P2PFrame {}
 
 impl Frame for P2PFrame {
     fn validate(&self) -> bool {
-        let bytes = Codec::encode(&self.body);
+        let Ok(bytes) = Codec::encode(&self.body) else {
+            return false;
+        };
         let bytes = bytes.as_slice();
 
         let public_key = FreeWebMovementAddress::to_public_key(&self.body.public_key);
@@ -148,12 +148,17 @@ impl Frame for P2PFrame {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
-        let raw_bytes = Codec::encode(&self.body); // 假设 Codec 提供 encode()
-        signer(&raw_bytes)
+        match Codec::encode(&self.body) {
+            Ok(raw_bytes) => signer(&raw_bytes),
+            Err(e) => {
+                tracing::error!("Failed to encode frame for signing: {:?}", e);
+                Vec::new()
+            }
+        }
     }
 
     fn payload(&self) -> Option<Vec<u8>> {
-        Some(Codec::encode(&self.body))
+        Codec::encode(&self.body).ok()
     }
 
     fn command(&self) -> Option<&Vec<u8>> {
@@ -173,7 +178,7 @@ impl P2PFrame {
         is_encrypt: bool,
     ) -> anyhow::Result<()> {
         let data = match command {
-            Some(cmd) => Codec::encode(cmd),
+            Some(cmd) => Codec::encode(cmd)?,
             None => vec![],
         };
 
@@ -184,7 +189,13 @@ impl P2PFrame {
 
         let gpsk = gctx.clone().paired_session_keys.clone();
 
-        let address = gctx.get::<FreeWebMovementAddress>().await.unwrap();
+        let address = match gctx.get::<FreeWebMovementAddress>().await {
+            Some(a) => a,
+            None => {
+                tracing::error!("FreeWebMovementAddress not set in GlobalContext");
+                return Err(anyhow::anyhow!("Address not set"));
+            }
+        };
 
         let addr_str = address.to_string();
         let bytes = if is_encrypt {
@@ -285,14 +296,26 @@ impl P2PFrame {
 
         let command = P2PCommand::new(entity, action, bytes);
 
-        let frame = P2PFrame::build(&address, command, 1).await.unwrap();
+        let frame = match P2PFrame::build(&address, command, 1).await {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::error!("Failed to build P2PFrame: {:?}", e);
+                return Err(e);
+            }
+        };
 
-        let bytes = Codec::encode(&frame);
+        let bytes = match Codec::encode(&frame) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!("Failed to encode frame for sending: {:?}", e);
+                return Err(e);
+            }
+        };
 
         let mut guard = ctx.lock().await;
         if let Some(ref mut writer) = guard.writer {
             if let Err(e) = writer.write_all(&bytes).await {
-                eprintln!("Failed to send data: {:?}", e);
+                tracing::error!("Failed to send data: {:?}", e);
             }
 
             let _ = writer.flush().await;
@@ -302,7 +325,7 @@ impl P2PFrame {
 
     pub async fn send_bytes(writer: &mut AexWriter, bytes: &[u8]) {
         if let Err(e) = writer.write_all(&bytes).await {
-            eprintln!("Failed to send TCP bytes: {:?}", e);
+            tracing::error!("Failed to send TCP bytes: {:?}", e);
         }
     }
 
@@ -322,7 +345,10 @@ impl P2PFrame {
                 };
 
                 let frame: &P2PFrame = self;
-                let bytes = Codec::encode(frame);
+                let Ok(bytes) = Codec::encode(frame) else {
+                    tracing::error!("Failed to encode frame for notify");
+                    return;
+                };
                 manager
                     .forward(|entries| async {
                         for entry in entries {

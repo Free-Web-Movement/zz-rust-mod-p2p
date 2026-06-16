@@ -24,7 +24,7 @@ pub async fn notify<T: Command + Clone>(
             for entry in entries {
                 // 1. 先把临时值固定到一个变量名上，延长它的生命周期
                 if let Some(ctx) = &entry.context {
-                    P2PFrame::send::<T>(
+                    if let Err(e) = P2PFrame::send::<T>(
                         ctx.clone(),
                         &Some(cmd.clone()),
                         entity,
@@ -32,8 +32,10 @@ pub async fn notify<T: Command + Clone>(
                         is_encrypt,
                     )
                     .await
-                    .expect("error notify online server!");
-                    println!("notify send!");
+                    {
+                        tracing::error!("Failed to notify peer: {:?}", e);
+                    }
+                    tracing::info!("notify send!");
                 }
             }
         })

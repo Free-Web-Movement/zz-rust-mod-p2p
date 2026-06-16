@@ -9,7 +9,9 @@ macro_rules! storage {
                 Box::new($f1),
                 Box::new(move |file| {
                     let v = $f2;
-                    s_clone.save(file, &v).unwrap();
+                    if let Err(e) = s_clone.save(file, &v) {
+                        tracing::error!("Failed to save {}: {:?}", file, e);
+                    }
                     v
                 }),
             );

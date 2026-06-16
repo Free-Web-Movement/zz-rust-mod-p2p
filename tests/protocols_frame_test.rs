@@ -72,7 +72,7 @@ mod tests {
         assert!(!frame.signature.is_empty(), "签名不应该为空");
 
         // 4️⃣ 序列化 Frame
-        let serialized = Codec::encode(&frame);
+        let serialized = Codec::encode(&frame).unwrap();
 
         // 5️⃣ 验证签名
         let frame1 = P2PFrame::verify_bytes(&serialized)?;
@@ -81,7 +81,7 @@ mod tests {
 
         println!("Frame verified successfully!");
 
-        let bytes = Codec::encode(&frame);
+        let bytes = Codec::encode(&frame).unwrap();
         let frame2: P2PFrame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame1.signature.to_vec(), frame2.signature.to_vec());
@@ -172,7 +172,7 @@ mod tests {
         let frame = P2PFrame::sign(body.clone(), &identity)?;
         assert!(!frame.signature.is_empty());
 
-        let encoded = Codec::encode(&frame);
+        let encoded = Codec::encode(&frame).unwrap();
         let verified = P2PFrame::verify_bytes(&encoded)?;
 
         assert_eq!(frame.signature, verified.signature);
@@ -199,7 +199,7 @@ mod tests {
 
         let frame = P2PFrame::sign(body, &identity).unwrap();
 
-        let bytes = Codec::encode(&frame.clone());
+        let bytes = Codec::encode(&frame.clone()).unwrap();
         let decoded: P2PFrame = Codec::decode(&bytes).unwrap();
 
         assert_eq!(frame.signature, decoded.signature);
@@ -224,7 +224,7 @@ mod tests {
         // 🔥 篡改数据
         body.data = vec![9, 9, 9];
         frame.body = body;
-        let encoded = Codec::encode(&frame);
+        let encoded = Codec::encode(&frame).unwrap();
 
         let res = P2PFrame::verify_bytes(&encoded);
         assert!(res.is_err(), "篡改后的签名应验证失败");
@@ -244,7 +244,7 @@ mod tests {
             vec![],
         );
 
-        let bytes = Codec::encode(&body);
+        let bytes = Codec::encode(&body).unwrap();
 
         let decoded: FrameBody = Codec::decode(&bytes).unwrap();
 
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(verified_frame.body.address, address.to_string());
 
         // 4. 测试 verify_bytes (序列化后校验)
-        let bytes = Codec::encode(&frame);
+        let bytes = Codec::encode(&frame).unwrap();
         let verified_from_bytes = P2PFrame::verify_bytes(&bytes).expect("Verify bytes failed");
         assert_eq!(verified_from_bytes.signature, frame.signature);
     }
@@ -316,7 +316,7 @@ mod tests {
 
         // payload() 应该返回 body 的序列化字节
         let payload = frame.payload().unwrap();
-        assert_eq!(payload, Codec::encode(&frame.body));
+        assert_eq!(payload, Codec::encode(&frame.body).unwrap());
 
         // command() 应该直接返回 body.data
         assert_eq!(frame.command().unwrap(), &frame.body.data);
@@ -344,7 +344,7 @@ mod tests {
         assert!(P2PFrame::verify(tampered).is_err());
 
         // 5. 测试 verify_bytes
-        let bytes = Codec::encode(&frame);
+        let bytes = Codec::encode(&frame).unwrap();
         assert!(P2PFrame::verify_bytes(&bytes).is_ok());
     }
 
@@ -366,7 +366,7 @@ mod tests {
         // 定义一个闭包，它只是简单地返回输入数据的长度作为“签名”
         // 用于验证 signer 闭包是否被调用且传入了正确的 body 字节
         let signature = frame.sign(|data| {
-            assert_eq!(data, Codec::encode(&body));
+            assert_eq!(data, Codec::encode(&body).unwrap());
             vec![0xFF, 0xEE]
         });
 
@@ -478,7 +478,7 @@ mod tests {
         let frame = P2PFrame::build(&FreeWebMovementAddress::random(), cmd, 1)
             .await
             .unwrap();
-        let expected_bytes = Codec::encode(&frame);
+        let expected_bytes = Codec::encode(&frame).unwrap();
 
         // 6. 执行 Notify 并强制 Flush
         // ⚡ 这里的关键点：如果你的 notify 实现里没写 flush，

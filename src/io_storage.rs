@@ -28,13 +28,23 @@ where
     F1: Fn(&T) + Send + Sync,
     F2: Fn(&String) -> T + Send + Sync,
 {
-    if let Some(v) = storage.read::<T>(file).unwrap() {
-        f1(&v);
-        v
-    } else {
-        let v = f2(file);
-        storage.save::<T>(file, &v).unwrap();
-        v
+    match storage.read::<T>(file) {
+        Ok(Some(v)) => {
+            f1(&v);
+            v
+        }
+        Ok(None) => {
+            let v = f2(file);
+            if let Err(e) = storage.save::<T>(file, &v) {
+                tracing::error!("Failed to save default value to {}: {:?}", file, e);
+            }
+            v
+        }
+        Err(e) => {
+            tracing::error!("Failed to read {}: {:?}, using default", file, e);
+            let v = f2(file);
+            v
+        }
     }
 }
 

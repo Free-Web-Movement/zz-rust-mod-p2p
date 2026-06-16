@@ -220,12 +220,12 @@ pub async fn seed_sync_request_handler(
     let request: SeedSyncRequest = match Codec::decode(&cmd.data) {
         Ok(req) => req,
         Err(e) => {
-            eprintln!("❌ decode SeedSyncRequest failed: {e}");
+            tracing::error!("❌ decode SeedSyncRequest failed: {e}");
             return;
         }
     };
 
-    println!(
+    tracing::info!(
         "🔄 Seed sync request from {} (retry={}), their seeds: {}",
         request.from_node_id,
         request.retry_count,
@@ -256,11 +256,17 @@ pub async fn seed_sync_request_handler(
 
     let response = {
         let guard = ctx.lock().await;
-        let node = guard.global.get::<Arc<Node>>().await.unwrap();
+        let node = match guard.global.get::<Arc<Node>>().await {
+            Some(n) => n,
+            None => {
+                tracing::error!("Node not registered in GlobalContext");
+                return;
+            }
+        };
 
         let seed_set = derive_seed_set_from_registry(&node.registry);
         let filtered_set = seed_set.filter_loopback();
-        println!(
+        tracing::info!(
             "  → response seeds (after filter_loopback): {}",
             filtered_set.len()
         );
@@ -289,12 +295,12 @@ pub async fn seed_sync_response_handler(
     let response: SeedSyncResponse = match Codec::decode(&cmd.data) {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("❌ decode SeedSyncResponse failed: {e}");
+            tracing::error!("❌ decode SeedSyncResponse failed: {e}");
             return;
         }
     };
 
-    println!(
+    tracing::info!(
         "📥 Seed sync response: {} seeds, hash={:?}",
         response.seed_set.len(),
         &response.hash[..8]
@@ -327,12 +333,12 @@ pub async fn seed_sync_commit_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame
     let commit: SeedSyncCommit = match Codec::decode(&cmd.data) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("❌ decode SeedSyncCommit failed: {e}");
+            tracing::error!("❌ decode SeedSyncCommit failed: {e}");
             return;
         }
     };
 
-    println!(
+    tracing::info!(
         "🔒 Seed sync committed: hash={:?}, locked={}",
         &commit.hash[..8],
         commit.locked
@@ -385,10 +391,28 @@ pub async fn broadcast_seed_set_to_all_peers(ctx: Arc<Mutex<Context>>, seed_set:
         retry_count: seed_set.sync_round,
     };
 
-    let cmd_bytes = Codec::encode(&request);
+    let cmd_bytes = match Codec::encode(&request) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!("Failed to encode seed sync request: {:?}", e);
+            return;
+        }
+    };
     let p2p_cmd = P2PCommand::new(Entity::Node, Action::SeedSyncRequest, cmd_bytes);
-    let frame = P2PFrame::build(&address, p2p_cmd, 1).await.unwrap();
-    let frame_bytes = Codec::encode(&frame);
+    let frame = match P2PFrame::build(&address, p2p_cmd, 1).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to build seed sync frame: {:?}", e);
+            return;
+        }
+    };
+    let frame_bytes = match Codec::encode(&frame) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!("Failed to encode seed sync frame: {:?}", e);
+            return;
+        }
+    };
     let seed_count = seed_set.len();
 
     let manager = gctx.manager.clone();
@@ -400,7 +424,7 @@ pub async fn broadcast_seed_set_to_all_peers(ctx: Arc<Mutex<Context>>, seed_set:
                     let mut guard = peer_ctx.lock().await;
                     if let Some(writer) = &mut guard.writer {
                         if let Err(e) = writer.write_all(&frame_bytes).await {
-                            eprintln!("  ❌ Failed to broadcast seed set: {:?}", e);
+                            tracing::error!("  ❌ Failed to broadcast seed set: {:?}", e);
                         } else {
                             let _ = writer.flush().await;
                         }
@@ -410,7 +434,7 @@ pub async fn broadcast_seed_set_to_all_peers(ctx: Arc<Mutex<Context>>, seed_set:
         })
         .await;
 
-    println!(
+    tracing::info!(
         "  📢 Broadcast seed set ({} seeds) to all peers",
         seed_count
     );
@@ -420,7 +444,7 @@ pub async fn lock_seed_set_global(gctx: Arc<GlobalContext>, mut seed_set: SeedSe
     seed_set.locked = true;
     gctx.set(seed_set.clone()).await;
 
-    println!(
+    tracing::info!(
         "🔒 Seed set locked: {} seeds, hash={:?}",
         seed_set.len(),
         &seed_set.hash[..8]
@@ -478,7 +502,13 @@ pub async fn run_seed_sync_cycle(
             let gctx = gctx.clone();
             let permit = semaphore.clone().acquire_owned();
             handles.push(tokio::spawn(async move {
-                let _permit = permit.await.unwrap();
+                let _permit = match permit.await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::error!("Failed to acquire semaphore permit: {:?}", e);
+                        return;
+                    }
+                };
                 try_sync_with_peer_global(gctx, addr).await;
             }));
         }
@@ -506,7 +536,13 @@ pub async fn run_seed_sync_cycle(
                 STABLE_ROUNDS_REQUIRED
             );
             if stable_rounds >= STABLE_ROUNDS_REQUIRED {
-                let node = gctx.get::<Arc<Node>>().await.unwrap();
+                let node = match gctx.get::<Arc<Node>>().await {
+                    Some(n) => n,
+                    None => {
+                        tracing::error!("Node not registered in GlobalContext");
+                        return Err("Node not registered in GlobalContext".to_string());
+                    }
+                };
                 let current_set = derive_seed_set_from_registry(&node.registry);
                 tracing::info!(
                     "✅ Seed sync converged after {} rounds with {} seeds, hash={:?}",
@@ -519,7 +555,13 @@ pub async fn run_seed_sync_cycle(
         } else {
             stable_rounds = 0;
             prev_hash = Some(current_hash);
-            let node = gctx.get::<Arc<Node>>().await.unwrap();
+            let node = match gctx.get::<Arc<Node>>().await {
+                Some(n) => n,
+                None => {
+                    tracing::error!("Node not registered in GlobalContext");
+                    return Err("Node not registered in GlobalContext".to_string());
+                }
+            };
             let set_len = derive_seed_set_from_registry(&node.registry).len();
             tracing::info!(
                 "📊 SeedSet hash changed, {} seeds, hash={:?}",
@@ -555,7 +597,13 @@ async fn sync_once(gctx: Arc<GlobalContext>, addr: SocketAddr, attempt: u32) -> 
     let result = Arc::new(AtomicBool::new(false));
     let result_clone = result.clone();
 
-    let psk = gctx.paired_session_keys.clone().unwrap();
+    let psk = match gctx.paired_session_keys.clone() {
+        Some(psk) => psk,
+        None => {
+            tracing::error!("PairedSessionKeys not set in GlobalContext");
+            return false;
+        }
+    };
 
     // First try to find existing connection (inbound or outbound)
     if let Some(existing_ctx) = get_existing_connection_context(&gctx, addr) {
