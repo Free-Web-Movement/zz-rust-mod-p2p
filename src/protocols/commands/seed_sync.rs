@@ -454,7 +454,7 @@ pub async fn lock_seed_set_global(gctx: Arc<GlobalContext>, mut seed_set: SeedSe
 pub async fn run_seed_sync_cycle(
     gctx: Arc<GlobalContext>,
     peer_addrs: Vec<SocketAddr>,
-    _max_retries: u32,
+    max_rounds: u32,
     tick_deadline: Instant,
 ) -> Result<SeedSet, String> {
     if peer_addrs.is_empty() {
@@ -466,12 +466,12 @@ pub async fn run_seed_sync_cycle(
     }
 
     const STABLE_ROUNDS_REQUIRED: u32 = 2;
-    const MAX_ROUNDS: u32 = 10;
+    let effective_max = if max_rounds == 0 { 10 } else { max_rounds };
     let mut stable_rounds = 0;
     let mut prev_hash: Option<[u8; 32]> = None;
     let mut round = 0u32;
 
-    while Instant::now() < tick_deadline && round < MAX_ROUNDS {
+    while Instant::now() < tick_deadline && round < effective_max {
         round += 1;
 
         let current_seed_set = {
@@ -485,7 +485,7 @@ pub async fn run_seed_sync_cycle(
         tracing::info!(
             "=== Seed sync round {}/{} with {} peers ({} seeds), stable_rounds={} ===",
             round,
-            MAX_ROUNDS,
+            effective_max,
             peer_addrs.len(),
             current_seed_set.len(),
             stable_rounds
