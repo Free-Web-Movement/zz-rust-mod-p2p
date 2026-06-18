@@ -43,6 +43,8 @@ pub enum Action {
     Tick,
     TickAck,
     Check,
+    Validate,
+    ValidateAck,
 
     // Telephone Actions
     Call,

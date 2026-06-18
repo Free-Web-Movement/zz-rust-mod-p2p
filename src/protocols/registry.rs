@@ -17,6 +17,9 @@ use crate::protocols::{
             seed_sync_commit_handler, seed_sync_request_handler, seed_sync_response_handler,
         },
         tick::tick_handler,
+        witness_validate::{
+            witness_validate_ack_handler, witness_validate_handler,
+        },
     },
     frame::P2PFrame,
 };
@@ -102,6 +105,30 @@ pub fn register(mut router: TcpRouter<P2PFrame, P2PCommand>) -> TcpRouter<P2PFra
             let c = cmd.clone();
             Box::pin(async move {
                 tick_handler(ctx, frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Witness, Action::Validate),
+        Box::new(|ctx, frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                witness_validate_handler(ctx, frame, c).await;
+                Ok(true)
+            })
+        }),
+        vec![],
+    );
+
+    router.on(
+        P2PCommand::to_u32(Entity::Witness, Action::ValidateAck),
+        Box::new(|ctx, frame, cmd: P2PCommand| {
+            let c = cmd.clone();
+            Box::pin(async move {
+                witness_validate_ack_handler(ctx, frame, c).await;
                 Ok(true)
             })
         }),
