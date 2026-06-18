@@ -45,11 +45,7 @@ fn get_validation_event_sender() -> Option<&'static ValidationSender> {
     VALIDATION_EVENT_SENDER.get()
 }
 
-pub async fn witness_validate_handler(
-    ctx: Arc<Mutex<Context>>,
-    frame: P2PFrame,
-    cmd: P2PCommand,
-) {
+pub async fn witness_validate_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     let req: WitnessValidateRequest = match Codec::decode(&cmd.data) {
         Ok(c) => c,
         Err(e) => {

@@ -6,7 +6,7 @@ use crate::node::{self, Node as P2pNode};
 use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::online::{OnlineCommand, get_all_ips},
+    commands::online::OnlineCommand,
     frame::P2PFrame,
 };
 
@@ -159,7 +159,21 @@ async fn connect_to_peer_sync(
                         seeds
                     };
 
-                    let (intranet_ips, wan_ips) = get_all_ips();
+                    let (intranet_ips, wan_ips) = {
+                        let mut inner = Vec::new();
+                        let mut outer = Vec::new();
+                        for (scope, ip) in &aex_node.ips {
+                            match scope {
+                                aex::connection::scope::NetworkScope::Intranet => {
+                                    inner.push(ip.to_string())
+                                }
+                                aex::connection::scope::NetworkScope::Extranet => {
+                                    outer.push(ip.to_string())
+                                }
+                            }
+                        }
+                        (inner, outer)
+                    };
                     let cmd = OnlineCommand {
                         session_id: id,
                         node: aex_node,

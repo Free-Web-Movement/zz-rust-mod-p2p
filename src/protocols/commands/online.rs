@@ -38,7 +38,8 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
     };
     tracing::info!(
         "✅ Node Online: addr={}, nonce={}",
-        frame.body.address, frame.body.nonce
+        frame.body.address,
+        frame.body.nonce
     );
 
     tracing::info!("received session_id: {:?}", online.session_id);
@@ -299,7 +300,13 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
     };
 
     let addr_debug = frame.body.address.clone();
-    let local_addr_for_key = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+    let local_addr_for_key = match ctx
+        .lock()
+        .await
+        .global
+        .get::<FreeWebMovementAddress>()
+        .await
+    {
         Some(addr) => addr.to_string(),
         None => {
             tracing::error!("FreeWebMovementAddress not set in GlobalContext");
@@ -394,7 +401,17 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
         guard.clone()
     };
 
-    let (intranet_ips, wan_ips) = get_all_ips();
+    let (intranet_ips, wan_ips) = {
+        let mut inner = Vec::new();
+        let mut outer = Vec::new();
+        for (scope, ip) in &node.ips {
+            match scope {
+                NetworkScope::Intranet => inner.push(ip.to_string()),
+                NetworkScope::Extranet => outer.push(ip.to_string()),
+            }
+        }
+        (inner, outer)
+    };
     tracing::info!("Announcing intranet IPs: {:?}", intranet_ips);
     tracing::info!("Announcing wan IPs: {:?}", wan_ips);
 
@@ -423,7 +440,8 @@ pub async fn online_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PC
                             );
                             tracing::info!(
                                 "  + Registered seed from peer: {} (node: {})",
-                                seed.address, seed.node_address
+                                seed.address,
+                                seed.node_address
                             );
                         }
                     }

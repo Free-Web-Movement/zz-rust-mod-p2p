@@ -5,7 +5,7 @@ use crate::node::Node as P2pNode;
 use crate::protocols::commands::ack::{SeedRecord, SeedsCommand};
 use crate::protocols::{
     command::{Action, Entity, P2PCommand},
-    commands::online::{OnlineCommand, get_all_ips},
+    commands::online::OnlineCommand,
     frame::P2PFrame,
 };
 
@@ -54,7 +54,21 @@ pub async fn handle(args: Vec<String>, context: Arc<GlobalContext>) {
                                 let guard = ctx.lock().await;
                                 guard.global.local_node.read().await.clone()
                             };
-                            let (intranet_ips, wan_ips) = get_all_ips();
+                            let (intranet_ips, wan_ips) = {
+                                let mut inner = Vec::new();
+                                let mut outer = Vec::new();
+                                for (scope, ip) in &aex_node.ips {
+                                    match scope {
+                                        aex::connection::scope::NetworkScope::Intranet => {
+                                            inner.push(ip.to_string())
+                                        }
+                                        aex::connection::scope::NetworkScope::Extranet => {
+                                            outer.push(ip.to_string())
+                                        }
+                                    }
+                                }
+                                (inner, outer)
+                            };
 
                             // Build seeds from NodeRegistry
                             let seeds_to_send = {

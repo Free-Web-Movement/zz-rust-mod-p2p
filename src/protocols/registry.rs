@@ -17,9 +17,7 @@ use crate::protocols::{
             seed_sync_commit_handler, seed_sync_request_handler, seed_sync_response_handler,
         },
         tick::tick_handler,
-        witness_validate::{
-            witness_validate_ack_handler, witness_validate_handler,
-        },
+        witness_validate::{witness_validate_ack_handler, witness_validate_handler},
     },
     frame::P2PFrame,
 };

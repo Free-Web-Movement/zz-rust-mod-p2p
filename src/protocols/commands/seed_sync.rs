@@ -12,7 +12,6 @@ use aex::connection::context::Context;
 use aex::connection::global::GlobalContext;
 use aex::connection::scope::NetworkScope;
 use aex::tcp::types::Codec;
-use futures::future::join_all;
 use tokio::sync::Semaphore;
 
 use crate::node::Node;

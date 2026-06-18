@@ -124,7 +124,9 @@ pub async fn node_sync_handler(ctx: Arc<Mutex<Context>>, _frame: P2PFrame, cmd: 
 
     tracing::info!(
         "  Request ID: {}, Node: {}, Type: {}",
-        request.request_id, request.node_id, request.sync_type
+        request.request_id,
+        request.node_id,
+        request.sync_type
     );
 
     // 通过通道请求主项目提供数据

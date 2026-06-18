@@ -110,10 +110,7 @@ pub async fn message_ack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd:
 
     let plaintext: Vec<u8> = {
         let guard = psk.lock().await;
-        match guard
-            .decrypt(&from.as_bytes().to_vec(), &cmd.data)
-            .await
-        {
+        match guard.decrypt(&from.as_bytes().to_vec(), &cmd.data).await {
             Ok(data) => data,
             Err(e) => {
                 tracing::error!("Failed to decrypt message ack data: {:?}", e);
@@ -220,10 +217,7 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
 
     let plaintext: Vec<u8> = {
         let guard = psk.lock().await;
-        match guard
-            .decrypt(&from.as_bytes().to_vec(), &cmd.data)
-            .await
-        {
+        match guard.decrypt(&from.as_bytes().to_vec(), &cmd.data).await {
             Ok(data) => data,
             Err(e) => {
                 tracing::error!("Failed to decrypt message data: {:?}", e);
@@ -281,7 +275,13 @@ pub async fn message_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2P
     let receiver = message.receiver.clone();
     let sender_addr = message.sender.clone();
     let request_id = message.request_id;
-    let address: FreeWebMovementAddress = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+    let address: FreeWebMovementAddress = match ctx
+        .lock()
+        .await
+        .global
+        .get::<FreeWebMovementAddress>()
+        .await
+    {
         Some(addr) => addr,
         None => {
             tracing::error!("FreeWebMovementAddress not set in GlobalContext");

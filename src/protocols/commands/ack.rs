@@ -104,7 +104,8 @@ impl Codec for OnlineAckCommand {}
 pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P2PCommand) {
     tracing::info!(
         "✅ Node OnlineAck received from {} nonce={}",
-        frame.body.address, frame.body.nonce
+        frame.body.address,
+        frame.body.nonce
     );
 
     tracing::info!("received ack: {:?}", cmd.data);
@@ -133,7 +134,13 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
     };
 
     // 获取本地地址用于 main 表索引
-    let local_address = match ctx.lock().await.global.get::<FreeWebMovementAddress>().await {
+    let local_address = match ctx
+        .lock()
+        .await
+        .global
+        .get::<FreeWebMovementAddress>()
+        .await
+    {
         Some(addr) => addr.to_string(),
         None => {
             tracing::error!("FreeWebMovementAddress not set in GlobalContext");
@@ -182,7 +189,8 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
     }
     tracing::info!(
         "🔐 Session established with {} (session_id={:?})",
-        ack.address, ack.session_id
+        ack.address,
+        ack.session_id
     );
 
     // Register peer node in NodeRegistry
@@ -206,7 +214,8 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
             );
             tracing::info!(
                 "📝 Registered peer node: {} at {} (Outbound)",
-                peer_address, peer_addr
+                peer_address,
+                peer_addr
             );
         }
     }
@@ -287,7 +296,8 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                             .register(seed.node_address.clone(), seed_addr, scope);
                         tracing::info!(
                             "  + Registered seed from ack: {} (node: {})",
-                            seed.address, seed.node_address
+                            seed.address,
+                            seed.node_address
                         );
                     }
                 }
@@ -317,7 +327,8 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                     if node.registry.is_connected(&seed.node_address) {
                         tracing::info!(
                             "⏭️ Skipping seed {} - node {} already connected",
-                            seed.address, seed.node_address
+                            seed.address,
+                            seed.node_address
                         );
                         continue;
                     }
@@ -350,15 +361,21 @@ pub async fn onlineack_handler(ctx: Arc<Mutex<Context>>, frame: P2PFrame, cmd: P
                         tokio::spawn(async move {
                             tracing::info!(
                                 "🔗 Attempting connection to {} (node: {})",
-                                addr_str, node_addr
+                                addr_str,
+                                node_addr
                             );
                             if connect_to_new_peer(ctx_owned, seed_addr).await.is_ok() {
                                 reg_clone.mark_connected(&node_addr, true);
-                                tracing::info!("✅ Connected to node {} via {}", node_addr, addr_str);
+                                tracing::info!(
+                                    "✅ Connected to node {} via {}",
+                                    node_addr,
+                                    addr_str
+                                );
                             } else {
                                 tracing::error!(
                                     "  ❌ Failed to connect to {}: seed of node {}",
-                                    addr_str, node_addr
+                                    addr_str,
+                                    node_addr
                                 );
                             }
                         });
@@ -482,7 +499,17 @@ pub async fn connect_to_new_peer(
         let guard = gctx.local_node.read().await;
         guard.clone()
     };
-    let (intranet_ips, wan_ips) = super::online::get_all_ips();
+    let (intranet_ips, wan_ips) = {
+        let mut inner = Vec::new();
+        let mut outer = Vec::new();
+        for (scope, ip) in &aex_node.ips {
+            match scope {
+                aex::connection::scope::NetworkScope::Intranet => inner.push(ip.to_string()),
+                aex::connection::scope::NetworkScope::Extranet => outer.push(ip.to_string()),
+            }
+        }
+        (inner, outer)
+    };
     let cmd = Arc::new(OnlineCommand {
         session_id: id,
         node: aex_node,

@@ -141,13 +141,16 @@ impl Node {
                         Box::pin(async move {
                             tracing::info!("✅ Connected to peer: {}", peer);
 
-                            let psk = match ctx.lock().await.global.clone().paired_session_keys.clone() {
-                                Some(psk) => psk,
-                                None => {
-                                    tracing::error!("PairedSessionKeys not set in GlobalContext");
-                                    return;
-                                }
-                            };
+                            let psk =
+                                match ctx.lock().await.global.clone().paired_session_keys.clone() {
+                                    Some(psk) => psk,
+                                    None => {
+                                        tracing::error!(
+                                            "PairedSessionKeys not set in GlobalContext"
+                                        );
+                                        return;
+                                    }
+                                };
 
                             let (id, key) = {
                                 let guard = psk.lock().await;
@@ -182,8 +185,21 @@ impl Node {
                                 crate::protocols::commands::ack::SeedsCommand::new(all_seeds)
                             };
 
-                            let (intranet_ips, wan_ips) =
-                                crate::protocols::commands::online::get_all_ips();
+                            let (intranet_ips, wan_ips) = {
+                                let mut inner = Vec::new();
+                                let mut outer = Vec::new();
+                                for (scope, ip) in &aex_node.ips {
+                                    match scope {
+                                        aex::connection::scope::NetworkScope::Intranet => {
+                                            inner.push(ip.to_string())
+                                        }
+                                        aex::connection::scope::NetworkScope::Extranet => {
+                                            outer.push(ip.to_string())
+                                        }
+                                    }
+                                }
+                                (inner, outer)
+                            };
                             let cmd = crate::protocols::commands::online::OnlineCommand {
                                 session_id: id,
                                 node: aex_node,

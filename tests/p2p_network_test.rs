@@ -61,7 +61,11 @@ async fn send_online_command(
         seeds: None,
     };
 
-    let cmd = P2PCommand::new(Entity::Node, Action::OnLine, Codec::encode(&online_cmd).unwrap());
+    let cmd = P2PCommand::new(
+        Entity::Node,
+        Action::OnLine,
+        Codec::encode(&online_cmd).unwrap(),
+    );
     let frame = P2PFrame::build(address, cmd, 1).await?;
 
     let frame_bytes = Codec::encode(&frame).unwrap();
