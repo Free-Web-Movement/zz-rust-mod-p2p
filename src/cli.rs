@@ -23,7 +23,7 @@ pub struct Opt {
     #[arg(long, default_value = "0.0.0.0")]
     pub ip: String,
 
-    #[arg(long, default_value_t = 9000)]
+    #[arg(long, default_value_t = 1090)]
     pub port: u16,
 
     #[arg(long)]
