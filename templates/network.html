@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>加密网络 — ZZ 加密节点</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .nav-bar {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .nav-bar a {
+            flex: 1;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-bar a:hover { color: #333; background: #f9f9f9; }
+        .nav-bar a.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .refresh-banner {
+            text-align: right;
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 10px; margin: 0 0 15px 0; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .info-label { color: #666; font-size: 12px; text-transform: uppercase; }
+        .info-value { color: #333; font-weight: bold; font-size: 14px; margin-top: 5px; }
+        .info-value.address {
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .ip-list {
+            list-style: none;
+            padding: 0;
+            margin: 5px 0 0 0;
+        }
+        .ip-list li {
+            padding: 4px 0;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .protocols {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .protocol-tag {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .section-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+        .tab-container { margin-bottom: 0; }
+        .tab-buttons {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #333; }
+        .tab-btn.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .peer-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .peer-table th, .peer-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .peer-table th {
+            background: #f9f9f9;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .peer-table tr:hover { background: #f5f5f5; }
+        .direction-inbound { color: #4CAF50; }
+        .direction-outbound { color: #2196F3; }
+        .command-tag {
+            background: #e3f2fd;
+            color: #1976D2;
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .tx-table-container { overflow-x: auto; }
+        .tx-table { min-width: 900px; }
+        .tx-table tr.hash-row { background: #fafafa; }
+        .tx-table tr.hash-row td {
+            padding: 8px 12px;
+            border-bottom: 2px solid #eee;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .hash-label { font-weight: bold; color: #666; }
+        .hash-value {
+            font-family: monospace;
+            color: #888;
+            word-break: break-all;
+        }
+        .command-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/">节点信息</a>
+        <a href="/network" class="active">加密网络</a>
+        <a href="/wallet">钱包</a>
+        <a href="/chat">聊天</a>
+    </div>
+    <div class="refresh-banner">每 30 秒自动刷新</div>
+    <h1>加密网络<br><small>{{ node_name }}</small></h1>
+
+    <div class="card tab-container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showTab('network')">网络</button>
+            <button class="tab-btn" onclick="showTab('connections')">连接</button>
+            <button class="tab-btn" onclick="showTab('resources')">资源</button>
+            <button class="tab-btn" onclick="showTab('witnesses')">见证</button>
+            <button class="tab-btn" onclick="showTab('transactions')">交易</button>
+            <button class="tab-btn" onclick="showTab('nodes')">节点</button>
+            <button class="tab-btn" onclick="showTab('seeds')">种子</button>
+            <button class="tab-btn" onclick="showTab('explorer')">浏览器</button>
+        </div>
+
+        <div id="tab-network" class="tab-content active">
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">数据目录</div>
+                    <div class="info-value">{{ data_dir }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">内网 IP (LAN)</div>
+                    <ul class="ip-list">
+                        {% for ip in inner_ips %}
+                        <li>{{ ip }}</li>
+                        {% else %}
+                        <li>N/A</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">外网 IP (WAN)</div>
+                    <ul class="ip-list">
+                        {% for ip in external_ips %}
+                        <li>{{ ip }}</li>
+                        {% else %}
+                        <li>N/A</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            <div class="info-item" style="margin-top:15px;grid-column:1/-1;">
+                <div class="info-label">支持的协议</div>
+                <div style="margin-top:10px;">
+                    {% for protocol in protocols.split(",") %}
+                    <span class="protocol-tag">{{ protocol.trim() }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-connections" class="tab-content">
+            <div id="conn-content">
+            <h3>入站连接</h3>
+            {% if inbound_connections.len() > 0 %}
+            <table class="peer-table">
+                <tr><th>Node ID</th><th>Connected</th><th>Passed</th></tr>
+                {% for g in inbound_connections %}
+                <tr>
+                    <td class="address">{{ g.node_id }}</td>
+                    <td>{{ g.addrs }}</td>
+                    <td>{{ g.passed }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p class="section-title">暂无入站连接</p>
+            {% endif %}
+
+            <h3>出站连接</h3>
+            {% if outbound_connections.len() > 0 %}
+            <table class="peer-table">
+                <tr><th>Node ID</th><th>Connected</th><th>Passed</th></tr>
+                {% for g in outbound_connections %}
+                <tr>
+                    <td class="address">{{ g.node_id }}</td>
+                    <td>{{ g.addrs }}</td>
+                    <td>{{ g.passed }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p class="section-title">暂无出站连接</p>
+            {% endif %}
+            </div>
+        </div>
+
+        <div id="tab-resources" class="tab-content">
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">综合权重</div>
+                    <div class="info-value">{{ resources.composite_weight }}</div>
+                </div>
+            </div>
+            <h3>权重表</h3>
+            <table class="peer-table">
+                <tr><th>资源</th><th>单位</th><th>基础</th><th>公式</th></tr>
+                <tr><td>存储</td><td>1 TB</td><td>1</td><td>1 TB = 1 权重</td></tr>
+                <tr><td>带宽</td><td>1 Gbps</td><td>1</td><td>1 Gbps = 1 权重</td></tr>
+                <tr><td>CPU</td><td>10 GHz × 核心数</td><td>1</td><td>10 GHz × 核心数 = 1 权重</td></tr>
+                <tr><td>内存</td><td>10 GB</td><td>1</td><td>10 GB = 1 权重</td></tr>
+                <tr><td>API 请求</td><td>1K 次/天</td><td>1</td><td>1K 次/天 = 1 权重</td></tr>
+            </table>
+            <h3>您的资源</h3>
+            <table class="peer-table">
+                <tr><th>资源</th><th>可用量</th><th>权重</th></tr>
+                <tr><td>存储</td><td>{{ resources.storage_weight }} TB</td><td>{{ resources.storage_weight }}</td></tr>
+                <tr><td>带宽</td><td>{{ resources.bandwidth_weight }} Gbps</td><td>{{ resources.bandwidth_weight }}</td></tr>
+                <tr><td>CPU</td><td>{{ resources.cpu_weight }} cores * GHz</td><td>{{ resources.cpu_weight }}</td></tr>
+                <tr><td>内存</td><td>{{ resources.memory_weight }} GB</td><td>{{ resources.memory_weight }}</td></tr>
+                <tr><td>API 请求</td><td>{{ resources.api_weight }} /day</td><td>{{ resources.api_weight }}</td></tr>
+            </table>
+        </div>
+
+        <div id="tab-witnesses" class="tab-content">
+            <div id="witness-content">
+                <div class="info-grid">
+                    <div class="info-item"><div class="info-label">活跃见证者</div><div class="info-value">{{ witness_table.active_count }}</div></div>
+                    <div class="info-item"><div class="info-label">待定见证者</div><div class="info-value">{{ witness_table.pending_count }}</div></div>
+                    <div class="info-item"><div class="info-label">Tick 计数</div><div class="info-value">{{ witness_table.tick_count }}</div></div>
+                    <div class="info-item"><div class="info-label">Tick 间隔</div><div class="info-value">{{ witness_table.tick_interval_minutes }} min</div></div>
+                    <div class="info-item"><div class="info-label">距下次 Tick</div><div class="info-value">{{ witness_table.next_tick_seconds }} sec</div></div>
+                </div>
+
+                <h3>活跃见证环</h3>
+                {% if witness_ring_active.member_count > 0 %}
+                <div class="info-grid">
+                    <div class="info-item"><div class="info-label">环 Hash</div><div class="info-value" style="font-family:monospace;font-size:11px;">{{ witness_ring_active.ring_hash }}</div></div>
+                    <div class="info-item"><div class="info-label">纪元</div><div class="info-value">{{ witness_ring_active.epoch }}</div></div>
+                    <div class="info-item"><div class="info-label">成员数</div><div class="info-value">{{ witness_ring_active.member_count }}</div></div>
+                </div>
+                <table class="peer-table">
+                    <tr><th>IP</th><th>端口</th><th>节点 ID</th><th>状态</th></tr>
+                    {% for m in witness_ring_active.members %}
+                    <tr>
+                        <td>{{ m.ip }}</td><td>{{ m.port }}</td>
+                        <td class="address">{{ m.node_id }}</td>
+                        <td>{% if m.is_active %}<span class="status">活跃</span>{% else %}离线{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">暂无活跃环成员</td></tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <p class="section-title">活跃见证环尚未形成</p>
+                {% endif %}
+
+                <h3>锁定见证环</h3>
+                {% if witness_ring_locked.member_count > 0 %}
+                <div class="info-grid">
+                    <div class="info-item"><div class="info-label">环 Hash</div><div class="info-value" style="font-family:monospace;font-size:11px;">{{ witness_ring_locked.ring_hash }}</div></div>
+                    <div class="info-item"><div class="info-label">纪元</div><div class="info-value">{{ witness_ring_locked.epoch }}</div></div>
+                    <div class="info-item"><div class="info-label">成员数</div><div class="info-value">{{ witness_ring_locked.member_count }}</div></div>
+                </div>
+                <table class="peer-table">
+                    <tr><th>IP</th><th>端口</th><th>节点 ID</th><th>状态</th></tr>
+                    {% for m in witness_ring_locked.members %}
+                    <tr>
+                        <td>{{ m.ip }}</td><td>{{ m.port }}</td>
+                        <td class="address">{{ m.node_id }}</td>
+                        <td>{% if m.is_active %}<span class="status">活跃</span>{% else %}离线{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">暂无锁定环成员</td></tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <p class="section-title">暂无锁定见证环</p>
+                {% endif %}
+
+                <h3>今日 Tick 记录（纪元 {{ status.epoch }}）<small>最多：{{ witness_tick_max }} ticks</small></h3>
+                {% if witness_tick_records.len() > 0 %}
+                <table class="peer-table">
+                    <tr><th>地址</th><th>Tick 数</th><th>全天在线</th></tr>
+                    {% for r in witness_tick_records %}
+                    <tr>
+                        <td class="address">{{ r.address }}</td>
+                        <td>{{ r.tick_count }}</td>
+                        <td>{% if r.is_full_time %}<span class="status">是</span>{% else %}否{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3">今日暂无 Tick 记录</td></tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <p class="section-title">今日暂无 Tick 记录</p>
+                {% endif %}
+
+                <h3>见证者链</h3>
+                <table class="peer-table">
+                    <tr><th>地址</th><th>在线</th><th>Ticks</th><th>权重</th></tr>
+                    {% for witness in witness_table.witnesses %}
+                    <tr>
+                        <td class="address">{{ witness.address }}</td>
+                        <td>{% if witness.is_online %}<span class="status">是</span>{% else %}否{% endif %}</td>
+                        <td>{{ witness.tick_count }}</td>
+                        <td>{{ witness.weight }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">暂无见证者</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-transactions" class="tab-content">
+            <div class="info-grid">
+                <div class="info-item"><div class="info-label">总交易数</div><div class="info-value">{{ transactions.total_count }}</div></div>
+                <div class="info-item"><div class="info-label">页码</div><div class="info-value">{{ transactions.current_page }} / {{ transactions.total_pages }}</div></div>
+            </div>
+            <div style="margin:15px 0;">
+                {% if transactions.current_page > 1 %}
+                <button class="command-tag" onclick="prevPage()">上一页</button>
+                {% endif %}
+                {% if transactions.current_page < transactions.total_pages %}
+                <button class="command-tag" onclick="nextPage()">下一页</button>
+                {% endif %}
+            </div>
+            <div class="tx-table-container">
+                <table class="peer-table tx-table">
+                    <tr><th>ID</th><th>类型</th><th>发送方</th><th>接收方</th><th>数量</th><th>时间</th></tr>
+                    {% for tx in transactions.transactions %}
+                    <tr>
+                        <td>{{ tx.id }}</td><td>{{ tx.tx_type }}</td>
+                        <td class="address">{{ tx.from_address }}</td>
+                        <td class="address">{{ tx.to_address }}</td>
+                        <td>{{ tx.amount }} ZZ</td><td>{{ tx.timestamp }}</td>
+                    </tr>
+                    <tr class="hash-row">
+                        <td colspan="6">
+                            <span class="hash-label">Hash：</span> <span class="hash-value">{{ tx.hash }}</span><br>
+                            <span class="hash-label">前序 Hash：</span> <span class="hash-value">{{ tx.pre_hash }}</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6">暂无交易记录</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-nodes" class="tab-content">
+            <div id="nodes-content">
+                <h3>节点注册表</h3>
+                <p>共 {{ nodes.len() }} 个节点</p>
+                <table class="peer-table">
+                    <tr><th>节点 ID</th><th>内网 IP</th><th>外网 IP</th><th>已连接</th></tr>
+                    {% for n in nodes %}
+                    <tr>
+                        <td class="address">{{ n.address }}</td>
+                        <td><ul class="ip-list">{% for ip in n.intranet_ips %}<li>{{ ip }}</li>{% else %}<li style="color:#999;">无</li>{% endfor %}</ul></td>
+                        <td><ul class="ip-list">{% for ip in n.wan_ips %}<li>{{ ip }}</li>{% else %}<li style="color:#999;">无</li>{% endfor %}</ul></td>
+                        <td>{% if n.is_connected %}<span class="status">是</span>{% else %}否{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4">暂无注册节点</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-seeds" class="tab-content">
+            <div id="seeds-content">
+                <h3>种子节点（内网 + 外网 + IPv6）</h3>
+                <p>共 {{ seeds.len() }} 个节点</p>
+                <h4>&#x1F4E1; 内网 (<span id="inner-seed-count">0</span>)</h4>
+                <table class="peer-table" id="inner-seeds-table">
+                    <tr><th>地址</th><th>端口</th><th>状态</th><th>最后活跃</th></tr>
+                    {% for seed in seeds %}
+                    {% if seed.protocol == "inner" %}
+                    <tr>
+                        <td class="address">{{ seed.address }}</td><td>{{ seed.port }}</td>
+                        <td>{% if seed.is_active %}<span class="status">活跃</span>{% else %}离线{% endif %}</td>
+                        <td>{{ seed.last_seen }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                    <tr class="empty-row" style="display:none"><td colspan="4">暂无内网种子</td></tr>
+                </table>
+                <h4>&#x1F310; 外网 (<span id="external-seed-count">0</span>)</h4>
+                <table class="peer-table" id="external-seeds-table">
+                    <tr><th>地址</th><th>端口</th><th>状态</th><th>最后活跃</th></tr>
+                    {% for seed in seeds %}
+                    {% if seed.protocol == "external" %}
+                    <tr>
+                        <td class="address">{{ seed.address }}</td><td>{{ seed.port }}</td>
+                        <td>{% if seed.is_active %}<span class="status">活跃</span>{% else %}离线{% endif %}</td>
+                        <td>{{ seed.last_seen }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                    <tr class="empty-row" style="display:none"><td colspan="4">暂无外网种子</td></tr>
+                </table>
+                <h4>&#x1F30D; IPv6 (<span id="ipv6-seed-count">0</span>)</h4>
+                <table class="peer-table" id="ipv6-seeds-table">
+                    <tr><th>地址</th><th>端口</th><th>状态</th><th>最后活跃</th></tr>
+                    {% for seed in seeds %}
+                    {% if seed.protocol == "ipv6" %}
+                    <tr>
+                        <td class="address">{{ seed.address }}</td><td>{{ seed.port }}</td>
+                        <td>{% if seed.is_active %}<span class="status">活跃</span>{% else %}离线{% endif %}</td>
+                        <td>{{ seed.last_seen }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                    <tr class="empty-row" style="display:none"><td colspan="4">暂无 IPv6 种子</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div id="tab-explorer" class="tab-content">
+            <h3>币浏览器</h3>
+            <div style="margin-bottom:15px;display:flex;gap:8px;">
+                <input id="explorer_address" type="text" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:4px;font-family:monospace;" placeholder="输入地址查询">
+                <button onclick="exploreAddress()" style="background:#4CAF50;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-weight:600;">查询</button>
+            </div>
+            <div id="explorer_result"></div>
+        </div>
+    </div>
+
+    <script>
+        let serverTickCount = {{ status.tick_count }};
+        let serverNextTick = {{ status.next_tick_seconds }};
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function fetchData() {
+            fetch('/api/data')
+                .then(r => r.json())
+                .then(data => {
+                    serverTickCount = data.tick_count;
+                    document.getElementById('epoch_tick').textContent = data.epoch_tick + ' / ' + data.ticks_per_epoch;
+                    updateConnections(data);
+                    updateWitness(data);
+                    updateNodes(data);
+                    updateSeeds(data);
+                })
+                .catch(() => {});
+        }
+
+        function updateConnections(d) {
+            function groupTable(title, items) {
+                let html = '<h3>' + title + '</h3>';
+                if (items && items.length > 0) {
+                    html += '<table class="peer-table"><tr><th>节点 ID</th><th>已连接</th><th>对端宣告</th></tr>';
+                    items.forEach(g => {
+                        html += '<tr><td class="address">' + g.node_id + '</td><td>' + g.addrs + '</td><td>' + g.passed + '</td></tr>';
+                    });
+                    html += '</table>';
+                } else {
+                    html += '<p class="section-title">暂无 ' + title + '</p>';
+                }
+                return html;
+            }
+            document.getElementById('conn-content').innerHTML = groupTable('入站连接', d.inbound_connections) + groupTable('出站连接', d.outbound_connections);
+        }
+
+        function updateWitness(d) {
+            let html = '<div class="info-grid">';
+            html += '<div class="info-item"><div class="info-label">活跃见证者</div><div class="info-value">--</div></div>';
+            html += '<div class="info-item"><div class="info-label">待定见证者</div><div class="info-value">--</div></div>';
+            html += '<div class="info-item"><div class="info-label">Tick 计数</div><div class="info-value">' + d.tick_count + '</div></div>';
+            html += '<div class="info-item"><div class="info-label">Tick 间隔</div><div class="info-value">15 分钟</div></div>';
+            html += '<div class="info-item"><div class="info-label">距下次 Tick</div><div class="info-value">' + d.next_tick_seconds + ' 秒</div></div></div>';
+
+            html += '<h3>活跃见证环</h3>';
+            if (d.witness_ring_active.member_count > 0) {
+                let r = d.witness_ring_active;
+                html += '<div class="info-grid"><div class="info-item"><div class="info-label">环 Hash</div><div class="info-value" style="font-family:monospace;font-size:11px;">' + r.ring_hash + '</div></div>';
+                html += '<div class="info-item"><div class="info-label">纪元</div><div class="info-value">' + r.epoch + '</div></div>';
+                html += '<div class="info-item"><div class="info-label">成员数</div><div class="info-value">' + r.member_count + '</div></div></div>';
+                html += '<table class="peer-table"><tr><th>IP</th><th>端口</th><th>节点 ID</th><th>状态</th></tr>';
+                r.members.forEach(m => {
+                    html += '<tr><td>' + m.ip + '</td><td>' + m.port + '</td><td class="address">' + m.node_id + '</td><td>' + (m.is_active ? '<span class="status">活跃</span>' : '离线') + '</td></tr>';
+                });
+                html += '</table>';
+            } else {
+                html += '<p class="section-title">活跃见证环尚未形成</p>';
+            }
+
+            html += '<h3>锁定见证环</h3>';
+            if (d.witness_ring_locked.member_count > 0) {
+                let r = d.witness_ring_locked;
+                html += '<div class="info-grid"><div class="info-item"><div class="info-label">环 Hash</div><div class="info-value" style="font-family:monospace;font-size:11px;">' + r.ring_hash + '</div></div>';
+                html += '<div class="info-item"><div class="info-label">纪元</div><div class="info-value">' + r.epoch + '</div></div>';
+                html += '<div class="info-item"><div class="info-label">成员数</div><div class="info-value">' + r.member_count + '</div></div></div>';
+                html += '<table class="peer-table"><tr><th>IP</th><th>端口</th><th>节点 ID</th><th>状态</th></tr>';
+                r.members.forEach(m => {
+                    html += '<tr><td>' + m.ip + '</td><td>' + m.port + '</td><td class="address">' + m.node_id + '</td><td>' + (m.is_active ? '<span class="status">活跃</span>' : '离线') + '</td></tr>';
+                });
+                html += '</table>';
+            } else {
+                html += '<p class="section-title">暂无锁定见证环</p>';
+            }
+
+            html += '<h3>今日 Tick 记录（纪元 ' + d.epoch + '）<small>最多：' + d.witness_tick_max + ' ticks</small></h3>';
+            if (d.witness_tick_records.length > 0) {
+                html += '<table class="peer-table"><tr><th>地址</th><th>Tick 数</th><th>全天在线</th></tr>';
+                d.witness_tick_records.forEach(r => {
+                    html += '<tr><td class="address">' + r.address + '</td><td>' + r.tick_count + '</td><td>' + (r.is_full_time ? '<span class="status">是</span>' : '否') + '</td></tr>';
+                });
+                html += '</table>';
+            } else {
+                html += '<p class="section-title">今日暂无 Tick 记录</p>';
+            }
+
+            html += '<h3>见证者链</h3><table class="peer-table"><tr><th>地址</th><th>在线</th><th>Ticks</th><th>权重</th></tr>';
+            if (d.witness_chain && d.witness_chain.length > 0) {
+                d.witness_chain.forEach(w => {
+                    html += '<tr><td class="address">' + w.address + '</td><td>' + (w.is_online ? '<span class="status">是</span>' : '否') + '</td><td>' + w.tick_count + '</td><td>' + w.weight + '</td></tr>';
+                });
+            } else {
+                html += '<tr><td colspan="4">暂无见证者</td></tr>';
+            }
+            html += '</table>';
+            document.getElementById('witness-content').innerHTML = html;
+        }
+
+        function updateNodes(d) {
+            let html = '<h3>节点注册表</h3><p>共 ' + d.nodes.length + ' 个节点</p>';
+            if (d.nodes.length > 0) {
+                html += '<table class="peer-table"><tr><th>节点 ID</th><th>内网 IP</th><th>外网 IP</th><th>已连接</th></tr>';
+                d.nodes.forEach(n => {
+                    let intranetHtml = '<ul class="ip-list">';
+                    if (n.intranet_ips.length > 0) { n.intranet_ips.forEach(ip => { intranetHtml += '<li>' + ip + '</li>'; }); }
+                    else { intranetHtml += '<li style="color:#999;">无</li>'; }
+                    intranetHtml += '</ul>';
+                    let wanHtml = '<ul class="ip-list">';
+                    if (n.wan_ips.length > 0) { n.wan_ips.forEach(ip => { wanHtml += '<li>' + ip + '</li>'; }); }
+                    else { wanHtml += '<li style="color:#999;">无</li>'; }
+                    wanHtml += '</ul>';
+                    html += '<tr><td class="address">' + n.address + '</td><td>' + intranetHtml + '</td><td>' + wanHtml + '</td><td>' + (n.is_connected ? '<span class="status">是</span>' : '否') + '</td></tr>';
+                });
+                html += '</table>';
+            } else {
+                html += '<table class="peer-table"><tr><td colspan="4">暂无注册节点</td></tr></table>';
+            }
+            document.getElementById('nodes-content').innerHTML = html;
+        }
+
+        function seedTableHtml(title, icon, seeds) {
+            let html = '<h4>' + icon + ' ' + title + ' (<span>' + seeds.length + '</span>)</h4>';
+            if (seeds.length > 0) {
+                html += '<table class="peer-table"><tr><th>地址</th><th>端口</th><th>状态</th><th>最后活跃</th></tr>';
+                seeds.forEach(s => {
+                    html += '<tr><td class="address">' + s.address + '</td><td>' + s.port + '</td><td>' + (s.is_active ? '<span class="status">活跃</span>' : '离线') + '</td><td>' + s.last_seen + '</td></tr>';
+                });
+                html += '</table>';
+            } else {
+                html += '<table class="peer-table"><tr><td colspan="4">暂无种子</td></tr></table>';
+            }
+            return html;
+        }
+
+        function updateSeeds(d) {
+            let inner = d.seeds.filter(s => s.protocol === 'inner');
+            let external = d.seeds.filter(s => s.protocol === 'external');
+            let ipv6 = d.seeds.filter(s => s.protocol === 'ipv6');
+            let html = '<h3>种子节点（内网 + 外网 + IPv6）</h3><p>共 ' + d.seeds.length + ' 个节点</p>';
+            html += seedTableHtml('内网', '&#x1F4E1;', inner);
+            html += seedTableHtml('外网', '&#x1F310;', external);
+            html += seedTableHtml('IPv6', '&#x1F30D;', ipv6);
+            document.getElementById('seeds-content').innerHTML = html;
+        }
+
+        setInterval(function() {
+            let now = new Date();
+            let offset = 8;
+            let utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            let utc8 = new Date(utc + (3600000 * offset));
+            let hour = utc8.getHours();
+            let minute = utc8.getMinutes();
+            let second = utc8.getSeconds();
+            let secondsInDay = hour * 3600 + minute * 60 + second;
+            let tickInterval = 15 * 60;
+            let clientTodayTick = Math.floor(secondsInDay / tickInterval);
+            let currentTick = serverTickCount + clientTodayTick;
+            let totalEl = document.getElementById('total_tick');
+            if (totalEl) totalEl.textContent = currentTick;
+            let todayEl = document.getElementById('today_tick');
+            if (todayEl) todayEl.textContent = clientTodayTick;
+            let seconds = secondsInDay % tickInterval;
+            let nextTick = tickInterval - seconds;
+            let nextEl = document.getElementById('next_tick');
+            if (nextEl) nextEl.textContent = nextTick + ' 秒';
+        }, 1000);
+
+        function exploreAddress() {
+            let addr = document.getElementById('explorer_address').value.trim();
+            let resultEl = document.getElementById('explorer_result');
+            if (!addr) { resultEl.innerHTML = '<span style="color:#f44336;">请输入地址</span>'; return; }
+            resultEl.innerHTML = '<span style="color:#666;">加载中...</span>';
+            fetch('/api/address?address=' + encodeURIComponent(addr))
+                .then(r => r.json())
+                .then(data => {
+                    let html = '<div class="info-grid" style="margin-bottom:15px;">';
+                    html += '<div class="info-item"><div class="info-label">地址</div><div class="info-value address">' + data.address + '</div></div>';
+                    html += '<div class="info-item"><div class="info-label">余额</div><div class="info-value">' + data.balance + ' ZZ</div></div>';
+                    html += '<div class="info-item"><div class="info-label">交易数</div><div class="info-value">' + data.transactions.length + '</div></div></div>';
+                    if (data.transactions.length > 0) {
+                        html += '<table class="peer-table"><tr><th>ID</th><th>类型</th><th>发送方</th><th>接收方</th><th>数量</th></tr>';
+                        data.transactions.forEach(tx => {
+                            html += '<tr><td>' + tx.id + '</td><td>' + tx.tx_type + '</td><td class="address">' + tx.from_address + '</td><td class="address">' + tx.to_address + '</td><td>' + tx.amount + ' ZZ</td></tr>';
+                        });
+                        html += '</table>';
+                    } else {
+                        html += '<p class="section-title">该地址暂无交易记录</p>';
+                    }
+                    resultEl.innerHTML = html;
+                })
+                .catch(e => { resultEl.innerHTML = '<span style="color:#f44336;">错误：' + e.message + '</span>'; });
+        }
+
+        setInterval(fetchData, 30000);
+        setTimeout(fetchData, 5000);
+
+        function loadTransactionsPage(page) {
+            fetch('/api/transactions?page=' + page)
+                .then(r => r.text())
+                .then(html => { document.getElementById('tab-transactions').innerHTML = html; });
+        }
+
+        function prevPage() { let page = {{ transactions.current_page }}; if (page > 1) loadTransactionsPage(page - 1); }
+        function nextPage() { let page = {{ transactions.current_page }}; let total = {{ transactions.total_pages }}; if (page < total) loadTransactionsPage(page + 1); }
+    </script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>节点信息 — ZZ 加密节点</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .nav-bar {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .nav-bar a {
+            flex: 1;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-bar a:hover { color: #333; background: #f9f9f9; }
+        .nav-bar a.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .refresh-banner {
+            text-align: right;
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 10px; margin: 0 0 15px 0; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .info-label { color: #666; font-size: 12px; text-transform: uppercase; }
+        .info-value { color: #333; font-weight: bold; font-size: 14px; margin-top: 5px; }
+        .info-value.address {
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .section-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+        .peer-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .peer-table th, .peer-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .peer-table th {
+            background: #f9f9f9;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .peer-table tr:hover { background: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/" class="active">节点信息</a>
+        <a href="/network">加密网络</a>
+        <a href="/wallet">钱包</a>
+        <a href="/chat">聊天</a>
+    </div>
+    <div class="refresh-banner">每 30 秒自动刷新</div>
+    <h1>节点信息<br><small>{{ node_name }}</small></h1>
+
+    <div class="card">
+        <h2>基本信息</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">节点地址</div>
+                <div class="info-value address"><a href="{{ explorer_url }}/address/{{ node_address }}" target="_blank">{{ node_address }}</a></div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">统一端口</div>
+                <div class="info-value">{{ p2p_port }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">运行状态</div>
+                <div class="info-value"><span class="status">运行中</span></div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Web 界面</div>
+                <div class="info-value"><a href="http://localhost:{{ p2p_port }}/">http://localhost:{{ p2p_port }}/</a></div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">纪元</div>
+                <div class="info-value">{{ status.epoch }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">纪元 Tick</div>
+                <div class="info-value" id="epoch_tick">{{ status.epoch_tick }} / {{ status.ticks_per_epoch }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">总 Tick 数</div>
+                <div class="info-value" id="total_tick">{{ status.tick_count }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">今日 Tick</div>
+                <div class="info-value" id="today_tick">{{ status.today_tick }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Tick 间隔</div>
+                <div class="info-value">{{ status.tick_interval_minutes }} 分钟</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">距下次 Tick</div>
+                <div class="info-value" id="next_tick">-- 秒</div>
+            </div>
+            <div class="info-item" style="grid-column:1/-1;">
+                <div class="info-label">数据目录</div>
+                <div class="info-value">{{ data_dir }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>网络</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">内网 IP (LAN)</div>
+                <ul style="list-style:none;padding:0;margin:5px 0 0 0;">
+                    {% for ip in inner_ips %}
+                    <li style="font-family:monospace;font-size:13px;padding:2px 0;">{{ ip }}</li>
+                    {% else %}
+                    <li style="font-family:monospace;font-size:13px;color:#999;">N/A</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="info-item">
+                <div class="info-label">外网 IP (WAN)</div>
+                <ul style="list-style:none;padding:0;margin:5px 0 0 0;">
+                    {% for ip in external_ips %}
+                    <li style="font-family:monospace;font-size:13px;padding:2px 0;">{{ ip }}</li>
+                    {% else %}
+                    <li style="font-family:monospace;font-size:13px;color:#999;">N/A</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="info-item" style="grid-column:1/-1;">
+                <div class="info-label">支持的协议</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+                    {% for protocol in protocols.split(",") %}
+                    <span style="background:#e8f5e9;color:#2e7d32;padding:4px 12px;border-radius:16px;font-size:12px;font-weight:bold;">{{ protocol.trim() }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>资源权重</h2>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">综合权重</div>
+                <div class="info-value">{{ resources.composite_weight }}</div>
+            </div>
+        </div>
+        <table class="peer-table">
+            <tr><th>资源</th><th>可用量</th><th>权重</th></tr>
+            <tr><td>存储</td><td>{{ resources.storage_weight }} TB</td><td>{{ resources.storage_weight }}</td></tr>
+            <tr><td>带宽</td><td>{{ resources.bandwidth_weight }} Gbps</td><td>{{ resources.bandwidth_weight }}</td></tr>
+            <tr><td>CPU</td><td>{{ resources.cpu_weight }} cores * GHz</td><td>{{ resources.cpu_weight }}</td></tr>
+            <tr><td>内存</td><td>{{ resources.memory_weight }} GB</td><td>{{ resources.memory_weight }}</td></tr>
+            <tr><td>API 请求</td><td>{{ resources.api_weight }} /天</td><td>{{ resources.api_weight }}</td></tr>
+        </table>
+    </div>
+
+    <div class="card" style="text-align:center;padding:15px;">
+        <a href="/wallet" style="color:#4CAF50;font-weight:600;text-decoration:none;margin-right:20px;">打开钱包 &rarr;</a>
+        <a href="{{ explorer_url }}" target="_blank" style="color:#4CAF50;font-weight:600;text-decoration:none;">浏览器 &rarr;</a>
+    </div>
+
+    <script>
+        let serverTickCount = {{ status.tick_count }};
+
+        setInterval(function() {
+            let now = new Date();
+            let offset = 8;
+            let utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            let utc8 = new Date(utc + (3600000 * offset));
+            let hour = utc8.getHours();
+            let minute = utc8.getMinutes();
+            let second = utc8.getSeconds();
+            let secondsInDay = hour * 3600 + minute * 60 + second;
+            let tickInterval = 15 * 60;
+            let clientTodayTick = Math.floor(secondsInDay / tickInterval);
+            let currentTick = serverTickCount + clientTodayTick;
+            let totalEl = document.getElementById('total_tick');
+            if (totalEl) totalEl.textContent = currentTick;
+            let todayEl = document.getElementById('today_tick');
+            if (todayEl) todayEl.textContent = clientTodayTick;
+            let seconds = secondsInDay % tickInterval;
+            let nextTick = tickInterval - seconds;
+            let nextEl = document.getElementById('next_tick');
+            if (nextEl) nextEl.textContent = nextTick + ' 秒';
+        }, 1000);
+    </script>
+</body>
+</html>

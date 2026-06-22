@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钱包 — ZZ 加密节点</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .nav-bar {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .nav-bar a {
+            flex: 1;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-bar a:hover { color: #333; background: #f9f9f9; }
+        .nav-bar a.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .refresh-banner {
+            text-align: right;
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 10px; margin: 0 0 15px 0; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .info-label { color: #666; font-size: 12px; text-transform: uppercase; }
+        .info-value { color: #333; font-weight: bold; font-size: 14px; margin-top: 5px; }
+        .info-value.address { font-family: monospace; font-size: 12px; word-break: break-all; }
+        .tab-container { margin-bottom: 0; }
+        .tab-buttons {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #333; }
+        .tab-btn.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .peer-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .peer-table th, .peer-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .peer-table th {
+            background: #f9f9f9;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .peer-table tr:hover { background: #f5f5f5; }
+        .section-title { font-size: 14px; color: #888; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/">节点信息</a>
+        <a href="/network">加密网络</a>
+        <a href="/wallet" class="active">钱包</a>
+        <a href="/chat">聊天</a>
+    </div>
+    <div class="refresh-banner">每 30 秒自动刷新</div>
+    <h1>钱包<br><small>{{ node_name }}</small></h1>
+
+    <div class="card tab-container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showWalletTab('info')">概览</button>
+            <button class="tab-btn" onclick="showWalletTab('transfer')">转账</button>
+            <button class="tab-btn" onclick="showWalletTab('contacts')">联系人 <span id="contacts_badge" style="display:none;background:#f44336;color:white;padding:2px 8px;border-radius:10px;font-size:12px;vertical-align:middle;"></span></button>
+            <button class="tab-btn" onclick="showWalletTab('history')">历史</button>
+        </div>
+
+        <div id="wallet-info" class="tab-content active">
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">节点地址</div>
+                    <div class="info-value address"><a href="{{ explorer_url }}/address/{{ node_address }}" target="_blank">{{ node_address }}</a></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">统一端口</div>
+                    <div class="info-value">{{ p2p_port }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">状态</div>
+                    <div class="info-value"><span class="status">运行中</span></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">纪元</div>
+                    <div class="info-value">{{ status.epoch }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">余额</div>
+                    <div class="info-value">{{ account.balance }} ZZ</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">累计发送 / 接收</div>
+                    <div class="info-value">{{ account.total_sent }} / {{ account.total_received }} ZZ</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="wallet-transfer" class="tab-content">
+            <h3 style="margin:0 0 12px 0;font-size:15px;">发送转账</h3>
+            <div class="info-grid" style="margin-bottom:15px;">
+                <div class="info-item">
+                    <div class="info-label">您的地址</div>
+                    <div class="info-value address" id="transfer_my_address">{{ node_address }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">您的余额</div>
+                    <div class="info-value" id="transfer_my_balance">-- ZZ</div>
+                </div>
+            </div>
+            <div style="margin-top:12px;">
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;margin-bottom:4px;font-weight:600;color:#555;font-size:13px;">接收地址</label>
+                    <input id="transfer_to" type="text" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-family:monospace;box-sizing:border-box;" placeholder="输入接收方地址">
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label style="display:block;margin-bottom:4px;font-weight:600;color:#555;font-size:13px;">数量 (ZZ)</label>
+                    <input id="transfer_amount" type="number" min="1" style="width:200px;padding:10px;border:1px solid #ddd;border-radius:4px;" placeholder="0">
+                </div>
+                <button id="transfer_btn" onclick="submitTransfer()" style="cursor:pointer;background:#4CAF50;color:white;border:none;padding:10px 24px;border-radius:4px;font-size:14px;font-weight:600;">发送</button>
+                <div id="transfer_status" style="margin-top:10px;font-size:13px;"></div>
+            </div>
+        </div>
+
+        <div id="wallet-contacts" class="tab-content">
+            <h3 style="margin:0 0 12px 0;font-size:15px;">联系人 <span id="contacts_badge_header" style="display:none;background:#f44336;color:white;padding:2px 8px;border-radius:10px;font-size:12px;vertical-align:middle;"></span></h3>
+            <div style="margin-bottom:15px;padding:15px;background:#f9f9f9;border-radius:4px;">
+                <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <input id="contact_name" type="text" style="width:160px;padding:8px;border:1px solid #ddd;border-radius:4px;" placeholder="名称">
+                    <input id="contact_address" type="text" style="flex:1;min-width:200px;padding:8px;border:1px solid #ddd;border-radius:4px;font-family:monospace;" placeholder="FWMC 地址">
+                    <button onclick="addContact()" style="background:#4CAF50;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:600;">添加联系人</button>
+                </div>
+                <div id="contact_status" style="font-size:13px;color:#666;"></div>
+            </div>
+            <div id="contacts_list"><p class="section-title">加载中...</p></div>
+        </div>
+
+        <div id="wallet-history" class="tab-content">
+            <h3 style="margin:0 0 12px 0;font-size:15px;">交易历史</h3>
+            <p class="section-title">请在加密网络页面查看完整交易记录</p>
+            <div style="display:flex;gap:10px;margin-top:15px;">
+                <a href="/network" style="background:#4CAF50;color:white;padding:10px 20px;border-radius:4px;text-decoration:none;font-weight:600;">前往加密网络 &rarr;</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let prevUnreadTotal = 0;
+
+        function showWalletTab(tabName) {
+            ['info', 'transfer', 'contacts', 'history'].forEach(t => {
+                let el = document.getElementById('wallet-' + t);
+                if (el) el.classList.remove('active');
+            });
+            event.target.closest('.card').querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('wallet-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function loadContacts() {
+            fetch('/api/contacts')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    let totalUnread = data.contacts.reduce((s, c) => s + (c.unread_count || 0), 0);
+                    if (totalUnread > prevUnreadTotal) {
+                        showNotificationToast('📩 ' + (totalUnread - prevUnreadTotal) + ' 条新消息');
+                    }
+                    prevUnreadTotal = totalUnread;
+                    renderContacts(data.contacts);
+                })
+                .catch(() => {});
+        }
+
+        function renderContacts(contacts) {
+            let html = '<table class="peer-table"><tr><th></th><th>名称</th><th>地址</th><th>未读</th><th>操作</th></tr>';
+            if (contacts.length === 0) {
+                html += '<tr><td colspan="5">暂无联系人</td></tr>';
+            } else {
+                contacts.forEach(c => {
+                    let displayName = c.nickname || c.name;
+                    let badge = c.unread_count > 0 ? `<span style="background:#f44336;color:white;padding:1px 6px;border-radius:8px;font-size:11px;">${c.unread_count}</span>` : '0';
+                    let avatarHtml = c.avatar_path
+                        ? `<img src="${c.avatar_path}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;">`
+                        : `<div style="width:24px;height:24px;border-radius:50%;background:#e0e0e0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999;">${(displayName||'?').charAt(0).toUpperCase()}</div>`;
+                    html += `<tr>
+                        <td>${avatarHtml}</td>
+                        <td><strong>${escapeHtml(displayName)}</strong></td>
+                        <td class="address" style="cursor:pointer;" onclick="copyTextValue('${c.address}')" title="点击复制">${c.address}</td>
+                        <td>${badge}</td>
+                        <td>
+                            <button onclick="deleteContact('${c.address}')" style="background:#f44336;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;">删除</button>
+                            <button onclick="openChat('${c.address}','${escapeHtml(displayName)}')" style="background:#2196F3;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:4px;">聊天</button>
+                            <button onclick="copyTextValue('${c.address}')" style="background:#607D8B;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:4px;">复制地址</button>
+                        </td>
+                    </tr>`;
+                });
+            }
+            html += '</table>';
+            let el = document.getElementById('contacts_list');
+            if (el) el.innerHTML = html;
+            updateContactsBadge(contacts);
+        }
+
+        function updateContactsBadge(contacts) {
+            let total = contacts.reduce((s, c) => s + (c.unread_count || 0), 0);
+            ['contacts_badge', 'contacts_badge_header'].forEach(id => {
+                let badge = document.getElementById(id);
+                if (badge) {
+                    if (total > 0) { badge.textContent = total; badge.style.display = 'inline'; }
+                    else { badge.style.display = 'none'; }
+                }
+            });
+        }
+
+        function addContact() {
+            let name = document.getElementById('contact_name').value.trim();
+            let address = document.getElementById('contact_address').value.trim();
+            let statusEl = document.getElementById('contact_status');
+            if (!name || !address) {
+                statusEl.innerHTML = '<span style="color:#f44336;">请输入名称和地址</span>';
+                return;
+            }
+            statusEl.innerHTML = '<span style="color:#666;">添加中...</span>';
+            fetch('/api/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, address }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    statusEl.innerHTML = '<span style="color:#4CAF50;">联系人已添加！</span>';
+                    document.getElementById('contact_name').value = '';
+                    document.getElementById('contact_address').value = '';
+                    loadContacts();
+                } else {
+                    statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                }
+            })
+            .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; });
+        }
+
+        function deleteContact(address) {
+            if (!confirm('确定删除该联系人？')) return;
+            fetch('/api/contacts?address=' + encodeURIComponent(address), { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => { if (data.success) loadContacts(); });
+        }
+
+        function copyTextValue(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showNotificationToast('✓ 地址已复制到剪贴板');
+            }).catch(() => {});
+        }
+
+        function openChat(address, name) {
+            window.location.href = '/chat?address=' + encodeURIComponent(address) + '&name=' + encodeURIComponent(name);
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function submitTransfer() {
+            let to = document.getElementById('transfer_to').value.trim();
+            let amount = parseInt(document.getElementById('transfer_amount').value);
+            let btn = document.getElementById('transfer_btn');
+            let statusEl = document.getElementById('transfer_status');
+            statusEl.innerHTML = '<span style="color:#666;">发送中...</span>';
+            btn.disabled = true;
+            fetch('/api/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to, amount }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    statusEl.innerHTML = '<span style="color:#4CAF50;">转账成功！交易：<code style="word-break:break-all;">' + data.tx_hash + '</code></span>';
+                    document.getElementById('transfer_to').value = '';
+                    document.getElementById('transfer_amount').value = '';
+                } else {
+                    statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                }
+            })
+            .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; })
+            .finally(() => { btn.disabled = false; });
+        }
+
+        function showNotificationToast(message) {
+            let toast = document.getElementById('notification_toast');
+            toast.innerHTML = message;
+            toast.style.display = 'block';
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => { toast.style.display = 'none'; }, 500);
+            }, 4000);
+        }
+
+        setInterval(loadContacts, 30000);
+        setTimeout(loadContacts, 1000);
+    </script>
+    <div id="notification_toast" style="display:none;position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.5s;max-width:360px;word-break:break-word;"></div>
+</body>
+</html>

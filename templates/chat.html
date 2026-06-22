@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>聊天 — ZZ 加密节点</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .nav-bar {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .nav-bar a {
+            flex: 1;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .nav-bar a:hover { color: #333; background: #f9f9f9; }
+        .nav-bar a.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 10px; margin: 0 0 15px 0; }
+        .status { color: #4CAF50; font-weight: bold; }
+        .tab-container { margin-bottom: 0; }
+        .tab-buttons {
+            display: flex;
+            gap: 4px;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #333; }
+        .tab-btn.active { color: #4CAF50; border-bottom-color: #4CAF50; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .peer-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .peer-table th, .peer-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .peer-table th {
+            background: #f9f9f9;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .peer-table tr:hover { background: #f5f5f5; }
+        .section-title { font-size: 14px; color: #888; margin-bottom: 10px; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .info-item {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .info-label { color: #666; font-size: 12px; text-transform: uppercase; }
+        .info-value { color: #333; font-weight: bold; font-size: 14px; margin-top: 5px; }
+        .info-value.address { font-family: monospace; font-size: 12px; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/">节点信息</a>
+        <a href="/network">加密网络</a>
+        <a href="/wallet">钱包</a>
+        <a href="/chat" class="active">聊天</a>
+    </div>
+    <h1>聊天<br><small>{{ node_name }}</small></h1>
+
+    <div class="card tab-container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="showChatTab('messages')">消息</button>
+            <button class="tab-btn" onclick="showChatTab('contacts')">联系人</button>
+            <button class="tab-btn" onclick="showChatTab('profile')">个人资料</button>
+        </div>
+
+        <div id="chat-messages" class="tab-content active" style="position:relative;">
+            <div style="display:flex;gap:12px;min-height:400px;">
+                <div style="width:200px;flex-shrink:0;border-right:1px solid #eee;padding-right:12px;overflow-y:auto;max-height:500px;">
+                    <h4 style="margin:0 0 10px 0;font-size:14px;">会话</h4>
+                    <div id="conversation_list"><p class="section-title" style="font-size:12px;">暂无会话</p></div>
+                    <h4 style="margin:10px 0 8px 0;font-size:14px;border-top:1px solid #eee;padding-top:10px;">在线联系人</h4>
+                    <div id="chat_contact_list"><p class="section-title" style="font-size:12px;">暂无联系人</p></div>
+                </div>
+                <div style="flex:1;display:flex;flex-direction:column;">
+                    <div style="margin-bottom:10px;">
+                        <div style="display:flex;gap:8px;">
+                            <input id="chat_target" type="text" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:4px;font-family:monospace;font-size:13px;" placeholder="FWMC 地址">
+                        </div>
+                    </div>
+                    <div id="chat_header" style="display:none;padding:8px 12px;background:#f0f7ff;border-radius:4px;margin-bottom:8px;font-size:13px;">
+                        <strong id="chat_with_name"></strong>
+                        <span id="chat_with_address" style="font-family:monospace;font-size:11px;color:#888;margin-left:6px;cursor:pointer;" onclick="copyText('chat_with_address')" title="点击复制地址"></span>
+                    </div>
+                    <div id="chat_messages_area" style="overflow-y:auto;max-height:300px;min-height:180px;padding:12px;background:#fafafa;border-radius:4px;margin-bottom:8px;border:1px solid #eee;flex:1;">
+                        <p class="section-title" style="text-align:center;padding:30px 0;font-size:13px;">选择一个会话或输入地址</p>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <textarea id="chat_input" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:4px;resize:none;" placeholder="输入消息..." rows="2"></textarea>
+                        <button onclick="sendChatMessage()" style="background:#2196F3;color:white;border:none;padding:8px 20px;border-radius:4px;cursor:pointer;font-weight:600;align-self:flex-end;font-size:13px;">发送</button>
+                    </div>
+                    <div id="chat_status" style="margin-top:6px;font-size:12px;color:#666;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="chat-contacts" class="tab-content">
+            <h3 style="margin:0 0 12px 0;font-size:15px;">联系人 <span id="contacts_badge" style="display:none;background:#f44336;color:white;padding:2px 8px;border-radius:10px;font-size:12px;vertical-align:middle;"></span></h3>
+            <div style="margin-bottom:15px;padding:15px;background:#f9f9f9;border-radius:4px;">
+                <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <input id="contact_name" type="text" style="width:160px;padding:8px;border:1px solid #ddd;border-radius:4px;" placeholder="名称">
+                    <input id="contact_address" type="text" style="flex:1;min-width:200px;padding:8px;border:1px solid #ddd;border-radius:4px;font-family:monospace;" placeholder="FWMC 地址">
+                    <button onclick="addContact()" style="background:#4CAF50;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:600;">添加联系人</button>
+                </div>
+                <div id="contact_status" style="font-size:13px;color:#666;"></div>
+            </div>
+            <div id="contacts_list"><p class="section-title">加载中...</p></div>
+        </div>
+
+        <div id="chat-profile" class="tab-content">
+            <h3 style="margin:0 0 12px 0;font-size:15px;">个人资料</h3>
+            <div id="profile_avatar_wrapper" style="text-align:center;margin-bottom:15px;">
+                <img id="profile_avatar_img" src="" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:3px solid #eee;background:#f0f0f0;display:none;">
+                <div id="profile_avatar_placeholder" style="width:120px;height:120px;border-radius:50%;background:#e0e0e0;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#999;font-size:40px;">?</div>
+                <div style="margin-top:8px;">
+                    <input id="profile_avatar_input" type="file" accept="image/*" style="display:none;" onchange="uploadAvatar(this)">
+                    <button onclick="document.getElementById('profile_avatar_input').click()" style="background:#4CAF50;color:white;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;">上传头像</button>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">昵称</label><input id="pf_nickname" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">性别</label><input id="pf_gender" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;" placeholder="男 / 女 / 其他"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">年龄</label><input id="pf_age" type="number" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">国家</label><input id="pf_country" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">民族</label><input id="pf_ethnicity" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">血型</label><input id="pf_blood_type" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;" placeholder="A / B / AB / O"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">身高 (cm)</label><input id="pf_height" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">体重 (kg)</label><input id="pf_weight" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div style="grid-column:1/3;"><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">学历</label><input id="pf_education" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;" placeholder="最高学历 / 学校"></div>
+                <div style="grid-column:1/3;"><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">家庭住址</label><input id="pf_home_address" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;"></div>
+                <div style="grid-column:1/3;"><label style="display:block;font-size:12px;color:#666;font-weight:600;margin-bottom:3px;">个人简介</label><textarea id="pf_bio" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;resize:vertical;" rows="3"></textarea></div>
+            </div>
+            <div style="margin-top:15px;text-align:right;">
+                <button onclick="saveProfile()" style="background:#4CAF50;color:white;border:none;padding:10px 24px;border-radius:4px;cursor:pointer;font-size:14px;font-weight:600;">保存资料</button>
+                <span id="profile_status" style="margin-left:10px;font-size:13px;"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedChatContact = null;
+        let chatPollTimer = null;
+        let prevUnreadTotal = 0;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const initAddress = urlParams.get('address');
+        const initName = urlParams.get('name');
+
+        function showChatTab(tabName) {
+            ['messages', 'contacts', 'profile'].forEach(t => {
+                let el = document.getElementById('chat-' + t);
+                if (el) el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('chat-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+            if (tabName === 'profile') loadProfile();
+        }
+
+        function showNotificationToast(message, onClick) {
+            let toast = document.getElementById('notification_toast');
+            toast.innerHTML = message;
+            toast.style.display = 'block';
+            toast.style.opacity = '1';
+            toast.onclick = onClick || null;
+            toast.style.cursor = onClick ? 'pointer' : 'default';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => { toast.style.display = 'none'; }, 500);
+            }, 4000);
+        }
+
+        function loadContacts() {
+            fetch('/api/contacts')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    let totalUnread = data.contacts.reduce((s, c) => s + (c.unread_count || 0), 0);
+                    if (totalUnread > prevUnreadTotal) {
+                        let newMsgs = totalUnread - prevUnreadTotal;
+                        showNotificationToast('📩 ' + newMsgs + ' 条新消息');
+                        if (selectedChatContact) {
+                            loadChatMessages(selectedChatContact, document.getElementById('chat_with_name').textContent, true);
+                        }
+                    }
+                    prevUnreadTotal = totalUnread;
+                    renderContacts(data.contacts);
+                    renderChatContactList(data.contacts);
+                })
+                .catch(() => {});
+            loadConversations();
+        }
+
+        function openChatByAddress(address) {
+            let name = address.substring(0, 16) + '..';
+            fetch('/api/contacts')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        let c = data.contacts.find(x => x.address === address);
+                        if (c) name = c.nickname || c.name;
+                    }
+                    openChat(address, name);
+                })
+                .catch(() => openChat(address, name));
+        }
+
+        function renderContacts(contacts) {
+            let html = '<table class="peer-table"><tr><th></th><th>名称</th><th>地址</th><th>未读</th><th>操作</th></tr>';
+            if (contacts.length === 0) {
+                html += '<tr><td colspan="5">暂无联系人</td></tr>';
+            } else {
+                contacts.forEach(c => {
+                    let displayName = c.nickname || c.name;
+                    let badge = c.unread_count > 0 ? `<span style="background:#f44336;color:white;padding:1px 6px;border-radius:8px;font-size:11px;">${c.unread_count}</span>` : '0';
+                    let avatarHtml = c.avatar_path
+                        ? `<img src="${c.avatar_path}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;">`
+                        : `<div style="width:24px;height:24px;border-radius:50%;background:#e0e0e0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999;">${(displayName||'?').charAt(0).toUpperCase()}</div>`;
+                    html += `<tr>
+                        <td>${avatarHtml}</td>
+                        <td><strong>${escapeHtml(displayName)}</strong></td>
+                        <td class="address" style="cursor:pointer;" onclick="copyTextValue('${c.address}')" title="点击复制">${c.address}</td>
+                        <td>${badge}</td>
+                        <td>
+                            <button onclick="deleteContact('${c.address}')" style="background:#f44336;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;">删除</button>
+                            <button onclick="openChat('${c.address}','${escapeHtml(displayName)}')" style="background:#2196F3;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:4px;">聊天</button>
+                            <button onclick="copyTextValue('${c.address}')" style="background:#607D8B;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-left:4px;">复制地址</button>
+                        </td>
+                    </tr>`;
+                });
+            }
+            html += '</table>';
+            let el = document.getElementById('contacts_list');
+            if (el) el.innerHTML = html;
+            updateContactsBadge(contacts);
+        }
+
+        function copyText(elId) {
+            let el = document.getElementById(elId);
+            if (!el) return;
+            navigator.clipboard.writeText(el.textContent || el.innerText).then(() => {
+                let tip = document.createElement('span');
+                tip.style.cssText = 'font-size:11px;color:#4CAF50;margin-left:6px;';
+                tip.textContent = '✓ 已复制';
+                el.parentNode.appendChild(tip);
+                setTimeout(() => tip.remove(), 1200);
+            }).catch(() => {});
+        }
+
+        function renderChatContactList(contacts) {
+            let container = document.getElementById('chat_contact_list');
+            if (!container) return;
+            let html = '';
+            if (contacts.length === 0) {
+                html = '<p style="font-size:12px;color:#999;">暂无联系人</p>';
+            } else {
+                contacts.slice(0, 30).forEach(c => {
+                    let displayName = c.nickname || c.name || c.address.substring(0,12)+'..';
+                    let addrShort = c.address.length > 16 ? c.address.substring(0,16)+'..' : c.address;
+                    let active = selectedChatContact === c.address ? ' style="background:#e3f2fd;"' : '';
+                    let badge = c.unread_count > 0 ? `<span style="background:#f44336;color:white;padding:0 5px;border-radius:8px;font-size:10px;margin-left:auto;white-space:nowrap;">${c.unread_count}</span>` : '';
+                    html += `<div${active} onclick="openChatByAddress('${c.address}')" style="display:flex;align-items:center;gap:8px;padding:7px 8px;cursor:pointer;border-radius:4px;margin-bottom:2px;border-bottom:1px solid #f0f0f0;">
+                        <div style="width:28px;height:28px;border-radius:50%;background:#e0e0e0;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999;">
+                            ${c.avatar_path ? `<img src="${c.avatar_path}" style="width:28px;height:28px;object-fit:cover;">` : (displayName.charAt(0).toUpperCase())}
+                        </div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:12px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(displayName)}</div>
+                            <div style="font-size:10px;color:#999;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(addrShort)}</div>
+                        </div>
+                        ${badge}
+                    </div>`;
+                });
+            }
+            container.innerHTML = html;
+        }
+
+        function updateContactsBadge(contacts) {
+            let total = contacts.reduce((s, c) => s + (c.unread_count || 0), 0);
+            let badge = document.getElementById('contacts_badge');
+            if (badge) {
+                if (total > 0) { badge.textContent = total; badge.style.display = 'inline'; }
+                else { badge.style.display = 'none'; }
+            }
+        }
+
+        function loadConversations() {
+            fetch('/api/conversations')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    renderConversations(data.conversations);
+                })
+                .catch(() => {});
+        }
+
+        function renderConversations(convs) {
+            let html = '';
+            if (convs.length === 0) {
+                html = '<p style="font-size:12px;color:#999;text-align:center;padding:10px 0;">暂无会话</p>';
+            } else {
+                convs.forEach(c => {
+                    let badge = c.unread_count > 0 ? `<span style="background:#f44336;color:white;padding:1px 6px;border-radius:8px;font-size:11px;margin-left:auto;">${c.unread_count}</span>` : '';
+                    let active = selectedChatContact === c.address ? ' style="background:#e3f2fd;"' : '';
+                    let time = new Date(c.last_timestamp * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+                    html += `<div${active} onclick="openChatByAddress('${c.address}')" style="padding:8px 10px;cursor:pointer;border-radius:4px;margin-bottom:2px;border-bottom:1px solid #f0f0f0;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span style="font-family:monospace;font-size:12px;font-weight:600;color:#333;">${c.address.substring(0,12)}..</span>
+                            ${badge}
+                            <span style="font-size:10px;color:#999;margin-left:auto;">${time}</span>
+                        </div>
+                        <div style="font-size:11px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">${escapeHtml(c.last_message)}</div>
+                    </div>`;
+                });
+            }
+            document.getElementById('conversation_list').innerHTML = html;
+        }
+
+        function addContact() {
+            let name = document.getElementById('contact_name').value.trim();
+            let address = document.getElementById('contact_address').value.trim();
+            let statusEl = document.getElementById('contact_status');
+            if (!name || !address) {
+                statusEl.innerHTML = '<span style="color:#f44336;">请输入名称和地址</span>';
+                return;
+            }
+            statusEl.innerHTML = '<span style="color:#666;">添加中...</span>';
+            fetch('/api/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, address }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    statusEl.innerHTML = '<span style="color:#4CAF50;">联系人已添加！</span>';
+                    document.getElementById('contact_name').value = '';
+                    document.getElementById('contact_address').value = '';
+                    loadContacts();
+                } else {
+                    statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                }
+            })
+            .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; });
+        }
+
+        function deleteContact(address) {
+            if (!confirm('确定删除该联系人？')) return;
+            fetch('/api/contacts?address=' + encodeURIComponent(address), { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        if (selectedChatContact === address) {
+                            selectedChatContact = null;
+                            document.getElementById('chat_header').style.display = 'none';
+                            if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
+                        }
+                        loadContacts();
+                    }
+                });
+        }
+
+        function copyTextValue(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showNotificationToast('✓ 地址已复制到剪贴板');
+            }).catch(() => {});
+        }
+
+        function loadProfile() {
+            fetch('/api/profile')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    let p = data.profile;
+                    document.getElementById('pf_nickname').value = p.nickname || '';
+                    document.getElementById('pf_gender').value = p.gender || '';
+                    document.getElementById('pf_age').value = p.age || '';
+                    document.getElementById('pf_country').value = p.country || '';
+                    document.getElementById('pf_ethnicity').value = p.ethnicity || '';
+                    document.getElementById('pf_blood_type').value = p.blood_type || '';
+                    document.getElementById('pf_height').value = p.height_cm || '';
+                    document.getElementById('pf_weight').value = p.weight_kg || '';
+                    document.getElementById('pf_education').value = p.education || '';
+                    document.getElementById('pf_home_address').value = p.home_address || '';
+                    document.getElementById('pf_bio').value = p.bio || '';
+                    if (p.avatar_path) {
+                        document.getElementById('profile_avatar_img').src = p.avatar_path;
+                        document.getElementById('profile_avatar_img').style.display = 'inline';
+                        document.getElementById('profile_avatar_placeholder').style.display = 'none';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function saveProfile() {
+            let profile = {
+                nickname: document.getElementById('pf_nickname').value.trim() || null,
+                gender: document.getElementById('pf_gender').value.trim() || null,
+                age: parseInt(document.getElementById('pf_age').value) || null,
+                country: document.getElementById('pf_country').value.trim() || null,
+                ethnicity: document.getElementById('pf_ethnicity').value.trim() || null,
+                blood_type: document.getElementById('pf_blood_type').value.trim() || null,
+                height_cm: parseFloat(document.getElementById('pf_height').value) || null,
+                weight_kg: parseFloat(document.getElementById('pf_weight').value) || null,
+                education: document.getElementById('pf_education').value.trim() || null,
+                home_address: document.getElementById('pf_home_address').value.trim() || null,
+                bio: document.getElementById('pf_bio').value.trim() || null,
+            };
+            let statusEl = document.getElementById('profile_status');
+            statusEl.innerHTML = '<span style="color:#666;">保存中...</span>';
+            fetch('/api/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(profile),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    statusEl.innerHTML = '<span style="color:#4CAF50;">已保存！</span>';
+                    setTimeout(() => statusEl.innerHTML = '', 2000);
+                } else {
+                    statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                }
+            })
+            .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; });
+        }
+
+        function uploadAvatar(input) {
+            let file = input.files[0];
+            if (!file) return;
+            let statusEl = document.getElementById('profile_status');
+            statusEl.innerHTML = '<span style="color:#666;">上传中...</span>';
+            fetch('/api/profile/avatar', { method: 'POST', body: file })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        statusEl.innerHTML = '<span style="color:#4CAF50;">头像已更新！</span>';
+                        setTimeout(() => statusEl.innerHTML = '', 2000);
+                        loadProfile();
+                    } else {
+                        statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                    }
+                })
+                .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; });
+            input.value = '';
+        }
+
+        function openChat(address, name) {
+            selectedChatContact = address;
+            document.getElementById('chat_target').value = address;
+            document.getElementById('chat_header').style.display = 'block';
+            document.getElementById('chat_with_name').textContent = name;
+            document.getElementById('chat_with_address').textContent = address;
+            document.getElementById('chat_input').value = '';
+            document.getElementById('chat_status').textContent = '';
+            showChatTabInternal('messages');
+            loadChatMessages(address, name);
+            if (chatPollTimer) clearInterval(chatPollTimer);
+            chatPollTimer = setInterval(() => {
+                if (selectedChatContact) loadChatMessages(selectedChatContact, name, true);
+            }, 30000);
+        }
+
+        function showChatTabInternal(tabName) {
+            ['messages', 'contacts', 'profile'].forEach(t => {
+                let el = document.getElementById('chat-' + t);
+                if (el) el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('chat-' + tabName).classList.add('active');
+            let btns = document.querySelectorAll('.tab-btn');
+            let idx = ['messages', 'contacts', 'profile'].indexOf(tabName);
+            if (btns[idx]) btns[idx].classList.add('active');
+        }
+
+        function loadChatMessages(address, name, silent) {
+            fetch('/api/chat_messages?contact=' + encodeURIComponent(address))
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    renderChatMessages(data.messages, address);
+                    if (!silent) loadContacts();
+                })
+                .catch(() => {});
+        }
+
+        function renderChatMessages(messages, address) {
+            let container = document.getElementById('chat_messages_area');
+            let html = '';
+            if (messages.length === 0) {
+                html = '<p class="section-title" style="text-align:center;padding:40px 0;">暂无消息，打个招呼吧！</p>';
+            } else {
+                messages.forEach(m => {
+                    let align = m.is_sent ? 'right' : 'left';
+                    let bg = m.is_sent ? '#e3f2fd' : '#f5f5f5';
+                    let statusIcon = m.is_sent ? (m.status === 'sent' ? '🕐' : '✓') : '';
+                    let time = new Date(m.timestamp * 1000).toLocaleTimeString();
+                    html += `<div style="text-align:${align};margin-bottom:10px;">
+                        <div style="display:inline-block;background:${bg};padding:8px 14px;border-radius:12px;max-width:70%;text-align:left;">
+                            <div style="word-break:break-all;white-space:pre-wrap;">${escapeHtml(m.content)}</div>
+                            <div style="font-size:11px;color:#999;margin-top:4px;">${time} ${statusIcon}</div>
+                        </div>
+                    </div>`;
+                });
+            }
+            container.innerHTML = html;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function sendChatMessage() {
+            let input = document.getElementById('chat_input');
+            let content = input.value.trim();
+            let statusEl = document.getElementById('chat_status');
+            let target = selectedChatContact || document.getElementById('chat_target').value.trim();
+            if (!content || !target) {
+                statusEl.innerHTML = '<span style="color:#f44336;">请填写消息和联系人</span>';
+                return;
+            }
+            if (!selectedChatContact) {
+                openChat(target, target.substring(0,16) + '...');
+            }
+            statusEl.innerHTML = '<span style="color:#666;">发送中...</span>';
+            let toAddr = selectedChatContact || document.getElementById('chat_target').value.trim();
+            fetch('/api/send_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: toAddr, message: content }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    input.value = '';
+                    statusEl.innerHTML = '<span style="color:#4CAF50;">已发送！</span>';
+                    setTimeout(() => statusEl.innerHTML = '', 2000);
+                    loadChatMessages(selectedChatContact, document.getElementById('chat_with_name').textContent);
+                } else {
+                    statusEl.innerHTML = '<span style="color:#f44336;">错误：' + data.error + '</span>';
+                }
+            })
+            .catch(e => { statusEl.innerHTML = '<span style="color:#f44336;">请求失败：' + e.message + '</span>'; });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function connectWebSocket() {
+            let wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let wsUrl = wsProto + '//' + window.location.host + '/ws';
+            let ws = new WebSocket(wsUrl);
+            ws.onmessage = function(evt) {
+                try {
+                    let data = JSON.parse(evt.data);
+                    if (data.type === 'chat_message') {
+                        loadContacts();
+                        if (selectedChatContact === data.contact) {
+                            loadChatMessages(selectedChatContact, document.getElementById('chat_with_name').textContent, true);
+                        }
+                        let preview = escapeHtml(data.preview || '');
+                        let fromAddr = data.contact || '';
+                        let short = fromAddr.length > 12 ? fromAddr.substring(0, 12) + '..' : fromAddr;
+                        showNotificationToast(
+                            '<b>' + short + '</b>: ' + preview,
+                            function() { openChatByAddress(fromAddr); }
+                        );
+                    } else if (data.type === 'chat_update') {
+                        loadContacts();
+                        if (selectedChatContact) {
+                            loadChatMessages(selectedChatContact, document.getElementById('chat_with_name').textContent, true);
+                        }
+                    }
+                } catch(e) {}
+            };
+            ws.onclose = function() { setTimeout(connectWebSocket, 3000); };
+            ws.onerror = function() { ws.close(); };
+        }
+
+        setInterval(loadContacts, 30000);
+        setTimeout(loadContacts, 1000);
+        setTimeout(connectWebSocket, 2000);
+
+        if (initAddress) {
+            setTimeout(() => openChat(initAddress, initName || initAddress.substring(0,16)+'..'), 500);
+        }
+    </script>
+    <div id="notification_toast" style="display:none;position:fixed;bottom:20px;right:20px;background:#333;color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.5s;max-width:360px;word-break:break-word;"></div>
+</body>
+</html>

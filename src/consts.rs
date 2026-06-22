@@ -22,3 +22,5 @@ pub const DEFAULT_APP_DIR: &str = ".zz";
 pub const DEFAULT_APP_DIR_ADDRESS_JSON_FILE: &str = "address.json";
 pub const DEFAULT_APP_DIR_EXTERNAL_SERVER_LIST_JSON_FILE: &str = "external-server-list.json";
 pub const DEFAULT_APP_DIR_INNER_SERVER_LIST_JSON_FILE: &str = "inner-server-list.json";
+
+pub static PRE_HASH: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| "0".repeat(32));

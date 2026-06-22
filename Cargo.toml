@@ -47,6 +47,14 @@ aex =  { path = "../aex" }
 regex = "1.12.2"
 form_urlencoded = "1.2.2"
 
+# Web server (templates + API handlers moved from root)
+askama = "0.12"
+sea-orm = { version = "1.1", features = [
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "macros"
+] }
+
 
 [dev-dependencies]
 tempfile = "3.23.0"
